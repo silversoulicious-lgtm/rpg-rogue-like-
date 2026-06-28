@@ -31,6 +31,7 @@ var map_pos: Vector2i = Vector2i(-1, -1)   # (rangée, idx) ; -1 = pas encore en
 var current_node_type: String = "combat"
 var shop_stock: Array = []
 var current_event: Dictionary = {}
+var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
 
 var map_view: Node2D
 var hud                          # instance de Hud (scripts/Hud.gd)
@@ -160,6 +161,7 @@ func _boss_alive() -> bool:
 
 # --- Génération d'un combat (combat / élite / boss) ---------------------------
 func generate_floor(node_type: String = "combat") -> void:
+	first_strike_used = false
 	dungeon = Dungeon.new(MAP_W, MAP_H, rng)
 	player.x = dungeon.start.x
 	player.y = dungeon.start.y
@@ -376,13 +378,20 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 	return best
 
 # --- Combat -------------------------------------------------------------------
-## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie.
+## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie,
+## et les procs d'objets uniques (exécution, frénésie, premier coup, frappe double).
 func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
-	var raw: int = base_raw
-	var crit: bool = rng.randf() < player.crit_chance
+	var raw: float = float(base_raw)
+	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
+		raw *= 1.0 + player.proc_value("frenesie")
+	if player.has_proc("execution") and target.hp <= target.max_hp * 0.25:
+		raw *= 1.0 + player.proc_value("execution")
+	var force_crit: bool = player.has_proc("premier_coup") and not first_strike_used
+	first_strike_used = true
+	var crit: bool = force_crit or rng.randf() < player.crit_chance
 	if crit:
-		raw *= 2
-	var dealt: int = target.take_damage(max(1, raw - target.defense))
+		raw *= 2.0
+	var dealt: int = target.take_damage(max(1, int(round(raw)) - target.defense))
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt,
 		"  [color=#ffec5a]CRITIQUE![/color]" if crit else ""])
 	if player.lifesteal_pct > 0.0 and dealt > 0:
@@ -392,6 +401,15 @@ func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
 			add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
 	if not target.is_alive():
 		on_enemy_killed(target)
+		return
+	if player.has_proc("frappe_double") and rng.randf() < player.proc_value("frappe_double"):
+		var raw2: int = int(round(base_raw * 0.5))
+		var dealt2: int = target.take_damage(max(1, raw2 - target.defense))
+		add_message("[color=#ffb86a]Frappe double sur %s (-%d).[/color]" % [target.display_name, dealt2])
+		if player.lifesteal_pct > 0.0 and dealt2 > 0:
+			player.heal(int(ceil(dealt2 * player.lifesteal_pct)))
+		if not target.is_alive():
+			on_enemy_killed(target)
 
 ## Attaque d'un ENNEMI vers le joueur : gère esquive, défense, épines, résurrection.
 func _enemy_attack_player(attacker: Entity) -> void:
@@ -418,6 +436,15 @@ func on_enemy_killed(e: Entity) -> void:
 		return
 	run_shards += e.shard_value
 	player.xp += e.shard_value
+	if player.has_proc("moisson"):
+		var bonus_shards: int = int(round(player.proc_value("moisson")))
+		run_shards += bonus_shards
+		add_message("[color=#ffd24a]Moisson : +%d Éclats.[/color]" % bonus_shards)
+	if player.has_proc("soif_de_sang"):
+		var heal_amt: int = int(round(player.max_hp * player.proc_value("soif_de_sang")))
+		if heal_amt > 0:
+			player.heal(heal_amt)
+			add_message("[color=#7cfc9a]Soif de sang : +%d PV.[/color]" % heal_amt)
 	enemies.erase(e)
 	if e.is_boss:
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
@@ -458,6 +485,7 @@ func equip_item(item: Dictionary) -> void:
 	player.equipment[slot] = item
 	player.recompute_stats()
 	add_message("[color=#9fe0ff]Équipé : %s[/color]" % item["name"])
+	refresh()
 
 func unequip_item(slot: String) -> void:
 	if not player.equipment.has(slot):
@@ -470,12 +498,14 @@ func unequip_item(slot: String) -> void:
 		run_shards += int(it.get("salvage", 3))
 	player.recompute_stats()
 	add_message("Déséquipé : %s" % it["name"])
+	refresh()
 
 func salvage_item(item: Dictionary) -> void:
 	inventory.erase(item)
 	var s: int = int(item.get("salvage", 3))
 	run_shards += s
 	add_message("Recyclé : %s (+%d Éclats)." % [item.get("name", "?"), s])
+	refresh()
 
 func use_consumable(item: Dictionary) -> void:
 	match item.get("effect", ""):
@@ -491,6 +521,7 @@ func use_consumable(item: Dictionary) -> void:
 			run_shards += s
 			add_message("[color=#ffd24a]%s : +%d Éclats.[/color]" % [item["name"], s])
 	inventory.erase(item)
+	refresh()
 
 func _acquire_artifact(def: Dictionary) -> void:
 	if player.has_artifact(def["id"]):
@@ -500,6 +531,7 @@ func _acquire_artifact(def: Dictionary) -> void:
 	player.artifacts.append(def)
 	player.recompute_stats()
 	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
+	refresh()
 
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:

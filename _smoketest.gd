@@ -80,6 +80,37 @@ func _ready() -> void:
 	assert(rarities_seen.size() >= 2, "plusieurs raretés générées")
 	print("OK loot procédural: raretés vues = %s" % str(rarities_seen.keys()))
 
+	# --- Objets uniques (Épique/Légendaire) ---------------------------------------
+	assert(Data.UNIQUE_ITEMS.size() >= 100, "au moins 100 objets uniques générés")
+	for slot in Data.SLOTS:
+		for rid in ["epique", "legendaire"]:
+			var found := false
+			for it in Data.UNIQUE_ITEMS:
+				if it["slot"] == slot and it["rarity"] == rid:
+					found = true
+					break
+			assert(found, "objet unique présent pour %s/%s" % [slot, rid])
+	var unique_seen := {}
+	for i in 300:
+		var it2 := Data.generate_item("arme", 10, grng)
+		if it2.get("unique", false):
+			unique_seen[it2["rarity"]] = true
+			assert(it2.has("proc") and it2.has("desc") and it2["desc"] != "", "objet unique a un proc + description")
+	assert(unique_seen.size() >= 1, "au moins un objet unique tiré sur 300 essais à l'étage 10")
+
+	var uitem: Dictionary = {}
+	for i in 500:
+		var cand: Dictionary = Data.generate_item("arme", 30, grng)
+		if cand.get("unique", false):
+			uitem = cand
+			break
+	assert(not uitem.is_empty(), "un objet unique tiré sur 500 essais à l'étage 30")
+	main._bag_add(uitem)
+	main.equip_item(uitem)
+	assert(main.player.has_proc(uitem["proc"]), "le proc de l'objet unique équipé est actif sur l'entité")
+	main.unequip_item("arme")
+	print("OK objets uniques: %d dans le pool, procs actifs après équipement" % Data.UNIQUE_ITEMS.size())
+
 	# --- Inventaire + talents (en combat) ---
 	main.start_run("knight")
 	main.choose_map_node(main.reachable_indices()[0])     # -> PLAYING

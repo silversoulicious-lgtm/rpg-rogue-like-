@@ -33,6 +33,7 @@ var max_revives: int = 0
 var revives_used: int = 0
 var ability_power: int = 0
 var ability_cd_max: int = 0
+var procs: Array = []           # Array[{id, value}] issus des objets uniques équipés
 
 # --- Stats de BASE ---
 var base_max_hp: int = 10
@@ -96,6 +97,18 @@ func has_artifact(id: String) -> bool:
 func revive_available() -> bool:
 	return revives_used < max_revives
 
+func has_proc(id: String) -> bool:
+	for p in procs:
+		if p["id"] == id:
+			return true
+	return false
+
+func proc_value(id: String) -> float:
+	for p in procs:
+		if p["id"] == id:
+			return float(p["value"])
+	return 0.0
+
 ## Recalcule toutes les stats effectives à partir de la base et des sources.
 func recompute_stats() -> void:
 	max_hp = base_max_hp
@@ -111,8 +124,12 @@ func recompute_stats() -> void:
 	lifesteal_pct = 0.0
 	thorns_flat = 0
 	max_revives = 0
+	procs = []
 	for slot in equipment:
-		_apply_mods(equipment[slot].get("bonus", {}))
+		var it: Dictionary = equipment[slot]
+		_apply_mods(it.get("bonus", {}))
+		if it.get("proc", "") != "":
+			procs.append({ "id": it["proc"], "value": it.get("proc_val", 0.0) })
 	for a in artifacts:
 		_apply_mods(Data.ARTIFACT_MODS.get(a.get("id", ""), {}))
 	for t in talents:

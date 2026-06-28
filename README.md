@@ -62,16 +62,28 @@ Le butin apparaît au sol et se ramasse en marchant dessus.
 
 L'équipement s'équipe automatiquement s'il est meilleur que l'actuel ; l'ancien est recyclé en Éclats.
 
-**Rareté & affixes** : chaque objet a une rareté qui détermine le nombre d'affixes aléatoires en plus de sa stat de base :
+**Rareté** : Commun et Rare restent **procéduraux** (stats de base + 0 ou 1 affixe aléatoire parmi ATK, MAG, DEF, VIT, PV, Régén, Critique, Esquive, Vol de vie, Épines) — c'est le loot courant.
 
-| Rareté | Affixes | Couleur |
+Épique et Légendaire ne sont plus de simples "stats plus grosses" : ils puisent dans une **bibliothèque de 100+ objets uniques nommés**, chacun porteur d'un **effet de combat distinct** en plus de ses stats fixes. Le Légendaire est la version amplifiée (stats ×1.4, effet ×1.3, épithète) de la même identité que son pendant Épique.
+
+| Rareté | Origine | Couleur |
 |---|---|---|
-| Commun | 0 | gris |
-| Rare | 1 | bleu |
-| Épique | 2 | violet |
-| Légendaire | 3 | or |
+| Commun | procédural, 0 affixe | gris |
+| Rare | procédural, 1 affixe | bleu |
+| Épique | objet unique nommé + 1 effet de combat | violet |
+| Légendaire | objet unique amplifié + 1 effet de combat renforcé | or |
 
-Les affixes peuvent ajouter : ATK, MAG, DEF, VIT, PV, Régén, mais aussi Critique, Esquive, Vol de vie ou Épines. Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des consommables.
+Effets de combat possibles sur les objets uniques :
+| Effet | Description |
+|---|---|
+| Exécution | Bonus de dégâts contre une cible sous 25% PV |
+| Frénésie | Bonus de dégâts quand le porteur est sous 40% PV |
+| Premier Coup | La 1re attaque de chaque combat est un critique garanti |
+| Frappe Double | Chance de frapper une 2e fois (50% dégâts) |
+| Soif de Sang | Soigne un % des PV max à chaque ennemi tué |
+| Moisson | Éclats bonus à chaque ennemi tué |
+
+Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des consommables — l'effet de chaque objet unique est affiché sous ses stats.
 
 **Artefacts** `✦` (capacités spéciales passives, cumulables) :
 | Artefact | Effet |

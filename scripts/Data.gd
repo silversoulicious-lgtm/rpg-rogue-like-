@@ -103,14 +103,149 @@ const AFFIXES := [
 	{ "key": "thorns_flat",  "name": "des Épines",     "min": 2,    "max": 5 },
 ]
 
+# --- OBJETS UNIQUES (Épique/Légendaire) ---------------------------------------
+# Au-delà de la rareté = "plus de stats", les paliers Épique et Légendaire
+# puisent dans une bibliothèque d'objets NOMMÉS, chacun porteur d'un EFFET DE
+# COMBAT unique (proc) en plus de ses stats fixes. Légendaire = version
+# amplifiée (stats ×1.4, effet ×1.3) de la même identité, avec une épithète.
+const UNIQUE_EPITHETS := [
+	"Ancestral", "Maudit", "du Crépuscule", "Éternel", "Sacré", "des Abysses",
+	"Oublié", "du Jugement", "Céleste", "Funeste", "de Sang", "des Ombres",
+	"Inflexible", "du Néant", "Radieux", "Vengeur", "Immuable",
+]
+
+# id du proc -> (générée par _proc_desc). Effets gérés par Main.gd (combat).
+# "execution"     : +val% dégâts contre une cible sous 25% PV.
+# "frenesie"      : +val% dégâts quand le porteur est sous 40% PV.
+# "premier_coup"  : la 1re attaque de chaque combat est un critique garanti.
+# "frappe_double" : val% de chances de frapper une 2e fois (50% dégâts).
+# "soif_de_sang"  : soigne val% PV max à chaque ennemi tué.
+# "moisson"       : +val Éclats à chaque ennemi tué.
+const UNIQUE_BASES := [
+	# --- ARME (17) ---
+	{ "name": "Lame des Damnés",      "slot": "arme", "stat": { "atk": 6 },                "proc": "execution",     "val": 0.50 },
+	{ "name": "Hache du Bourreau",    "slot": "arme", "stat": { "atk": 8, "speed": -4 },    "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Dague du Silence",     "slot": "arme", "stat": { "atk": 3, "speed": 10 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Marteau du Tyran",     "slot": "arme", "stat": { "atk": 9, "defense": 1 },   "proc": "frappe_double", "val": 0.25 },
+	{ "name": "Croc Ancestral",       "slot": "arme", "stat": { "atk": 5 },                 "proc": "soif_de_sang",  "val": 0.12 },
+	{ "name": "Faux du Faucheur",     "slot": "arme", "stat": { "atk": 7 },                 "proc": "moisson",       "val": 4.0 },
+	{ "name": "Épée du Sacrifice",    "slot": "arme", "stat": { "atk": 8, "max_hp": -6 },   "proc": "execution",     "val": 0.65 },
+	{ "name": "Bâton des Cendres",    "slot": "arme", "stat": { "magic": 6 },               "proc": "frenesie",      "val": 0.35 },
+	{ "name": "Arc du Vent",          "slot": "arme", "stat": { "atk": 4, "speed": 12 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Sceptre Runique",      "slot": "arme", "stat": { "magic": 7, "defense": 1 }, "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Lame Jumelle",         "slot": "arme", "stat": { "atk": 5, "speed": 6 },     "proc": "soif_de_sang",  "val": 0.14 },
+	{ "name": "Hallebarde de Garde",  "slot": "arme", "stat": { "atk": 6, "defense": 2 },   "proc": "moisson",       "val": 5.0 },
+	{ "name": "Poignard Vicieux",     "slot": "arme", "stat": { "atk": 4 },                 "proc": "execution",     "val": 0.55 },
+	{ "name": "Fléau Sacré",          "slot": "arme", "stat": { "atk": 7, "magic": 2 },     "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Bâton du Sage Fou",    "slot": "arme", "stat": { "magic": 8, "speed": -3 },  "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Lame Spectrale",       "slot": "arme", "stat": { "atk": 5, "speed": 8 },     "proc": "frappe_double", "val": 0.28 },
+	{ "name": "Glaive du Crépuscule", "slot": "arme", "stat": { "atk": 8 },                 "proc": "moisson",       "val": 4.0 },
+	# --- ARMURE (17) ---
+	{ "name": "Cuirasse des Damnés",  "slot": "armure", "stat": { "defense": 5, "max_hp": 8 },  "proc": "execution",     "val": 0.45 },
+	{ "name": "Plastron du Tyran",    "slot": "armure", "stat": { "defense": 7, "speed": -6 },  "proc": "frenesie",      "val": 0.32 },
+	{ "name": "Tunique de l'Ombre",   "slot": "armure", "stat": { "defense": 2, "speed": 8 },   "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Armure du Jugement",   "slot": "armure", "stat": { "defense": 6, "max_hp": 4 },  "proc": "frappe_double", "val": 0.20 },
+	{ "name": "Cotte Ancestrale",     "slot": "armure", "stat": { "defense": 5, "hp_regen": 2 },"proc": "soif_de_sang",  "val": 0.13 },
+	{ "name": "Carapace du Gardien",  "slot": "armure", "stat": { "defense": 8, "speed": -5 },  "proc": "moisson",       "val": 5.0 },
+	{ "name": "Robe des Cendres",     "slot": "armure", "stat": { "defense": 2, "magic": 4 },   "proc": "execution",     "val": 0.40 },
+	{ "name": "Bouclier Vivant",      "slot": "armure", "stat": { "defense": 6, "max_hp": 6 },  "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Manteau Funeste",      "slot": "armure", "stat": { "defense": 3, "speed": 6 },   "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Plaque Céleste",       "slot": "armure", "stat": { "defense": 7, "max_hp": 5 },  "proc": "frappe_double", "val": 0.20 },
+	{ "name": "Vêture Sacrée",        "slot": "armure", "stat": { "defense": 4, "hp_regen": 1, "max_hp": 4 }, "proc": "soif_de_sang", "val": 0.14 },
+	{ "name": "Armure du Néant",      "slot": "armure", "stat": { "defense": 5, "magic": 2 },   "proc": "moisson",       "val": 5.0 },
+	{ "name": "Cuirasse Vengeresse",  "slot": "armure", "stat": { "defense": 6, "atk": 2 },     "proc": "execution",     "val": 0.45 },
+	{ "name": "Tunique Inflexible",   "slot": "armure", "stat": { "defense": 4, "max_hp": 6 },   "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Harnais Radieux",      "slot": "armure", "stat": { "defense": 5, "speed": 4 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Plastron Immuable",    "slot": "armure", "stat": { "defense": 9, "speed": -8 },   "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Cape des Abysses",     "slot": "armure", "stat": { "defense": 3, "speed": 10 },   "proc": "soif_de_sang",  "val": 0.13 },
+	# --- RELIQUE (17) ---
+	{ "name": "Anneau des Damnés",    "slot": "relique", "stat": { "max_hp": 6, "hp_regen": 1 },  "proc": "moisson",       "val": 5.0 },
+	{ "name": "Amulette du Tyran",    "slot": "relique", "stat": { "magic": 5, "atk": 2 },        "proc": "execution",     "val": 0.45 },
+	{ "name": "Bottes du Silence",    "slot": "relique", "stat": { "speed": 16 },                  "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Talisman du Jugement", "slot": "relique", "stat": { "hp_regen": 3, "max_hp": 4 },  "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Sceau Ancestral",      "slot": "relique", "stat": { "defense": 2, "magic": 3 },    "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Couronne du Gardien",  "slot": "relique", "stat": { "magic": 4, "max_hp": 5 },     "proc": "soif_de_sang",  "val": 0.13 },
+	{ "name": "Pendentif des Cendres","slot": "relique", "stat": { "hp_regen": 2, "speed": 6 },   "proc": "moisson",       "val": 5.0 },
+	{ "name": "Gantelet Vivant",      "slot": "relique", "stat": { "atk": 3, "max_hp": 4 },       "proc": "execution",     "val": 0.45 },
+	{ "name": "Anneau Funeste",       "slot": "relique", "stat": { "atk": 2, "magic": 2 },        "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Boucle Céleste",       "slot": "relique", "stat": { "speed": 10, "hp_regen": 1 },  "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Relique Sacrée",       "slot": "relique", "stat": { "max_hp": 8 },                 "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Orbe du Néant",        "slot": "relique", "stat": { "magic": 6 },                  "proc": "soif_de_sang",  "val": 0.13 },
+	{ "name": "Chaîne Vengeresse",    "slot": "relique", "stat": { "atk": 2, "defense": 2 },      "proc": "moisson",       "val": 5.0 },
+	{ "name": "Bracelet Inflexible",  "slot": "relique", "stat": { "defense": 3, "max_hp": 4 },   "proc": "execution",     "val": 0.40 },
+	{ "name": "Idole Radieuse",       "slot": "relique", "stat": { "magic": 3, "hp_regen": 2 },   "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Émeraude Immuable",    "slot": "relique", "stat": { "defense": 2, "speed": 8 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Fiole des Abysses",    "slot": "relique", "stat": { "hp_regen": 3 },               "proc": "frappe_double", "val": 0.22 },
+]
+
+static func _proc_desc(proc: String, val: float) -> String:
+	match proc:
+		"execution": return "Exécution : +%d%% dégâts contre les ennemis sous 25%% PV." % int(round(val * 100))
+		"frenesie": return "Frénésie : +%d%% dégâts quand tu es sous 40%% PV." % int(round(val * 100))
+		"premier_coup": return "Premier Coup : la 1re attaque de chaque combat est un critique garanti."
+		"frappe_double": return "Frappe Double : %d%% de chances de frapper une 2e fois (50%% dégâts)." % int(round(val * 100))
+		"soif_de_sang": return "Soif de Sang : soigne %d%% PV max à chaque ennemi tué." % int(round(val * 100))
+		"moisson": return "Moisson : +%d Éclats à chaque ennemi tué." % int(round(val))
+		_: return ""
+
+## Construit le pool complet (Épique + Légendaire, 102 objets) une seule fois.
+static func _build_unique_pool() -> Array:
+	var out: Array = []
+	for i in UNIQUE_BASES.size():
+		var b: Dictionary = UNIQUE_BASES[i]
+		out.append({
+			"name": b["name"], "slot": b["slot"], "rarity": "epique",
+			"stat": b["stat"], "proc": b["proc"], "proc_val": b["val"],
+			"desc": _proc_desc(b["proc"], b["val"]),
+		})
+		var stat_l: Dictionary = {}
+		for k in b["stat"]:
+			stat_l[k] = int(round(float(b["stat"][k]) * 1.4))
+		var val_l: float = b["val"] * 1.3
+		out.append({
+			"name": "%s, %s" % [b["name"], UNIQUE_EPITHETS[i % UNIQUE_EPITHETS.size()]],
+			"slot": b["slot"], "rarity": "legendaire",
+			"stat": stat_l, "proc": b["proc"], "proc_val": val_l,
+			"desc": _proc_desc(b["proc"], val_l),
+		})
+	return out
+
+static var UNIQUE_ITEMS: Array = _build_unique_pool()
+
+static func _pick_unique(slot: String, rarity_id: String, rng: RandomNumberGenerator) -> Dictionary:
+	var pool: Array = []
+	for it in UNIQUE_ITEMS:
+		if it["slot"] == slot and it["rarity"] == rarity_id:
+			pool.append(it)
+	if pool.is_empty():
+		return {}
+	return pool[rng.randi_range(0, pool.size() - 1)]
+
 ## Génère un objet d'équipement aléatoire pour un slot donné et un étage.
+## Épique/Légendaire puisent dans la bibliothèque d'objets uniques (UNIQUE_ITEMS).
 static func generate_item(slot: String, floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var rarity: Dictionary = _pick_rarity(floor, rng)
+	if rarity["id"] == "epique" or rarity["id"] == "legendaire":
+		var uniq: Dictionary = _pick_unique(slot, rarity["id"], rng)
+		if not uniq.is_empty():
+			var uscale: float = 1.0 + float(floor - 1) * 0.05
+			var ubonus: Dictionary = {}
+			for k in uniq["stat"]:
+				ubonus[k] = int(round(float(uniq["stat"][k]) * uscale))
+			return {
+				"kind": "equip", "name": uniq["name"], "slot": slot, "unique": true,
+				"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
+				"bonus": ubonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
+				"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
+			}
+	return _generate_procedural_item(slot, floor, rarity, rng)
+
+static func _generate_procedural_item(slot: String, floor: int, rarity: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var bases: Array = []
 	for b in ITEM_BASES:
 		if b["slot"] == slot:
 			bases.append(b)
 	var base: Dictionary = bases[rng.randi_range(0, bases.size() - 1)]
-	var rarity: Dictionary = _pick_rarity(floor, rng)
 	var fscale: float = 1.0 + float(floor - 1) * 0.08
 	var bonus: Dictionary = {}
 	for k in base["primary"]:

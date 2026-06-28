@@ -278,6 +278,8 @@ func show_shop(stock: Array, shards: int) -> void:
 		b.pressed.connect(game.buy_shop_item.bind(item))
 		row.add_child(b)
 		overlay_content.add_child(row)
+		if item.get("desc", "") != "":
+			overlay_content.add_child(Ui.label("   ✦ " + item["desc"], 12, Color(0.85, 0.7, 0.35), false, true, 700))
 	overlay_content.add_child(HSeparator.new())
 	var heal := Ui.button("Soin +50% PV   (15 é)", 40)
 	heal.disabled = shards < 15
@@ -392,6 +394,8 @@ func show_inventory() -> void:
 			lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			row.add_child(lbl)
 		overlay_content.add_child(row)
+		if player.equipment.has(slot) and player.equipment[slot].get("desc", "") != "":
+			overlay_content.add_child(Ui.label("   ✦ " + player.equipment[slot]["desc"], 12, Color(0.85, 0.7, 0.35), false, true, 700))
 
 	_overlay_label("— Objets —", Color(0.6, 0.85, 1.0))
 	if game.inventory.is_empty():
@@ -417,6 +421,8 @@ func show_inventory() -> void:
 		bsv.pressed.connect(_inv_salvage.bind(item))
 		row.add_child(bsv)
 		overlay_content.add_child(row)
+		if item.get("desc", "") != "":
+			overlay_content.add_child(Ui.label("   ✦ " + item["desc"], 12, Color(0.85, 0.7, 0.35), false, true, 700))
 
 	overlay_content.add_child(HSeparator.new())
 	var close := Ui.button("Fermer   [I / Échap]", 42)
@@ -498,6 +504,8 @@ func _rebuild_equip() -> void:
 			var it: Dictionary = game.player.equipment[slot]
 			equip_box.add_child(Ui.label("%s  (%s)" % [it["name"], Data.bonus_summary(it["bonus"])], 14,
 				it.get("rarity_color", Color(0.92, 0.95, 1.0)), false, true, SIDEBAR_W - 60))
+			if it.get("desc", "") != "":
+				equip_box.add_child(Ui.label("✦ " + it["desc"], 11, Color(0.85, 0.7, 0.35), false, true, SIDEBAR_W - 60))
 		else:
 			equip_box.add_child(Ui.label("— vide —", 14, Color(0.5, 0.5, 0.58)))
 
