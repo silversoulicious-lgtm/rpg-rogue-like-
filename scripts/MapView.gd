@@ -40,11 +40,6 @@ func refresh(d: Dungeon, ents: Array, loot_items: Array) -> void:
 	loot = loot_items
 	queue_redraw()
 
-func grid_pixel_size() -> Vector2:
-	if dungeon == null:
-		return Vector2.ZERO
-	return Vector2(dungeon.width * CELL, dungeon.height * CELL)
-
 # --- Dessin -------------------------------------------------------------------
 func _draw() -> void:
 	if dungeon == null:
