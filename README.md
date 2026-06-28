@@ -93,11 +93,13 @@ Les affixes peuvent ajouter : ATK, MAG, DEF, VIT, PV, Régén, mais aussi Critiq
 project.godot          Config du projet + autoload GameState
 scenes/Main.tscn       Scène principale (porte le contrôleur)
 scripts/
-  Main.gd              Contrôleur : flux d'écrans, tour-par-tour, combat, IA
+  Main.gd              Coordinateur : état, génération, combat, tour-par-tour, IA
+  Hud.gd               Toute l'interface : sidebar, journal, hub, overlays
+  Ui.gd                Fabrique de widgets (label/button/styles) anti-boilerplate
   GameState.gd         Autoload : méta-progression persistante + sauvegarde
-  Data.gd              Données (héros, ennemis, boss, améliorations)
+  Data.gd              Données (héros, ennemis, objets procéduraux, talents…)
   Dungeon.gd           Génération procédurale (salles + couloirs)
-  Entity.gd            Entité de grille (héros / ennemi)
+  Entity.gd            Entité de grille + stats dérivées (héros / ennemi)
   MapView.gd           Rendu par tuiles : textures + sprites (repli ASCII)
 assets/                Sprites & textures pixel-art (PNG 24x24, générés)
 _assets_gen.gd         Générateur d'assets (régénère assets/ par code)

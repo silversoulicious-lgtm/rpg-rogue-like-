@@ -82,7 +82,7 @@ func _ready() -> void:
 	main.player.xp = main.xp_to_next(main.player.level)
 	main._check_level_up()
 	assert(main.state == main.State.LEVELUP and main.pending_levelups >= 1, "level-up déclenché")
-	main._on_pick_talent(Data.TALENTS[0])
+	main.pick_talent(Data.TALENTS[0])
 	assert(main.player.talents.size() == tal0 + 1 and main.state == main.State.PLAYING, "talent appliqué, jeu repris")
 	print("OK niveau/talents: niveau=%d talents=%d" % [main.player.level, main.player.talents.size()])
 

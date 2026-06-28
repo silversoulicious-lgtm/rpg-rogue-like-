@@ -23,7 +23,7 @@ func _ready() -> void:
 func _load_textures() -> void:
 	var names := ["floor", "wall", "stairs", "knight", "mage", "ranger",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
-		"arme", "armure", "relique", "artifact"]
+		"arme", "armure", "relique", "artifact", "potion"]
 	for n in names:
 		var path := "res://assets/%s.png" % n
 		if ResourceLoader.exists(path):
