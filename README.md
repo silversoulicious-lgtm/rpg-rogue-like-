@@ -18,6 +18,15 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Système de vitesse** : la stat Vitesse régit l'économie de tours (être rapide = agir plus souvent).
 - **Boss** : un *Gardien de l'Étage* apparaît tous les 5 étages.
 
+## 🖥️ Interface
+
+- **Zone de jeu** (gauche) : la grille où l'on contrôle son personnage.
+- **Sidebar permanente** (droite), toujours visible : titre, étage, héros,
+  barre de PV, **statistiques** détaillées (ATK / MAG / DEF / VIT / Régén /
+  Éclats / Banque), état de la **capacité**, **page Équipement** (3 slots avec
+  leurs bonus) et **page Artefacts** (avec descriptions).
+- **Journal de combat** (bas) : les derniers événements.
+
 ## 🕹️ Contrôles
 
 | Action | Touches |
