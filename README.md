@@ -10,7 +10,9 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 
 - **Choisis un héros** au Pied de la Tour, puis grimpe.
 - **Carte de strate à embranchements** (façon *Slay the Spire*) : à chaque pas, choisis ta voie parmi des salles — Combat, **Élite** (dur, meilleur butin), **Boutique**, **Événement** (risque/récompense), **Repos**, et le **Gardien** au sommet de chaque strate.
-- **Chaque combat est généré procéduralement** (salles + couloirs différents à chaque fois).
+- **Étages « open world »** : chaque combat se déroule sur une **grande carte ouverte** (bien plus large que l'écran) générée procéduralement, parsemée d'**arbres, rochers, étendues d'eau, routes et décor**. La caméra suit le héros : on **explore** vraiment l'étage pour trouver l'escalier.
+- **Biomes** : tous les ~12 étages, on entre dans un **biome différent** qui change la palette, le terrain et les sprites — *Plaines verdoyantes*, *Forêt profonde*, *Désert de cendres dorées*, *Toundra gelée*, *Marais putride*, *Terres de feu*.
+- **Brouillard de guerre** : la vision est limitée à un **cercle autour du héros** (stat *Vision*). Les zones non vues sont noires, les zones déjà explorées restent en mémoire (assombries) mais ennemis et butin n'apparaissent que dans le champ de vision. La portée de Vision s'améliore via les talents **Clairvoyance** (+1) et **Œil de Lynx** (+2).
 - **Combat tactique tour-par-tour sur grille** : le positionnement compte.
 - **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque, et un **journal de fin de run** récapitule ton exploit (étage atteint, ennemis vaincus, meilleur coup, objet le plus marquant) avec des records persistants.
 - **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité, mais aussi **Fortune** = Éclats de départ, **Héritage** = artefact de départ, **Instinct** = talent de départ) qui rendent les runs suivants plus forts. Chaque amélioration est plafonnée pour ne pas trivialiser le jeu.
@@ -27,9 +29,9 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Zone de jeu** (gauche) : la grille où l'on contrôle son personnage.
 - **Sidebar permanente** (droite), toujours visible : titre, étage, héros,
   barre de PV, **statistiques** détaillées (ATK / MAG / DEF / VIT / Régén /
-  Éclats / Banque), état de la **capacité**, **page Équipement** (3 slots avec
-  leurs bonus), **page Artefacts** (avec descriptions) et **page Synergies**
-  (synergies de procs actuellement actives).
+  **Vision** / Éclats / Banque), le **biome courant**, état de la **capacité**,
+  **page Équipement** (3 slots avec leurs bonus), **page Artefacts** (avec
+  descriptions) et **page Synergies** (synergies de procs actuellement actives).
 - **Journal de combat** (bas) : les derniers événements.
 
 ## 🕹️ Contrôles
@@ -114,9 +116,9 @@ scripts/
   GameState.gd         Autoload : méta-progression persistante + sauvegarde
   Data.gd              Données (héros, ennemis, objets procéduraux, talents…)
   RunMap.gd            Carte de strate à embranchements (graphe en couches)
-  Dungeon.gd           Génération procédurale (salles + couloirs)
+  Dungeon.gd           Génération du terrain open-world biome + brouillard de guerre
   Entity.gd            Entité de grille + stats dérivées (héros / ennemi)
-  MapView.gd           Rendu par tuiles : textures + sprites (repli ASCII)
+  MapView.gd           Rendu par tuiles biome + brouillard + caméra (repli ASCII)
 assets/                Sprites & textures pixel-art (PNG 24x24, générés)
 _assets_gen.gd         Générateur d'assets (régénère assets/ par code)
 _smoketest.gd          Test de fumée headless (pilote une partie complète)
@@ -144,7 +146,8 @@ Doit afficher `=== SMOKETEST PASSED ===`.
 - Plus d'archétypes d'ennemis et de comportements d'IA (à distance, fuite, invocation).
 - Intentions ennemies télégraphiées + variété d'IA (archers, invocateurs) — façon *Into the Breach*.
 - Effets de statut & éléments (poison, brûlure, gel, étourdissement).
-- Davantage de synergies, sets d'équipement, biomes visuels par strate.
+- Davantage de synergies, sets d'équipement, davantage de biomes.
+- Brouillard de guerre par **ligne de vue** (les arbres/rochers bloquent la vision) plutôt que par simple rayon.
 - Feedback visuel dédié par proc en combat (auras, particules, texte flottant).
 - Animations (déplacement, attaque, dégâts), sons et musique.
 

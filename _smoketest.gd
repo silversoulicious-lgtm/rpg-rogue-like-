@@ -211,5 +211,40 @@ func _ready() -> void:
 	assert(GameState.best_kills >= 5, "record d'ennemis vaincus mis à jour")
 	print("OK journal de fin de run: stats + records persistés")
 
+	# --- Terrain open-world, biomes & brouillard de guerre ------------------------
+	var b1 = Data.biome_for_floor(1)
+	var b2 = Data.biome_for_floor(1 + Data.BIOME_SPAN)
+	assert(b1["id"] != b2["id"], "le biome change selon l'étage")
+	assert(Data.BIOMES.size() >= 5, "plusieurs biomes définis")
+	var drng = RandomNumberGenerator.new(); drng.seed = 11
+	var dg = Dungeon.new(64, 40, drng, Data.biome_for_floor(1))
+	assert(dg.width == 64 and dg.height == 40, "carte large générée")
+	assert(dg.is_walkable(dg.start.x, dg.start.y) and dg.is_walkable(dg.stairs.x, dg.stairs.y), "entrée et escalier praticables")
+	assert(dg._reachable(dg.start, dg.stairs), "escalier atteignable depuis l'entrée")
+	var spots = dg.random_floor_tiles(20, drng, [dg.start, dg.stairs])
+	assert(spots.size() > 0, "cases praticables disponibles pour le peuplement")
+	for sp in spots:
+		assert(dg.is_walkable(sp.x, sp.y), "case peuplée praticable")
+	# brouillard de guerre
+	dg.reveal(dg.start, 4)
+	assert(dg.is_visible(dg.start.x, dg.start.y) and dg.is_explored(dg.start.x, dg.start.y), "case du joueur révélée")
+	var far = Vector2i(dg.width - 2, dg.height - 2)
+	assert(not dg.is_visible(far.x, far.y), "case lointaine hors vision")
+	dg.reveal(far, 4)
+	assert(not dg.is_visible(dg.start.x, dg.start.y), "ancienne case retombe hors vision")
+	assert(dg.is_explored(dg.start.x, dg.start.y), "mais reste explorée (mémoire)")
+	print("OK terrain: carte 64x40, %d biomes, connexité, brouillard de guerre" % Data.BIOMES.size())
+
+	# --- Vision améliorable par talent --------------------------------------------
+	GameState.upgrades["instinct"] = 0   # pas de talent de départ aléatoire
+	GameState.upgrades["heritage"] = 0
+	main.start_run("knight")
+	var v0 = main.player.vision
+	assert(v0 == Data.BASE_VISION, "vision de base = BASE_VISION")
+	main.player.talents.append({ "name": "Œil de Lynx", "mods": { "vision": 2 } })
+	main.player.recompute_stats()
+	assert(main.player.vision == v0 + 2, "le talent augmente le rayon de vision")
+	print("OK vision: base %d, talent +2 -> %d" % [v0, main.player.vision])
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

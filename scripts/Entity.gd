@@ -34,6 +34,7 @@ var max_revives: int = 0
 var revives_used: int = 0
 var ability_power: int = 0
 var ability_cd_max: int = 0
+var vision: int = 4             # rayon de vision (brouillard de guerre)
 var procs: Array = []           # Array[{id, value}] issus des objets uniques équipés
 var active_synergies: Array = []  # Array[dict Data.SYNERGIES] actives (procs combinés)
 
@@ -46,6 +47,7 @@ var base_speed: int = 100
 var base_hp_regen: int = 0
 var base_ability_power: int = 0
 var base_ability_cd: int = 0
+var base_vision: int = 4
 
 # --- Sources de modificateurs (héros) ---
 var equipment: Dictionary = {}   # slot -> item dict
@@ -121,6 +123,7 @@ func recompute_stats() -> void:
 	hp_regen = base_hp_regen
 	ability_power = base_ability_power
 	ability_cd_max = base_ability_cd
+	vision = base_vision
 	crit_chance = 0.0
 	dodge_chance = 0.0
 	lifesteal_pct = 0.0
@@ -139,6 +142,7 @@ func recompute_stats() -> void:
 	_detect_synergies()
 	speed = max(20, speed)
 	ability_cd_max = max(0, ability_cd_max)
+	vision = max(1, vision)
 	hp = min(hp, max_hp)
 
 ## Active les synergies dont TOUS les procs requis sont équipés, et amplifie la
@@ -168,6 +172,7 @@ func _apply_mods(m: Dictionary) -> void:
 	hp_regen += int(m.get("hp_regen", 0))
 	ability_power += int(m.get("ability_power", 0))
 	ability_cd_max += int(m.get("ability_cd", 0))
+	vision += int(m.get("vision", 0))
 	crit_chance += float(m.get("crit_chance", 0.0))
 	dodge_chance += float(m.get("dodge_chance", 0.0))
 	lifesteal_pct += float(m.get("lifesteal_pct", 0.0))

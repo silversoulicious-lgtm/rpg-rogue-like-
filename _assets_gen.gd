@@ -35,6 +35,16 @@ func _init() -> void:
 	_save(_gen_artifact(), "artifact")
 	_save(_gen_potion(), "potion")
 
+	# --- Terrain par biome (open world) ---
+	for b in Data.BIOMES:
+		var id: String = b["id"]
+		_save(_gen_ground(b["ground_a"], b["ground_b"]), "%s_ground" % id)
+		_save(_gen_tree(b["trunk"], b["leaf"], b["tree_style"]), "%s_tree" % id)
+		_save(_gen_rock(b["rock"]), "%s_rock" % id)
+		_save(_gen_water(b["water"]), "%s_water" % id)
+		_save(_gen_decor(b["decor"], b["decor_style"]), "%s_decor" % id)
+	_save(_gen_road(), "road")
+
 	print("=== ASSETS GENERATED ===")
 	quit()
 
@@ -313,6 +323,122 @@ func _gen_artifact() -> Image:
 		_rect(img, 12 + i, 12 - h, 1, h * 2, core)   # droite
 		_rect(img, 12 - i, 12 - h, 1, h * 2, core)   # gauche
 	_ellipse(img, 12, 12, 2.0, 2.0, bright)     # cœur
+	return img
+
+# --- Terrain par biome --------------------------------------------------------
+func _gen_ground(a: Color, b: Color) -> Image:
+	var img := _new(true)
+	img.fill(a)
+	for y in TILE:
+		for x in TILE:
+			var r := rng.randf()
+			if r < 0.14:
+				_px(img, x, y, a.darkened(0.12))
+			elif r > 0.84:
+				_px(img, x, y, b)
+	# liseré discret pour délimiter la case
+	for i in TILE:
+		_px(img, i, TILE - 1, a.darkened(0.18))
+		_px(img, TILE - 1, i, a.darkened(0.18))
+	return img
+
+func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
+	var img := _new(false)
+	match style:
+		"round":
+			_rect(img, 11, 15, 2, 7, trunk)
+			_ellipse(img, 12, 10, 7.5, 7.5, leaf.darkened(0.3))
+			_ellipse(img, 12, 10, 6.5, 6.5, leaf)
+			_ellipse(img, 9, 7, 2.6, 2.4, leaf.lightened(0.22))
+		"pine":
+			_rect(img, 11, 18, 2, 4, trunk)
+			_tri_up(img, 12, 18, 7, 7, leaf.darkened(0.25))
+			_tri_up(img, 12, 13, 6, 6, leaf)
+			_tri_up(img, 12, 9, 4, 5, leaf.lightened(0.14))
+		"cactus":
+			_rect(img, 11, 5, 3, 17, leaf)
+			_rect(img, 6, 9, 2, 5, leaf)
+			_rect(img, 6, 13, 3, 2, leaf)
+			_rect(img, 16, 11, 2, 5, leaf)
+			_rect(img, 14, 15, 3, 2, leaf)
+			for yy in range(7, 21, 3):
+				_px(img, 12, yy, leaf.lightened(0.35))
+		"dead":
+			_rect(img, 11, 6, 2, 16, trunk)
+			_rect(img, 7, 11, 5, 1, trunk)
+			_rect(img, 7, 8, 1, 4, trunk)
+			_rect(img, 13, 13, 5, 1, trunk)
+			_rect(img, 17, 9, 1, 5, trunk)
+			_rect(img, 11, 5, 3, 2, trunk)
+		_:
+			_ellipse(img, 12, 12, 6.0, 6.0, leaf)
+	return img
+
+func _gen_rock(c: Color) -> Image:
+	var img := _new(false)
+	var dark := c.darkened(0.45)
+	var hi := c.lightened(0.28)
+	_ellipse(img, 12, 15, 8.5, 6.5, dark)
+	_ellipse(img, 12, 15, 7.5, 5.5, c)
+	_ellipse(img, 9, 12, 2.6, 1.9, hi)
+	_rect(img, 12, 11, 1, 7, dark)       # fissure
+	_rect(img, 12, 14, 4, 1, dark)
+	return img
+
+func _gen_water(c: Color) -> Image:
+	var img := _new(true)
+	img.fill(c.darkened(0.12))
+	var hi := c.lightened(0.30)
+	for y in range(1, TILE, 4):
+		for x in TILE:
+			var yy := y + ((x / 4) % 2)
+			if yy < TILE and (x + y) % 5 < 2:
+				_px(img, x, yy, hi)
+	return img
+
+func _gen_decor(c: Color, style: String) -> Image:
+	var img := _new(false)
+	match style:
+		"flower":
+			_rect(img, 12, 14, 1, 6, Color(0.30, 0.55, 0.25))
+			_ellipse(img, 12, 12, 2.2, 2.2, c)
+			_px(img, 12, 12, Color(1, 1, 0.85))
+		"mushroom":
+			_rect(img, 12, 16, 2, 4, Color(0.90, 0.88, 0.80))
+			_ellipse(img, 13, 14, 4.0, 2.6, c)
+			_px(img, 11, 13, Color(1, 1, 1))
+			_px(img, 14, 14, Color(1, 1, 1))
+		"bones":
+			_rect(img, 8, 16, 8, 1, c)
+			_rect(img, 8, 15, 1, 3, c)
+			_rect(img, 15, 15, 1, 3, c)
+		"crystal":
+			_tri_up(img, 12, 19, 3, 9, c)
+			_rect(img, 12, 12, 1, 6, c.lightened(0.4))
+		"reed":
+			for sx in [9, 12, 15]:
+				_rect(img, sx, 11, 1, 9, c.darkened(0.12))
+				_ellipse(img, sx, 10, 1.3, 2.2, c.darkened(0.3))
+		"ember":
+			_ellipse(img, 12, 16, 3.2, 2.2, c.darkened(0.35))
+			_ellipse(img, 12, 15, 2.0, 1.5, c)
+			_px(img, 12, 14, Color(1, 0.92, 0.55))
+		_:
+			_ellipse(img, 12, 14, 2.0, 2.0, c)
+	return img
+
+func _gen_road() -> Image:
+	var img := _new(true)
+	var dirt := Color(0.45, 0.38, 0.28)
+	img.fill(dirt)
+	for i in 60:
+		var x := rng.randi_range(0, TILE - 1)
+		var y := rng.randi_range(0, TILE - 1)
+		_px(img, x, y, dirt.darkened(rng.randf() * 0.3))
+	for i in 6:
+		var x := rng.randi_range(2, TILE - 3)
+		var y := rng.randi_range(2, TILE - 3)
+		_ellipse(img, x, y, 1.5, 1.2, Color(0.60, 0.55, 0.50))
 	return img
 
 func _gen_potion() -> Image:

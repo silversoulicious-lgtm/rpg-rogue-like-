@@ -38,6 +38,65 @@ const HEROES := {
 
 const HERO_ORDER := ["knight", "mage", "ranger"]
 
+# --- VISION / BROUILLARD DE GUERRE --------------------------------------------
+# Rayon de vision initial du héros (en cases). Améliorable via les talents
+# "Clairvoyance" / "Œil de Lynx" (mod "vision").
+const BASE_VISION := 4
+
+# --- BIOMES (terrain "open world" par étage) ----------------------------------
+# Le biome change tous les BIOME_SPAN étages et détermine la palette, la densité
+# des éléments de terrain (arbres/rochers/eau/décor) et les sprites utilisés.
+# Les sprites sont nommés "<id>_ground|_tree|_rock|_water|_decor" + "road"
+# (générés par _assets_gen.gd, mappés par MapView.gd).
+const BIOME_SPAN := 12
+
+const BIOMES := [
+	{ "id": "plaine", "name": "Plaines verdoyantes",
+	  "tree_density": 0.05, "rock_density": 0.03, "water_density": 0.04, "decor_density": 0.10, "road": true,
+	  "ground_a": Color(0.20, 0.40, 0.19), "ground_b": Color(0.27, 0.49, 0.24),
+	  "trunk": Color(0.42, 0.28, 0.16), "leaf": Color(0.30, 0.56, 0.26), "tree_style": "round",
+	  "rock": Color(0.55, 0.55, 0.60), "water": Color(0.25, 0.50, 0.85),
+	  "decor": Color(0.95, 0.85, 0.35), "decor_style": "flower" },
+	{ "id": "foret", "name": "Forêt profonde",
+	  "tree_density": 0.14, "rock_density": 0.03, "water_density": 0.03, "decor_density": 0.10, "road": true,
+	  "ground_a": Color(0.14, 0.28, 0.15), "ground_b": Color(0.18, 0.34, 0.18),
+	  "trunk": Color(0.34, 0.22, 0.12), "leaf": Color(0.16, 0.40, 0.20), "tree_style": "pine",
+	  "rock": Color(0.40, 0.48, 0.42), "water": Color(0.22, 0.45, 0.70),
+	  "decor": Color(0.85, 0.30, 0.30), "decor_style": "mushroom" },
+	{ "id": "desert", "name": "Désert de cendres dorées",
+	  "tree_density": 0.04, "rock_density": 0.06, "water_density": 0.01, "decor_density": 0.07, "road": true,
+	  "ground_a": Color(0.78, 0.68, 0.40), "ground_b": Color(0.85, 0.74, 0.46),
+	  "trunk": Color(0.30, 0.50, 0.28), "leaf": Color(0.36, 0.58, 0.32), "tree_style": "cactus",
+	  "rock": Color(0.70, 0.58, 0.40), "water": Color(0.30, 0.62, 0.80),
+	  "decor": Color(0.92, 0.90, 0.82), "decor_style": "bones" },
+	{ "id": "toundra", "name": "Toundra gelée",
+	  "tree_density": 0.07, "rock_density": 0.04, "water_density": 0.05, "decor_density": 0.08, "road": false,
+	  "ground_a": Color(0.80, 0.84, 0.90), "ground_b": Color(0.88, 0.91, 0.96),
+	  "trunk": Color(0.36, 0.28, 0.22), "leaf": Color(0.55, 0.70, 0.66), "tree_style": "pine",
+	  "rock": Color(0.62, 0.68, 0.74), "water": Color(0.58, 0.80, 0.90),
+	  "decor": Color(0.70, 0.88, 0.95), "decor_style": "crystal" },
+	{ "id": "marais", "name": "Marais putride",
+	  "tree_density": 0.08, "rock_density": 0.03, "water_density": 0.14, "decor_density": 0.10, "road": false,
+	  "ground_a": Color(0.24, 0.28, 0.18), "ground_b": Color(0.30, 0.34, 0.22),
+	  "trunk": Color(0.28, 0.24, 0.18), "leaf": Color(0.34, 0.40, 0.24), "tree_style": "dead",
+	  "rock": Color(0.36, 0.40, 0.34), "water": Color(0.26, 0.40, 0.26),
+	  "decor": Color(0.50, 0.62, 0.30), "decor_style": "reed" },
+	{ "id": "volcan", "name": "Terres de feu",
+	  "tree_density": 0.05, "rock_density": 0.08, "water_density": 0.06, "decor_density": 0.07, "road": false,
+	  "ground_a": Color(0.18, 0.15, 0.16), "ground_b": Color(0.24, 0.20, 0.20),
+	  "trunk": Color(0.16, 0.13, 0.13), "leaf": Color(0.22, 0.18, 0.18), "tree_style": "dead",
+	  "rock": Color(0.26, 0.22, 0.24), "water": Color(0.95, 0.45, 0.15),
+	  "decor": Color(1.0, 0.55, 0.20), "decor_style": "ember" },
+]
+
+## Renvoie le biome correspondant à un étage (change tous les BIOME_SPAN étages).
+static func biome_for_floor(floor: int) -> Dictionary:
+	var idx: int = int((max(1, floor) - 1) / BIOME_SPAN) % BIOMES.size()
+	return BIOMES[idx]
+
+static func biome_sprite(biome_id: String, role: String) -> String:
+	return "%s_%s" % [biome_id, role]
+
 # --- ENNEMIS ------------------------------------------------------------------
 const ENEMIES := [
 	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },
@@ -368,6 +427,8 @@ const TALENTS := [
 	{ "id": "focus",     "name": "Concentration", "desc": "-1 recharge de capacité",    "mods": { "ability_cd": -1 } },
 	{ "id": "phenix",    "name": "Second souffle","desc": "+1 résurrection (50% PV)",   "mods": { "max_revives": 1 } },
 	{ "id": "brutalite", "name": "Brutalité",     "desc": "+1 ATK et +6% critique",     "mods": { "atk": 1, "crit_chance": 0.06 } },
+	{ "id": "clairvoyance", "name": "Clairvoyance", "desc": "+1 rayon de vision",        "mods": { "vision": 1 } },
+	{ "id": "oeil_lynx",  "name": "Œil de Lynx",   "desc": "+2 rayon de vision",         "mods": { "vision": 2 } },
 ]
 
 # --- ARTEFACTS (drops, scope = run) -------------------------------------------

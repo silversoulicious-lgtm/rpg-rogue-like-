@@ -1,29 +1,34 @@
-## Rendu du donjon par tuiles : textures de monde + sprites.
-## Repli automatique sur des glyphes ASCII si une texture est absente.
+## Rendu du terrain "open world" par tuiles, biome-thématique, avec brouillard
+## de guerre et caméra (culling au viewport). Repli ASCII si une texture manque.
 extends Node2D
 
-const CELL := 24          # = taille native des tuiles (assets 24x24) -> rendu net 1:1
-const COLOR_WALL := Color(0.22, 0.20, 0.32)
-const COLOR_FLOOR := Color(0.10, 0.09, 0.15)
-const COLOR_FLOOR_GLYPH := Color(0.30, 0.28, 0.40)
+const CELL := 24          # taille native des tuiles (assets 24x24)
+const COLOR_FLOOR := Color(0.12, 0.13, 0.10)
+const COLOR_GLYPH := Color(0.30, 0.34, 0.28)
 const COLOR_STAIRS := Color(1.0, 0.85, 0.3)
+const COLOR_FOG := Color(0.02, 0.02, 0.03)        # non exploré
+const COLOR_MEMORY := Color(0.02, 0.02, 0.03, 0.55) # exploré mais hors vision
 
 var dungeon: Dungeon = null
-var entities: Array = []          # Array[Entity]
-var loot: Array = []              # Array[dict] : { pos, sprite, glyph, color }
-var tex: Dictionary = {}          # nom -> Texture2D
+var entities: Array = []
+var loot: Array = []
+var tex: Dictionary = {}
+var view_size: Vector2 = Vector2(896, 570)        # zone de jeu visible (réglée par Main)
 var _font: Font
-var _font_size := 20
+var _font_size := 18
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # pixel-art net
+	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_load_textures()
 
 func _load_textures() -> void:
-	var names := ["floor", "wall", "stairs", "knight", "mage", "ranger",
+	var names := ["stairs", "knight", "mage", "ranger",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
-		"arme", "armure", "relique", "artifact", "potion"]
+		"arme", "armure", "relique", "artifact", "potion", "road"]
+	for b in Data.BIOMES:
+		for role in ["ground", "tree", "rock", "water", "decor"]:
+			names.append(Data.biome_sprite(b["id"], role))
 	for n in names:
 		var path := "res://assets/%s.png" % n
 		if ResourceLoader.exists(path):
@@ -40,33 +45,75 @@ func grid_pixel_size() -> Vector2:
 		return Vector2.ZERO
 	return Vector2(dungeon.width * CELL, dungeon.height * CELL)
 
+# --- Dessin -------------------------------------------------------------------
 func _draw() -> void:
 	if dungeon == null:
 		return
-	# Sol & murs
-	for y in dungeon.height:
-		for x in dungeon.width:
-			if dungeon.tiles[y][x] == Dungeon.FLOOR:
-				if not _blit("floor", x, y):
-					draw_rect(_cell_rect(x, y), COLOR_FLOOR, true)
-					_draw_glyph(x, y, ".", COLOR_FLOOR_GLYPH)
-			else:
-				if not _blit("wall", x, y):
-					draw_rect(_cell_rect(x, y), COLOR_WALL, true)
-	# Escalier
-	if not _blit("stairs", dungeon.stairs.x, dungeon.stairs.y):
-		_draw_glyph(dungeon.stairs.x, dungeon.stairs.y, ">", COLOR_STAIRS)
-	# Butin
+	var bid: String = str(dungeon.biome.get("id", "plaine"))
+	# Fenêtre visible (culling) : on ne dessine que les tuiles à l'écran.
+	var origin: Vector2 = -position
+	var min_tx: int = max(0, int(floor(origin.x / CELL)))
+	var min_ty: int = max(0, int(floor(origin.y / CELL)))
+	var max_tx: int = min(dungeon.width - 1, int(floor((origin.x + view_size.x) / CELL)))
+	var max_ty: int = min(dungeon.height - 1, int(floor((origin.y + view_size.y) / CELL)))
+
+	for ty in range(min_ty, max_ty + 1):
+		for tx in range(min_tx, max_tx + 1):
+			if not dungeon.explored[ty][tx]:
+				draw_rect(_cell_rect(tx, ty), COLOR_FOG, true)
+				continue
+			_draw_terrain(bid, tx, ty)
+			if not dungeon.visible[ty][tx]:
+				draw_rect(_cell_rect(tx, ty), COLOR_MEMORY, true)   # mémoire (assombrie)
+
+	# Escalier : visible dès qu'il a été exploré (repère).
+	var st: Vector2i = dungeon.stairs
+	if dungeon.explored[st.y][st.x]:
+		if not _blit("stairs", st.x, st.y):
+			_draw_glyph(st.x, st.y, ">", COLOR_STAIRS)
+		if not dungeon.visible[st.y][st.x]:
+			draw_rect(_cell_rect(st.x, st.y), COLOR_MEMORY, true)
+
+	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:
 		var p: Vector2i = item["pos"]
-		if not _blit(item.get("sprite", ""), p.x, p.y):
-			_draw_glyph(p.x, p.y, item["glyph"], item["color"])
-	# Entités
+		if dungeon.is_visible(p.x, p.y):
+			if not _blit(item.get("sprite", ""), p.x, p.y):
+				_draw_glyph(p.x, p.y, item["glyph"], item["color"])
 	for e in entities:
-		if e.is_alive():
+		if e.is_alive() and dungeon.is_visible(e.x, e.y):
 			if not _blit(e.sprite, e.x, e.y):
 				_draw_glyph(e.x, e.y, e.glyph, e.color)
 			_draw_hp_pip(e)
+
+func _draw_terrain(bid: String, x: int, y: int) -> void:
+	var t: int = dungeon.tiles[y][x]
+	match t:
+		Dungeon.WATER:
+			if not _blit(Data.biome_sprite(bid, "water"), x, y):
+				draw_rect(_cell_rect(x, y), dungeon.biome.get("water", Color(0.2, 0.4, 0.8)), true)
+		Dungeon.ROAD:
+			if not _blit("road", x, y):
+				if not _blit(Data.biome_sprite(bid, "ground"), x, y):
+					draw_rect(_cell_rect(x, y), COLOR_FLOOR, true)
+		Dungeon.TREE:
+			_draw_ground(bid, x, y)
+			if not _blit(Data.biome_sprite(bid, "tree"), x, y):
+				_draw_glyph(x, y, "♣", dungeon.biome.get("leaf", Color(0.3, 0.6, 0.3)))
+		Dungeon.ROCK:
+			_draw_ground(bid, x, y)
+			if not _blit(Data.biome_sprite(bid, "rock"), x, y):
+				draw_rect(_cell_rect(x, y).grow(-4), dungeon.biome.get("rock", Color(0.5, 0.5, 0.55)), true)
+		_:
+			_draw_ground(bid, x, y)
+			var dn: String = dungeon.decor[y][x]
+			if dn != "":
+				_blit(dn, x, y)
+
+func _draw_ground(bid: String, x: int, y: int) -> void:
+	if not _blit(Data.biome_sprite(bid, "ground"), x, y):
+		draw_rect(_cell_rect(x, y), COLOR_FLOOR, true)
+		_draw_glyph(x, y, ".", COLOR_GLYPH)
 
 func _cell_rect(gx: int, gy: int) -> Rect2:
 	return Rect2(Vector2(gx * CELL, gy * CELL), Vector2(CELL, CELL))

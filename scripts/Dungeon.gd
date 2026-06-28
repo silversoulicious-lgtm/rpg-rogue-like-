@@ -1,107 +1,220 @@
-## Génération procédurale d'un étage de la tour : salles + couloirs.
-## Chaque étage est un nouveau plan (roguelike : layout différent à chaque fois).
+## Génération procédurale d'un étage "open world" biome-thématique.
+## Le terrain est un grand plan ouvert (bien plus large que l'écran) parsemé
+## d'éléments (arbres, rochers, eau, routes, décor) selon le biome courant.
+## Gère aussi le BROUILLARD DE GUERRE (explored / visible) révélé par la vision.
 class_name Dungeon
 extends RefCounted
 
-const WALL := 0
-const FLOOR := 1
+# Types de tuiles. Walkable = GROUND, ROAD. Bloquantes = WALL, WATER, TREE, ROCK.
+const WALL := 0     # bordure / vide infranchissable
+const FLOOR := 1    # sol praticable (GROUND) — conservé pour compat
+const ROAD := 2     # chemin praticable (décoratif)
+const WATER := 3
+const TREE := 4
+const ROCK := 5
 
 var width: int
 var height: int
-var tiles: Array = []          # tiles[y][x] -> WALL / FLOOR
-var rooms: Array = []          # Array[Rect2i]
-var start: Vector2i = Vector2i.ZERO   # où le héros apparaît
-var stairs: Vector2i = Vector2i.ZERO  # l'escalier '>' vers l'étage suivant
+var tiles: Array = []           # tiles[y][x] -> type de tuile
+var decor: Array = []           # decor[y][x] -> nom de sprite décoratif ("" si aucun)
+var explored: Array = []        # explored[y][x] -> déjà vue (mémoire, dessinée en sombre)
+var visible: Array = []         # visible[y][x] -> dans le champ de vision actuel
+var biome: Dictionary = {}      # biome courant (Data.BIOMES[i])
+var start: Vector2i = Vector2i.ZERO
+var stairs: Vector2i = Vector2i.ZERO
 
-func _init(w: int, h: int, rng: RandomNumberGenerator) -> void:
+var _rng: RandomNumberGenerator
+
+func _init(w: int, h: int, rng: RandomNumberGenerator, biome_def: Dictionary = {}) -> void:
 	width = w
 	height = h
+	_rng = rng
+	biome = biome_def if not biome_def.is_empty() else Data.BIOMES[0]
 	_generate(rng)
 
+# --- Génération ---------------------------------------------------------------
 func _generate(rng: RandomNumberGenerator) -> void:
+	_fill(FLOOR)
+	decor = _make_grid("")
+	explored = _make_grid(false)
+	visible = _make_grid(false)
+
+	# Bordure infranchissable (cadre de la carte)
+	for x in width:
+		tiles[0][x] = ROCK
+		tiles[height - 1][x] = ROCK
+	for y in height:
+		tiles[y][0] = ROCK
+		tiles[y][width - 1] = ROCK
+
+	var area: int = width * height
+	# Étendues d'eau (mares / rivières) en amas
+	_scatter_clusters(WATER, int(area * float(biome.get("water_density", 0.04)) / 6.0), 4, 14, rng)
+	# Bosquets d'arbres
+	_scatter_clusters(TREE, int(area * float(biome.get("tree_density", 0.06)) / 4.0), 2, 9, rng)
+	# Rochers (petits amas + isolés)
+	_scatter_clusters(ROCK, int(area * float(biome.get("rock_density", 0.04)) / 3.0), 1, 5, rng)
+
+	# Point d'entrée et escalier (coins opposés, sur du sol)
+	start = _clear_spot(Vector2i(rng.randi_range(2, 5), rng.randi_range(2, 5)))
+	stairs = _clear_spot(Vector2i(width - rng.randi_range(3, 6), height - rng.randi_range(3, 6)))
+
+	# Route praticable reliant l'entrée à l'escalier (déblaie le passage)
+	_carve_path(start, stairs, biome.get("road", false))
+
+	# Garantit la connexité : si l'escalier reste inatteignable, on force un couloir
+	if not _reachable(start, stairs):
+		_carve_path(start, stairs, false, true)
+
+	_scatter_decor(rng)
+
+func _fill(kind: int) -> void:
 	tiles.clear()
 	for y in height:
 		var row: Array = []
 		for x in width:
-			row.append(WALL)
+			row.append(kind)
 		tiles.append(row)
 
-	rooms.clear()
-	var max_rooms := 11
-	var attempts := 60
-	for i in attempts:
-		if rooms.size() >= max_rooms:
-			break
-		var rw := rng.randi_range(4, 8)
-		var rh := rng.randi_range(4, 6)
-		var rx := rng.randi_range(1, max(1, width - rw - 1))
-		var ry := rng.randi_range(1, max(1, height - rh - 1))
-		var rect := Rect2i(rx, ry, rw, rh)
-		var overlaps := false
-		for other in rooms:
-			if rect.grow(1).intersects(other):
-				overlaps = true
-				break
-		if overlaps:
-			continue
-		_carve_room(rect)
-		if not rooms.is_empty():
-			var prev: Vector2i = rooms[rooms.size() - 1].get_center()
-			_carve_corridor(prev, rect.get_center(), rng)
-		rooms.append(rect)
+func _make_grid(value):
+	var g: Array = []
+	for y in height:
+		var row: Array = []
+		for x in width:
+			row.append(value)
+		g.append(row)
+	return g
 
-	# Sécurité : au moins une salle (sinon carte vide)
-	if rooms.is_empty():
-		var fallback := Rect2i(1, 1, width - 2, height - 2)
-		_carve_room(fallback)
-		rooms.append(fallback)
+## Dépose `seeds` amas du type donné, chacun d'une taille aléatoire (random walk).
+func _scatter_clusters(kind: int, seeds: int, smin: int, smax: int, rng: RandomNumberGenerator) -> void:
+	for s in max(0, seeds):
+		var cx: int = rng.randi_range(1, width - 2)
+		var cy: int = rng.randi_range(1, height - 2)
+		var size: int = rng.randi_range(smin, smax)
+		var x: int = cx
+		var y: int = cy
+		for i in size:
+			if x > 0 and x < width - 1 and y > 0 and y < height - 1 and tiles[y][x] == FLOOR:
+				tiles[y][x] = kind
+			match rng.randi_range(0, 3):
+				0: x += 1
+				1: x -= 1
+				2: y += 1
+				3: y -= 1
+			x = clampi(x, 1, width - 2)
+			y = clampi(y, 1, height - 2)
 
-	start = rooms[0].get_center()
-	stairs = rooms[rooms.size() - 1].get_center()
+## Dégage une case (et ses voisines) pour y placer un point d'intérêt.
+func _clear_spot(p: Vector2i) -> Vector2i:
+	p.x = clampi(p.x, 1, width - 2)
+	p.y = clampi(p.y, 1, height - 2)
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var x: int = clampi(p.x + dx, 1, width - 2)
+			var y: int = clampi(p.y + dy, 1, height - 2)
+			tiles[y][x] = FLOOR
+	return p
 
-func _carve_room(rect: Rect2i) -> void:
-	for y in range(rect.position.y, rect.position.y + rect.size.y):
-		for x in range(rect.position.x, rect.position.x + rect.size.x):
-			if _in_bounds(x, y):
-				tiles[y][x] = FLOOR
+## Trace un chemin en L de a vers b ; en ROAD si `as_road`, sinon dégage juste le sol.
+func _carve_path(a: Vector2i, b: Vector2i, as_road: bool, force: bool = false) -> void:
+	var paint: int = ROAD if as_road else FLOOR
+	var x: int = a.x
+	var y: int = a.y
+	while x != b.x:
+		x += signi(b.x - x)
+		_lay(x, y, paint, force)
+	while y != b.y:
+		y += signi(b.y - y)
+		_lay(x, y, paint, force)
 
-func _carve_corridor(a: Vector2i, b: Vector2i, rng: RandomNumberGenerator) -> void:
-	# Couloir en L, ordre horizontal/vertical aléatoire.
-	if rng.randf() < 0.5:
-		_carve_h(a.x, b.x, a.y)
-		_carve_v(a.y, b.y, b.x)
+func _lay(x: int, y: int, paint: int, force: bool) -> void:
+	if x <= 0 or x >= width - 1 or y <= 0 or y >= height - 1:
+		return
+	# Une route ne remplace pas l'eau (pas de pont) sauf si on force le passage.
+	if tiles[y][x] == WATER and not force:
+		tiles[y][x] = FLOOR
 	else:
-		_carve_v(a.y, b.y, a.x)
-		_carve_h(a.x, b.x, b.y)
+		tiles[y][x] = paint
 
-func _carve_h(x1: int, x2: int, y: int) -> void:
-	for x in range(min(x1, x2), max(x1, x2) + 1):
-		if _in_bounds(x, y):
-			tiles[y][x] = FLOOR
+func _scatter_decor(rng: RandomNumberGenerator) -> void:
+	var name: String = Data.biome_sprite(biome["id"], "decor")
+	var density: float = float(biome.get("decor_density", 0.08))
+	for y in height:
+		for x in width:
+			if tiles[y][x] == FLOOR and rng.randf() < density:
+				decor[y][x] = name
 
-func _carve_v(y1: int, y2: int, x: int) -> void:
-	for y in range(min(y1, y2), max(y1, y2) + 1):
-		if _in_bounds(x, y):
-			tiles[y][x] = FLOOR
+# --- Connexité (BFS) ----------------------------------------------------------
+func _reachable(a: Vector2i, b: Vector2i) -> bool:
+	var seen: Dictionary = {}
+	var queue: Array = [a]
+	seen[a] = true
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_back()
+		if cur == b:
+			return true
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = cur + d
+			if not seen.has(n) and is_walkable(n.x, n.y):
+				seen[n] = true
+				queue.append(n)
+	return false
 
+# --- API publique -------------------------------------------------------------
 func _in_bounds(x: int, y: int) -> bool:
 	return x >= 0 and x < width and y >= 0 and y < height
 
 func is_walkable(x: int, y: int) -> bool:
-	return _in_bounds(x, y) and tiles[y][x] == FLOOR
+	if not _in_bounds(x, y):
+		return false
+	var t: int = tiles[y][x]
+	return t == FLOOR or t == ROAD
 
-## Renvoie des positions de sol aléatoires, en évitant `exclude` (positions occupées).
-func random_floor_tiles(count: int, rng: RandomNumberGenerator, exclude: Array) -> Array:
-	var candidates: Array = []
+## Met à jour le brouillard de guerre : tout dans le rayon devient visible+exploré.
+func reveal(center: Vector2i, radius: int) -> void:
 	for y in height:
 		for x in width:
-			if tiles[y][x] == FLOOR:
-				var p := Vector2i(x, y)
-				if not exclude.has(p):
-					candidates.append(p)
+			visible[y][x] = false
+	var r2: int = radius * radius
+	for y in range(max(0, center.y - radius), min(height, center.y + radius + 1)):
+		for x in range(max(0, center.x - radius), min(width, center.x + radius + 1)):
+			var dx: int = x - center.x
+			var dy: int = y - center.y
+			if dx * dx + dy * dy <= r2:
+				visible[y][x] = true
+				explored[y][x] = true
+
+func is_visible(x: int, y: int) -> bool:
+	return _in_bounds(x, y) and visible[y][x]
+
+func is_explored(x: int, y: int) -> bool:
+	return _in_bounds(x, y) and explored[y][x]
+
+## Positions praticables aléatoires ATTEIGNABLES depuis `start`, hors `exclude`.
+func random_floor_tiles(count: int, rng: RandomNumberGenerator, exclude: Array) -> Array:
+	var reach: Dictionary = _reachable_set(start)
+	var candidates: Array = []
+	for key in reach:
+		var p: Vector2i = key
+		if not exclude.has(p):
+			candidates.append(p)
 	candidates.shuffle()
-	# shuffle() utilise le RNG global ; on mélange aussi avec notre rng pour le déterminisme
 	var result: Array = []
 	for i in min(count, candidates.size()):
 		result.append(candidates[i])
 	return result
+
+func _reachable_set(a: Vector2i) -> Dictionary:
+	var seen: Dictionary = {}
+	if not is_walkable(a.x, a.y):
+		return seen
+	var queue: Array = [a]
+	seen[a] = true
+	while not queue.is_empty():
+		var cur: Vector2i = queue.pop_back()
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = cur + d
+			if not seen.has(n) and is_walkable(n.x, n.y):
+				seen[n] = true
+				queue.append(n)
+	return seen

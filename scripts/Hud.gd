@@ -10,7 +10,7 @@ const LOG_H := 150
 
 const STAT_ROWS := [
 	["atk", "Attaque"], ["magic", "Magie"], ["defense", "Défense"],
-	["speed", "Vitesse"], ["hp_regen", "Régén PV/tour"],
+	["speed", "Vitesse"], ["hp_regen", "Régén PV/tour"], ["vision", "Vision"],
 	["crit", "Critique"], ["dodge", "Esquive"], ["lifesteal", "Vol de vie"],
 	["run_shards", "Éclats (run)"], ["bank", "Banque"],
 ]
@@ -483,7 +483,10 @@ func _overlay_label(txt: String, col: Color) -> void:
 # --- Rafraîchissement (lecture de l'état du jeu) ------------------------------
 func refresh() -> void:
 	var player = game.player
-	sb_floor.text = "Étage %d" % game.floor_num
+	if game.dungeon != null:
+		sb_floor.text = "Étage %d — %s" % [game.floor_num, game.dungeon.biome.get("name", "")]
+	else:
+		sb_floor.text = "Étage %d" % game.floor_num
 	sb_hero.text = player.display_name
 	sb_hero.add_theme_color_override("font_color", player.color)
 	hp_bar.max_value = max(1, player.max_hp)
@@ -500,6 +503,7 @@ func refresh() -> void:
 	stat_labels["defense"].text = str(player.defense)
 	stat_labels["speed"].text = str(player.speed)
 	stat_labels["hp_regen"].text = str(player.hp_regen)
+	stat_labels["vision"].text = str(player.vision)
 	stat_labels["crit"].text = "%d%%" % int(round(player.crit_chance * 100.0))
 	stat_labels["dodge"].text = "%d%%" % int(round(player.dodge_chance * 100.0))
 	stat_labels["lifesteal"].text = "%d%%" % int(round(player.lifesteal_pct * 100.0))

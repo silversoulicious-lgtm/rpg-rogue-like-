@@ -5,8 +5,8 @@ extends Node2D
 
 enum State { HUB, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, DEAD }
 
-const MAP_W := 32
-const MAP_H := 19
+const MAP_W := 64
+const MAP_H := 40
 const MAX_LOG := 8
 const INV_CAP := 16
 
@@ -50,6 +50,7 @@ func _ready() -> void:
 	hud.set_script(load("res://scripts/Hud.gd"))
 	add_child(hud)
 	hud.setup(self)
+	map_view.view_size = hud.play_area()
 	return_to_hub("")
 
 # --- Flux d'écrans ------------------------------------------------------------
@@ -78,6 +79,7 @@ func start_run(hero_id: String) -> void:
 	player.base_hp_regen = int(h["hp_regen"])
 	player.base_ability_power = GameState.bonus_ability_power()
 	player.base_ability_cd = int(h["ability_cd"])
+	player.base_vision = Data.BASE_VISION
 	player.ability_id = h["ability_id"]
 	player.ability_range = int(h["ability_range"])
 	player.ability_cd = 0
@@ -196,10 +198,11 @@ func _boss_alive() -> bool:
 # --- Génération d'un combat (combat / élite / boss) ---------------------------
 func generate_floor(node_type: String = "combat") -> void:
 	first_strike_used = false
-	dungeon = Dungeon.new(MAP_W, MAP_H, rng)
+	dungeon = Dungeon.new(MAP_W, MAP_H, rng, Data.biome_for_floor(floor_num))
 	player.x = dungeon.start.x
 	player.y = dungeon.start.y
 	player.energy = Entity.ACTION_COST   # le joueur agit en premier
+	dungeon.reveal(player.pos(), player.vision)
 
 	enemies.clear()
 	loot.clear()
@@ -233,8 +236,7 @@ func generate_floor(node_type: String = "combat") -> void:
 		occupied.append(p)
 		_spawn_loot(p, is_elite)
 
-	refresh()        # règle map_view.dungeon (nécessaire avant le centrage)
-	_center_map()
+	refresh()        # règle map_view.dungeon, le brouillard et la caméra
 
 func _pick_enemy_def() -> Dictionary:
 	var pool: Array = []
@@ -298,13 +300,27 @@ func _pick_artifact_def() -> Dictionary:
 		return {}
 	return pool[rng.randi_range(0, pool.size() - 1)]
 
-func _center_map() -> void:
-	var gsize: Vector2 = map_view.grid_pixel_size()
+## Caméra : suit le joueur (centré), bornée aux limites de la carte.
+func _update_camera() -> void:
+	if dungeon == null or player == null:
+		return
 	var pa: Vector2 = hud.play_area()
-	map_view.position = Vector2(
-		round((pa.x - gsize.x) * 0.5),
-		round((pa.y - gsize.y) * 0.5) + 8
-	)
+	var cell: int = map_view.CELL
+	var map_px: float = float(dungeon.width * cell)
+	var map_py: float = float(dungeon.height * cell)
+	var px: float = player.x * cell + cell * 0.5
+	var py: float = player.y * cell + cell * 0.5
+	var cam_x: float = px - pa.x * 0.5
+	var cam_y: float = py - pa.y * 0.5
+	if map_px > pa.x:
+		cam_x = clampf(cam_x, 0.0, map_px - pa.x)
+	else:
+		cam_x = (map_px - pa.x) * 0.5
+	if map_py > pa.y:
+		cam_y = clampf(cam_y, 0.0, map_py - pa.y)
+	else:
+		cam_y = (map_py - pa.y) * 0.5
+	map_view.position = Vector2(round(-cam_x), round(-cam_y))
 
 # --- Entrées clavier ----------------------------------------------------------
 func _unhandled_input(event: InputEvent) -> void:
@@ -849,6 +865,9 @@ func close_inventory() -> void:
 
 # --- Divers -------------------------------------------------------------------
 func refresh() -> void:
+	if dungeon != null and player != null:
+		dungeon.reveal(player.pos(), player.vision)
+		_update_camera()
 	map_view.refresh(dungeon, [player] + enemies, loot)
 	hud.refresh()
 
