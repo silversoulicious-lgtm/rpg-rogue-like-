@@ -12,14 +12,15 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Carte de strate à embranchements** (façon *Slay the Spire*) : à chaque pas, choisis ta voie parmi des salles — Combat, **Élite** (dur, meilleur butin), **Boutique**, **Événement** (risque/récompense), **Repos**, et le **Gardien** au sommet de chaque strate.
 - **Chaque combat est généré procéduralement** (salles + couloirs différents à chaque fois).
 - **Combat tactique tour-par-tour sur grille** : le positionnement compte.
-- **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque.
-- **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité) qui rendent les runs suivants plus forts.
+- **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque, et un **journal de fin de run** récapitule ton exploit (étage atteint, ennemis vaincus, meilleur coup, objet le plus marquant) avec des records persistants.
+- **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité, mais aussi **Fortune** = Éclats de départ, **Héritage** = artefact de départ, **Instinct** = talent de départ) qui rendent les runs suivants plus forts. Chaque amélioration est plafonnée pour ne pas trivialiser le jeu.
+- **Synergies inter-procs** : combine deux objets uniques aux effets complémentaires pour activer une synergie nommée (ex. *Rage Sanguinaire* : Soif de Sang + Frénésie) qui **amplifie** les deux procs. Les synergies actives sont affichées dans la sidebar.
 - **Loot procédural** : équipement généré aléatoirement avec **rareté** (Commun / Rare / Épique / Légendaire) et **affixes** (ex. *Hache du Vampire* : ATK+9, VIT−9, Vol de vie +6%). Les raretés montent avec l'étage.
 - **Inventaire interactif** (`I`) : un vrai sac — ramasse plusieurs objets, compare, équipe/déséquipe, recycle en Éclats, et utilise des **consommables** (potions, cristaux).
 - **Montée de niveau & talents** : gagne de l'XP en tuant ; à chaque niveau, choisis 1 **talent** parmi 3 (build émergent à la *Hades*).
 - **Artefacts** ramassés dans le donjon : **capacités spéciales passives** (vol de vie, épines, critique, esquive, résurrection).
 - **Système de vitesse** : la stat Vitesse régit l'économie de tours (être rapide = agir plus souvent).
-- **Boss** : un *Gardien de l'Étage* apparaît tous les 5 étages.
+- **Boss** : un *Gardien de l'Étage* garde le sommet de chaque strate. Il se **régénère** et entre en **RAGE** sous 50% PV (dégâts accrus) ; le vaincre lâche un **butin garanti Épique+** (objet unique nommé).
 
 ## 🖥️ Interface
 
@@ -27,7 +28,8 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Sidebar permanente** (droite), toujours visible : titre, étage, héros,
   barre de PV, **statistiques** détaillées (ATK / MAG / DEF / VIT / Régén /
   Éclats / Banque), état de la **capacité**, **page Équipement** (3 slots avec
-  leurs bonus) et **page Artefacts** (avec descriptions).
+  leurs bonus), **page Artefacts** (avec descriptions) et **page Synergies**
+  (synergies de procs actuellement actives).
 - **Journal de combat** (bas) : les derniers événements.
 
 ## 🕹️ Contrôles
@@ -142,7 +144,8 @@ Doit afficher `=== SMOKETEST PASSED ===`.
 - Plus d'archétypes d'ennemis et de comportements d'IA (à distance, fuite, invocation).
 - Intentions ennemies télégraphiées + variété d'IA (archers, invocateurs) — façon *Into the Breach*.
 - Effets de statut & éléments (poison, brûlure, gel, étourdissement).
-- Synergies/sets d'équipement, biomes visuels par strate.
+- Davantage de synergies, sets d'équipement, biomes visuels par strate.
+- Feedback visuel dédié par proc en combat (auras, particules, texte flottant).
 - Animations (déplacement, attaque, dégâts), sons et musique.
 
 ---

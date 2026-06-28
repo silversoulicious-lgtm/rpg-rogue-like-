@@ -143,9 +143,73 @@ func _ready() -> void:
 
 	# --- Boutique méta (entre runs) ---
 	GameState.shards = 1000
+	GameState.upgrades["vitalite"] = 0   # idempotent même si une sauvegarde existe
 	var lvl_before = GameState.upgrade_level("vitalite")
 	assert(GameState.buy_upgrade("vitalite") and GameState.upgrade_level("vitalite") == lvl_before + 1, "achat amélioration méta")
 	print("OK boutique méta vitalite niv=%d" % GameState.upgrade_level("vitalite"))
+
+	# --- Synergies inter-procs ----------------------------------------------------
+	main.start_run("knight")
+	main.player.equipment = {
+		"arme": { "kind": "equip", "name": "Croc test", "slot": "arme", "salvage": 5, "bonus": {}, "proc": "soif_de_sang", "proc_val": 0.10 },
+		"armure": { "kind": "equip", "name": "Plastron test", "slot": "armure", "salvage": 5, "bonus": {}, "proc": "frenesie", "proc_val": 0.30 },
+	}
+	main.player.recompute_stats()
+	assert(main.player.active_synergies.size() >= 1, "synergie détectée avec deux procs complémentaires")
+	assert(main.player.proc_value("soif_de_sang") > 0.10, "synergie amplifie la valeur du proc")
+	main.player.equipment = { "arme": main.player.equipment["arme"] }
+	main.player.recompute_stats()
+	assert(main.player.active_synergies.is_empty(), "synergie retombe quand un proc manque")
+	print("OK synergies: %d définie(s), détection + amplification OK" % Data.SYNERGIES.size())
+
+	# --- Récompense garantie de boss (Épique+) ------------------------------------
+	var brng = RandomNumberGenerator.new(); brng.seed = 7
+	for i in 30:
+		var br = Data.generate_boss_reward(10, brng)
+		assert(br.get("unique", false) and (br["rarity"] == "epique" or br["rarity"] == "legendaire"), "récompense boss = unique Épique+")
+		assert(br.has("proc") and br.has("desc"), "récompense boss porte un proc + description")
+	var tboss = main._make_enemy(Data.BOSS, 5, Vector2i(1, 1), true)
+	assert(tboss.is_boss and tboss.hp_regen == 3 and not tboss.enraged, "boss: régén active, non enragé au départ")
+	print("OK boss: récompense garantie Épique+, mécanique de rage/régén")
+
+	# --- Méta-progression élargie (Fortune / Héritage / Instinct) -----------------
+	GameState.shards = 100000
+	for key in ["fortune", "heritage", "instinct"]:
+		GameState.upgrades[key] = 0       # idempotent même si une sauvegarde existe
+	for key in ["fortune", "heritage", "instinct"]:
+		assert(GameState.buy_upgrade(key), "achat méta %s" % key)
+	while not GameState.is_maxed("instinct"):
+		GameState.buy_upgrade("instinct")
+	assert(GameState.is_maxed("instinct") and not GameState.buy_upgrade("instinct"), "achat bloqué au plafond")
+	main.start_run("knight")
+	assert(main.player.artifacts.size() >= 1, "Héritage : artefact de départ accordé")
+	assert(main.player.talents.size() >= 1, "Instinct : talent de départ accordé")
+	assert(main.run_shards >= GameState.bonus_start_shards() and main.run_shards > 0, "Fortune : Éclats de départ")
+	print("OK méta élargie: bonus de départ appliqués, plafonds respectés")
+
+	# --- Nouveaux événements (autel maudit / sanctuaire) --------------------------
+	main.start_run("knight")
+	var hp_b = main.player.base_max_hp
+	var atk_b = main.player.base_atk
+	main._apply_event_effect({ "type": "cursed_altar" })
+	assert(main.player.base_atk == atk_b + 5 and main.player.base_max_hp == hp_b - 10, "autel maudit: +5 ATK / −10 PV max")
+	var reg_b = main.player.base_hp_regen
+	main._apply_event_effect({ "type": "stat_regen" })
+	assert(main.player.base_hp_regen == reg_b + 1, "sanctuaire: +1 régén")
+	print("OK événements: autel maudit + sanctuaire")
+
+	# --- Journal de fin de run ----------------------------------------------------
+	main.start_run("knight")
+	main.run_kills = 5
+	main.run_best_hit = 42
+	main.run_shards = 13
+	main.player.hp = 1
+	main.game_over()
+	assert(main.state == main.State.HUB, "retour au hub après la mort")
+	assert(not GameState.last_run.is_empty(), "journal de run enregistré")
+	assert(int(GameState.last_run.get("kills", 0)) == 5 and int(GameState.last_run.get("best_hit", 0)) == 42, "journal: stats correctes")
+	assert(GameState.best_kills >= 5, "record d'ennemis vaincus mis à jour")
+	print("OK journal de fin de run: stats + records persistés")
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

@@ -33,6 +33,11 @@ var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
 
+# Statistiques du run en cours (pour le journal de fin de run)
+var run_kills: int = 0
+var run_best_hit: int = 0
+var run_best_item: Dictionary = {}
+
 var map_view: Node2D
 var hud                          # instance de Hud (scripts/Hud.gd)
 
@@ -86,14 +91,43 @@ func start_run(hero_id: String) -> void:
 	player.hp = player.max_hp
 
 	floor_num = 1
-	run_shards = 0
+	run_shards = GameState.bonus_start_shards()
+	run_kills = 0
+	run_best_hit = 0
+	run_best_item = {}
 	pending_levelups = 0
 	messages.clear()
 	loot.clear()
 	inventory.clear()
+	_grant_starting_bonuses()
 	add_message("[color=#9b8cff]Tu entres dans la Tour. Trace ta voie vers le Gardien.[/color]")
 	map_act = 0
 	_start_act()
+
+## Applique les bonus de départ achetés en méta-progression (Héritage/Instinct).
+func _grant_starting_bonuses() -> void:
+	if run_shards > 0:
+		add_message("[color=#ffd24a]Fortune : tu démarres avec %d Éclats.[/color]" % run_shards)
+	for i in GameState.start_artifacts():
+		var a: Dictionary = _pick_any_artifact()
+		if not a.is_empty():
+			player.artifacts.append(a)
+			add_message("[color=#f0b8ff]✦ Héritage : %s[/color]" % a["name"])
+	for i in GameState.start_talents():
+		var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
+		player.talents.append(t)
+		add_message("[color=#9fff9f]Instinct : talent de départ — %s.[/color]" % t["name"])
+	player.recompute_stats()
+	player.hp = player.max_hp
+
+func _pick_any_artifact() -> Dictionary:
+	var pool: Array = []
+	for def in Data.ARTIFACTS:
+		if not player.has_artifact(def["id"]):
+			pool.append(def)
+	if pool.is_empty():
+		return {}
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 # --- Carte de strate ----------------------------------------------------------
 func _start_act() -> void:
@@ -230,6 +264,9 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false
 	e.x = p.x
 	e.y = p.y
 	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
+	if is_boss:
+		e.hp_regen = 3          # le Gardien se régénère : combat d'usure distinctif
+		e.enraged = false
 	return e
 
 func _spawn_loot(p: Vector2i, force_good: bool = false) -> void:
@@ -382,18 +419,27 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 ## et les procs d'objets uniques (exécution, frénésie, premier coup, frappe double).
 func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
 	var raw: float = float(base_raw)
+	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
 		raw *= 1.0 + player.proc_value("frenesie")
 	if player.has_proc("execution") and target.hp <= target.max_hp * 0.25:
 		raw *= 1.0 + player.proc_value("execution")
+		is_execute = true
 	var force_crit: bool = player.has_proc("premier_coup") and not first_strike_used
 	first_strike_used = true
 	var crit: bool = force_crit or rng.randf() < player.crit_chance
 	if crit:
 		raw *= 2.0
 	var dealt: int = target.take_damage(max(1, int(round(raw)) - target.defense))
-	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt,
-		"  [color=#ffec5a]CRITIQUE![/color]" if crit else ""])
+	run_best_hit = max(run_best_hit, dealt)
+	var flair := ""
+	if force_crit:
+		flair = "  [color=#ffd24a]COUP MORTEL![/color]"
+	elif is_execute:
+		flair = "  [color=#c0303a]EXÉCUTION![/color]"
+	elif crit:
+		flair = "  [color=#ffec5a]CRITIQUE![/color]"
+	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
 	if player.lifesteal_pct > 0.0 and dealt > 0:
 		var healed: int = int(ceil(dealt * player.lifesteal_pct))
 		if healed > 0:
@@ -405,6 +451,7 @@ func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
 	if player.has_proc("frappe_double") and rng.randf() < player.proc_value("frappe_double"):
 		var raw2: int = int(round(base_raw * 0.5))
 		var dealt2: int = target.take_damage(max(1, raw2 - target.defense))
+		run_best_hit = max(run_best_hit, dealt2)
 		add_message("[color=#ffb86a]Frappe double sur %s (-%d).[/color]" % [target.display_name, dealt2])
 		if player.lifesteal_pct > 0.0 and dealt2 > 0:
 			player.heal(int(ceil(dealt2 * player.lifesteal_pct)))
@@ -434,6 +481,7 @@ func _check_revive() -> void:
 func on_enemy_killed(e: Entity) -> void:
 	if not enemies.has(e):
 		return
+	run_kills += 1
 	run_shards += e.shard_value
 	player.xp += e.shard_value
 	if player.has_proc("moisson"):
@@ -448,6 +496,9 @@ func on_enemy_killed(e: Entity) -> void:
 	enemies.erase(e)
 	if e.is_boss:
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
+		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
+		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
+		_bag_add(reward)
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
 
@@ -462,6 +513,7 @@ func _pickup_loot_at(p: Vector2i) -> void:
 				_bag_add(item["data"])
 
 func _bag_add(item: Dictionary) -> void:
+	_note_item(item)
 	if inventory.size() >= INV_CAP:
 		var s: int = int(item.get("salvage", 3))
 		run_shards += s
@@ -470,6 +522,21 @@ func _bag_add(item: Dictionary) -> void:
 	inventory.append(item)
 	var rc: Color = item.get("rarity_color", Color(0.85, 0.85, 0.9))
 	add_message("Ramassé : [color=#%s]%s[/color].  [I] pour gérer." % [rc.to_html(false), item.get("name", "?")])
+
+## Mémorise l'objet d'équipement le plus rare obtenu du run (journal de fin).
+func _note_item(item: Dictionary) -> void:
+	if item.get("kind", "") != "equip":
+		return
+	if run_best_item.is_empty() or _rarity_rank(item) > _rarity_rank(run_best_item):
+		run_best_item = item
+
+func _rarity_rank(item: Dictionary) -> int:
+	match item.get("rarity", ""):
+		"legendaire": return 4
+		"epique": return 3
+		"rare": return 2
+		"commun": return 1
+	return 0
 
 func equip_item(item: Dictionary) -> void:
 	if item.get("kind", "") != "equip":
@@ -581,6 +648,10 @@ func _apply_regen(e: Entity) -> void:
 		e.heal(e.hp_regen)
 
 func _enemy_act(e: Entity) -> void:
+	if e.is_boss and not e.enraged and e.hp <= e.max_hp * 0.5:
+		e.enraged = true
+		e.atk = int(round(e.atk * 1.4))
+		add_message("[color=#ff4040]⚡ Le Gardien entre en RAGE ! Ses coups redoublent.[/color]")
 	if _manhattan(e.pos(), player.pos()) == 1:
 		_enemy_attack_player(e)
 		return
@@ -689,6 +760,15 @@ func _apply_event_effect(ch: Dictionary) -> void:
 			player.recompute_stats()
 			player.heal(15)
 			add_message("Trempe : +15 PV max (ce run).")
+		"stat_regen":
+			player.base_hp_regen += 1
+			player.recompute_stats()
+			add_message("Méditation : +1 Régén PV/tour (ce run).")
+		"cursed_altar":
+			player.base_atk += 5
+			player.base_max_hp = max(10, player.base_max_hp - 10)
+			player.recompute_stats()
+			add_message("[color=#ff8a8a]Autel maudit : +5 ATK mais −10 PV max (ce run).[/color]")
 		"buy_revive":
 			if run_shards >= 15:
 				run_shards -= 15
@@ -718,9 +798,15 @@ func rest_choice(kind: String) -> void:
 	_back_to_map()
 
 func game_over() -> void:
+	var stats := {
+		"floor": floor_num, "level": player.level, "kills": run_kills,
+		"best_hit": run_best_hit, "shards": run_shards,
+		"item": str(run_best_item.get("name", "")),
+		"item_color": run_best_item.get("rarity_color", Color(0.82, 0.82, 0.88)).to_html(false),
+	}
 	GameState.add_shards(run_shards)
-	GameState.record_floor(floor_num)
-	return_to_hub("💀 Tu es tombé à l'Étage %d (niveau %d). Butin du run : %d Éclats (ajoutés à la banque)." % [floor_num, player.level, run_shards])
+	GameState.record_run(stats)
+	return_to_hub("💀 Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level])
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:

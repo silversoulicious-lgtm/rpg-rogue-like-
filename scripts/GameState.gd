@@ -10,6 +10,10 @@ var shards: int = 0
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
 var best_floor: int = 1
+# Meilleur nombre d'ennemis tués sur un run
+var best_kills: int = 0
+# Journal du dernier run (affiché au hub après la mort) — non vide après une mort.
+var last_run: Dictionary = {}
 # Dernier héros choisi
 var last_hero: String = "knight"
 
@@ -21,8 +25,11 @@ func _ready() -> void:
 func upgrade_level(key: String) -> int:
 	return int(upgrades.get(key, 0))
 
+func is_maxed(key: String) -> bool:
+	return upgrade_level(key) >= Data.upgrade_max(key)
+
 func can_afford(key: String) -> bool:
-	return shards >= Data.upgrade_cost(key, upgrade_level(key))
+	return not is_maxed(key) and shards >= Data.upgrade_cost(key, upgrade_level(key))
 
 func buy_upgrade(key: String) -> bool:
 	if not can_afford(key):
@@ -42,11 +49,23 @@ func bonus_atk() -> int:
 func bonus_ability_power() -> int:
 	return upgrade_level("maitrise") * 2
 
+func bonus_start_shards() -> int:
+	return upgrade_level("fortune") * 15
+
+func start_artifacts() -> int:
+	return upgrade_level("heritage")
+
+func start_talents() -> int:
+	return upgrade_level("instinct")
+
 func add_shards(amount: int) -> void:
 	shards += amount
 
-func record_floor(floor: int) -> void:
-	best_floor = max(best_floor, floor)
+# Enregistre le bilan d'un run terminé (met à jour les records, persiste).
+func record_run(stats: Dictionary) -> void:
+	last_run = stats
+	best_floor = max(best_floor, int(stats.get("floor", 1)))
+	best_kills = max(best_kills, int(stats.get("kills", 0)))
 	save_game()
 
 # --- Sauvegarde ---------------------------------------------------------------
@@ -55,6 +74,7 @@ func save_game() -> void:
 		"shards": shards,
 		"upgrades": upgrades,
 		"best_floor": best_floor,
+		"best_kills": best_kills,
 		"last_hero": last_hero,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -74,6 +94,7 @@ func load_game() -> void:
 		return
 	shards = int(parsed.get("shards", 0))
 	best_floor = int(parsed.get("best_floor", 1))
+	best_kills = int(parsed.get("best_kills", 0))
 	last_hero = str(parsed.get("last_hero", "knight"))
 	var saved_up = parsed.get("upgrades", {})
 	for key in Data.UPGRADE_ORDER:

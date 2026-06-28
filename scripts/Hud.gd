@@ -35,6 +35,7 @@ var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
 var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
+var synergy_box: VBoxContainer
 
 var map_layer: CanvasLayer
 var map_root: Control
@@ -111,6 +112,8 @@ func _build_sidebar() -> void:
 	equip_box = Ui.vbox(6); v.add_child(equip_box)
 	v.add_child(_section("ARTEFACTS"))
 	artifact_box = Ui.vbox(6); v.add_child(artifact_box)
+	v.add_child(_section("SYNERGIES"))
+	synergy_box = Ui.vbox(4); v.add_child(synergy_box)
 	v.add_child(Ui.label("[I] Inventaire", 13, Color(0.6, 0.85, 1.0)))
 
 func _section(txt: String) -> Label:
@@ -327,6 +330,7 @@ func show_hub(death_summary: String) -> void:
 	menu_content.add_child(HSeparator.new())
 	if death_summary != "":
 		menu_content.add_child(Ui.label(death_summary, 18, Color(1.0, 0.55, 0.45), true, true))
+		_build_run_journal()
 		menu_content.add_child(HSeparator.new())
 
 	menu_content.add_child(Ui.label("Éclats en banque : %d        Record : Étage %d" % [GameState.shards, GameState.best_floor], 18, Color(1.0, 0.85, 0.35), true))
@@ -334,7 +338,12 @@ func show_hub(death_summary: String) -> void:
 	for key in Data.UPGRADE_ORDER:
 		var lvl: int = GameState.upgrade_level(key)
 		var info: Dictionary = Data.UPGRADES[key]
-		var btn := Ui.button("%s (niv. %d) — %s   [%d Éclats]" % [info["name"], lvl, info["desc"], Data.upgrade_cost(key, lvl)])
+		var label_txt: String
+		if GameState.is_maxed(key):
+			label_txt = "%s (niv. %d) — %s   [MAX]" % [info["name"], lvl, info["desc"]]
+		else:
+			label_txt = "%s (niv. %d) — %s   [%d Éclats]" % [info["name"], lvl, info["desc"], Data.upgrade_cost(key, lvl)]
+		var btn := Ui.button(label_txt)
 		btn.disabled = not GameState.can_afford(key)
 		btn.pressed.connect(_on_buy.bind(key))
 		menu_content.add_child(btn)
@@ -352,6 +361,20 @@ func show_hub(death_summary: String) -> void:
 
 	menu_content.add_child(HSeparator.new())
 	menu_content.add_child(Ui.label("Déplacer : WASD / flèches / HJKL   •   Capacité : ESPACE   •   Attendre : .   •   Inventaire : I", 13, Color(0.6, 0.6, 0.7), true))
+
+## Journal récapitulatif du dernier run (affiché au hub après une mort).
+func _build_run_journal() -> void:
+	var r: Dictionary = GameState.last_run
+	if r.is_empty():
+		return
+	menu_content.add_child(Ui.label("— Journal du run —", 16, Color(0.6, 0.85, 1.0), true))
+	menu_content.add_child(Ui.label("Étage atteint : %d        Niveau : %d" % [int(r.get("floor", 1)), int(r.get("level", 1))], 15, Color(0.85, 0.85, 0.92), true))
+	menu_content.add_child(Ui.label("Ennemis vaincus : %d        Meilleur coup : %d" % [int(r.get("kills", 0)), int(r.get("best_hit", 0))], 15, Color(0.85, 0.85, 0.92), true))
+	menu_content.add_child(Ui.label("Éclats du run : %d   (ajoutés à la banque : %d)" % [int(r.get("shards", 0)), GameState.shards], 15, Color(1.0, 0.85, 0.35), true))
+	var item_name: String = str(r.get("item", ""))
+	if item_name != "":
+		menu_content.add_child(Ui.label("Objet le plus marquant : %s" % item_name, 15, Color.html(str(r.get("item_color", "d2d2e0"))), true))
+	menu_content.add_child(Ui.label("Records — Étage %d · %d ennemis vaincus" % [GameState.best_floor, GameState.best_kills], 14, Color(0.7, 0.95, 0.7), true))
 
 func _on_buy(key: String) -> void:
 	if GameState.buy_upgrade(key):
@@ -493,6 +516,7 @@ func refresh() -> void:
 
 	_rebuild_equip()
 	_rebuild_artifacts()
+	_rebuild_synergies()
 	log_label.text = "\n".join(game.messages)
 
 func _rebuild_equip() -> void:
@@ -518,3 +542,14 @@ func _rebuild_artifacts() -> void:
 	for a in game.player.artifacts:
 		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
 		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+
+func _rebuild_synergies() -> void:
+	for c in synergy_box.get_children():
+		c.queue_free()
+	var syns: Array = game.player.active_synergies
+	if syns.is_empty():
+		synergy_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
+		return
+	for s in syns:
+		synergy_box.add_child(Ui.label("⚡ " + str(s["name"]), 14, s.get("color", Color(1.0, 0.9, 0.5))))
+		synergy_box.add_child(Ui.label(str(s.get("desc", "")), 11, Color(0.7, 0.7, 0.78), false, true, SIDEBAR_W - 60))

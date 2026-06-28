@@ -14,6 +14,7 @@ var x: int = 0
 var y: int = 0
 var faction: int = Faction.ENEMY
 var is_boss: bool = false
+var enraged: bool = false        # boss : passe en rage sous 50% PV (dégâts accrus)
 var shard_value: int = 0
 
 # --- Stats EFFECTIVES (base + équipement + artefacts + talents) ---
@@ -34,6 +35,7 @@ var revives_used: int = 0
 var ability_power: int = 0
 var ability_cd_max: int = 0
 var procs: Array = []           # Array[{id, value}] issus des objets uniques équipés
+var active_synergies: Array = []  # Array[dict Data.SYNERGIES] actives (procs combinés)
 
 # --- Stats de BASE ---
 var base_max_hp: int = 10
@@ -134,9 +136,28 @@ func recompute_stats() -> void:
 		_apply_mods(Data.ARTIFACT_MODS.get(a.get("id", ""), {}))
 	for t in talents:
 		_apply_mods(t.get("mods", {}))
+	_detect_synergies()
 	speed = max(20, speed)
 	ability_cd_max = max(0, ability_cd_max)
 	hp = min(hp, max_hp)
+
+## Active les synergies dont TOUS les procs requis sont équipés, et amplifie la
+## valeur des procs concernés. À appeler une fois les procs assemblés.
+func _detect_synergies() -> void:
+	active_synergies = []
+	for syn in Data.SYNERGIES:
+		var all_present := true
+		for pid in syn["requires"]:
+			if not has_proc(pid):
+				all_present = false
+				break
+		if not all_present:
+			continue
+		active_synergies.append(syn)
+		var factor: float = 1.0 + float(syn["boost"])
+		for p in procs:
+			if syn["requires"].has(p["id"]):
+				p["value"] = float(p["value"]) * factor
 
 func _apply_mods(m: Dictionary) -> void:
 	max_hp += int(m.get("max_hp", 0))

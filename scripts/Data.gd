@@ -212,6 +212,28 @@ static func _build_unique_pool() -> Array:
 
 static var UNIQUE_ITEMS: Array = _build_unique_pool()
 
+# --- SYNERGIES INTER-PROCS ----------------------------------------------------
+# Quand le porteur équipe simultanément deux procs complémentaires, une synergie
+# nommée s'active et AMPLIFIE la valeur des procs concernés de "boost".
+# Détectée et appliquée dans Entity.recompute_stats ; affichée dans la HUD.
+const SYNERGIES := [
+	{ "id": "rage_sanguinaire", "name": "Rage Sanguinaire", "requires": ["soif_de_sang", "frenesie"],
+	  "boost": 0.20, "color": Color(0.95, 0.25, 0.35),
+	  "desc": "Soif de Sang + Frénésie : les deux procs amplifiés de 20%." },
+	{ "id": "bourreau", "name": "Sentence du Bourreau", "requires": ["execution", "premier_coup"],
+	  "boost": 0.25, "color": Color(0.8, 0.4, 1.0),
+	  "desc": "Exécution + Premier Coup : l'exécution amplifiée de 25%." },
+	{ "id": "tempete_lames", "name": "Tempête de Lames", "requires": ["frappe_double", "premier_coup"],
+	  "boost": 0.20, "color": Color(0.6, 0.85, 1.0),
+	  "desc": "Frappe Double + Premier Coup : frappe double amplifiée de 20%." },
+	{ "id": "recolte_macabre", "name": "Récolte Macabre", "requires": ["moisson", "soif_de_sang"],
+	  "boost": 0.20, "color": Color(1.0, 0.8, 0.3),
+	  "desc": "Moisson + Soif de Sang : les deux procs amplifiés de 20%." },
+	{ "id": "predateur", "name": "Prédateur Affamé", "requires": ["execution", "frenesie"],
+	  "boost": 0.20, "color": Color(1.0, 0.45, 0.3),
+	  "desc": "Exécution + Frénésie : les deux procs amplifiés de 20%." },
+]
+
 static func _pick_unique(slot: String, rarity_id: String, rng: RandomNumberGenerator) -> Dictionary:
 	var pool: Array = []
 	for it in UNIQUE_ITEMS:
@@ -228,17 +250,37 @@ static func generate_item(slot: String, floor: int, rng: RandomNumberGenerator) 
 	if rarity["id"] == "epique" or rarity["id"] == "legendaire":
 		var uniq: Dictionary = _pick_unique(slot, rarity["id"], rng)
 		if not uniq.is_empty():
-			var uscale: float = 1.0 + float(floor - 1) * 0.05
-			var ubonus: Dictionary = {}
-			for k in uniq["stat"]:
-				ubonus[k] = int(round(float(uniq["stat"][k]) * uscale))
-			return {
-				"kind": "equip", "name": uniq["name"], "slot": slot, "unique": true,
-				"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
-				"bonus": ubonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
-				"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
-			}
+			return _make_unique_item(slot, floor, rarity, uniq)
 	return _generate_procedural_item(slot, floor, rarity, rng)
+
+## Assemble un objet d'équipement unique (stats mises à l'échelle de l'étage + proc).
+static func _make_unique_item(slot: String, floor: int, rarity: Dictionary, uniq: Dictionary) -> Dictionary:
+	var uscale: float = 1.0 + float(floor - 1) * 0.05
+	var ubonus: Dictionary = {}
+	for k in uniq["stat"]:
+		ubonus[k] = int(round(float(uniq["stat"][k]) * uscale))
+	return {
+		"kind": "equip", "name": uniq["name"], "slot": slot, "unique": true,
+		"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
+		"bonus": ubonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
+		"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
+	}
+
+static func rarity_by_id(id: String) -> Dictionary:
+	for r in RARITIES:
+		if r["id"] == id:
+			return r
+	return RARITIES[0]
+
+## Récompense GARANTIE Épique+ d'un boss : objet unique nommé (35% Légendaire).
+static func generate_boss_reward(floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var slot: String = SLOTS[rng.randi_range(0, SLOTS.size() - 1)]
+	var rid: String = "legendaire" if rng.randf() < 0.35 else "epique"
+	var uniq: Dictionary = _pick_unique(slot, rid, rng)
+	if uniq.is_empty():
+		uniq = _pick_unique(slot, "epique", rng)
+		rid = "epique"
+	return _make_unique_item(slot, floor, rarity_by_id(rid), uniq)
 
 static func _generate_procedural_item(slot: String, floor: int, rarity: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
 	var bases: Array = []
@@ -376,18 +418,32 @@ const EVENTS := [
 	  "choices": [
 		{ "label": "L'aider (−15 Éclats, +1 résurrection)", "type": "buy_revive" },
 		{ "label": "L'ignorer (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Autel maudit", "desc": "Une dalle noire réclame un sacrifice de chair contre la puissance brute.",
+	  "choices": [
+		{ "label": "Offrir sa vigueur (+5 ATK, −10 PV max ce run)", "type": "cursed_altar" },
+		{ "label": "Reculer prudemment", "type": "none" } ] },
+	{ "title": "Sanctuaire oublié", "desc": "Une lumière douce émane d'un autel resté intact à travers les âges.",
+	  "choices": [
+		{ "label": "Se recueillir (+60% PV)", "type": "heal", "value": 0.60 },
+		{ "label": "Méditer (+1 Régén PV/tour ce run)", "type": "stat_regen" } ] },
 ]
 
 # --- AMÉLIORATIONS MÉTA (entre les runs) --------------------------------------
 const UPGRADES := {
-	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                "base_cost": 12 },
-	"force":    { "name": "Force",     "desc": "+1 Attaque",               "base_cost": 15 },
-	"maitrise": { "name": "Maîtrise",  "desc": "+2 puissance de capacité", "base_cost": 18 },
+	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                       "base_cost": 12, "max": 8 },
+	"force":    { "name": "Force",     "desc": "+1 Attaque",                      "base_cost": 15, "max": 8 },
+	"maitrise": { "name": "Maîtrise",  "desc": "+2 puissance de capacité",        "base_cost": 18, "max": 6 },
+	"fortune":  { "name": "Fortune",   "desc": "+15 Éclats au départ du run",     "base_cost": 20, "max": 5 },
+	"heritage": { "name": "Héritage",  "desc": "Démarre avec un artefact de plus","base_cost": 40, "max": 2 },
+	"instinct": { "name": "Instinct",  "desc": "Démarre avec un talent de plus",  "base_cost": 45, "max": 2 },
 }
-const UPGRADE_ORDER := ["vitalite", "force", "maitrise"]
+const UPGRADE_ORDER := ["vitalite", "force", "maitrise", "fortune", "heritage", "instinct"]
 
 static func upgrade_cost(key: String, level: int) -> int:
 	return UPGRADES[key]["base_cost"] + level * UPGRADES[key]["base_cost"]
+
+static func upgrade_max(key: String) -> int:
+	return int(UPGRADES[key].get("max", 99))
 
 # Résumé court d'un bonus d'objet, pour l'affichage.
 static func bonus_summary(bonus: Dictionary) -> String:
