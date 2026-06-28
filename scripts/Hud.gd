@@ -36,11 +36,25 @@ var stat_labels: Dictionary = {}
 var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
 
+var map_layer: CanvasLayer
+var map_root: Control
+
+const NODE_LABELS := {
+	"combat": "⚔ Combat", "elite": "☠ Élite", "shop": "🏪 Boutique",
+	"event": "❔ Événement", "rest": "❤ Repos", "boss": "👑 GARDIEN",
+}
+const NODE_COLORS := {
+	"combat": Color(0.85, 0.85, 0.9), "elite": Color(1.0, 0.6, 0.4),
+	"shop": Color(0.5, 1.0, 0.8), "event": Color(0.7, 0.8, 1.0),
+	"rest": Color(0.5, 0.95, 0.5), "boss": Color(1.0, 0.35, 0.35),
+}
+
 func setup(game_ref) -> void:
 	game = game_ref
 	_build_hud()
 	_build_menu()
 	_build_overlay()
+	_build_map()
 
 func play_area() -> Vector2:
 	return Vector2(VIEW.x - SIDEBAR_W, VIEW.y - LOG_H)
@@ -163,6 +177,141 @@ func show_game() -> void:
 
 func hide_overlay() -> void:
 	overlay_layer.visible = false
+
+# --- Carte de strate ----------------------------------------------------------
+func _build_map() -> void:
+	map_layer = CanvasLayer.new()
+	map_layer.layer = 2
+	map_layer.visible = false
+	add_child(map_layer)
+	map_root = Control.new()
+	map_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	map_layer.add_child(map_root)
+
+func hide_map() -> void:
+	map_layer.visible = false
+
+func show_map(run_map, pos: Vector2i) -> void:
+	hud_layer.visible = true
+	menu_layer.visible = false
+	overlay_layer.visible = false
+	map_layer.visible = true
+	for c in map_root.get_children():
+		map_root.remove_child(c)
+		c.queue_free()
+
+	var w: float = VIEW.x - SIDEBAR_W
+	var h: float = VIEW.y
+	var bg := ColorRect.new()
+	bg.color = Color(0.06, 0.05, 0.09)
+	bg.size = Vector2(w, h)
+	map_root.add_child(bg)
+	var title := Ui.label("STRATE %d — choisis ta voie" % (game.map_act + 1), 20, Color(0.72, 0.62, 1.0))
+	title.position = Vector2(24, 16)
+	map_root.add_child(title)
+
+	# positions par rangée (rangée 0 en bas, boss en haut)
+	var margin_x := 80.0
+	var top := 70.0
+	var bottom := 56.0
+	var rows: int = run_map.nodes.size()
+	var span: float = (h - top - bottom) / float(max(1, rows - 1))
+	var positions: Array = []
+	for r in rows:
+		var rowpos: Array = []
+		var y: float = h - bottom - float(r) * span
+		for node in run_map.nodes[r]:
+			rowpos.append(Vector2(margin_x + node["x_frac"] * (w - 2.0 * margin_x), y))
+		positions.append(rowpos)
+
+	# liens
+	for r in rows - 1:
+		for ni in run_map.nodes[r].size():
+			for j in run_map.nodes[r][ni]["edges"]:
+				var line := Line2D.new()
+				line.width = 3.0
+				line.default_color = Color(0.28, 0.27, 0.42)
+				line.points = [positions[r][ni], positions[r + 1][j]]
+				map_root.add_child(line)
+
+	# nœuds
+	var reach: Array = game.reachable_indices()
+	var next_row: int = pos.x + 1
+	for r in rows:
+		for ni in run_map.nodes[r].size():
+			var node: Dictionary = run_map.nodes[r][ni]
+			var btn := Ui.button(NODE_LABELS.get(node["type"], "?"))
+			btn.size = Vector2(130, 40)
+			btn.position = positions[r][ni] - Vector2(65, 20)
+			btn.add_theme_color_override("font_color", NODE_COLORS.get(node["type"], Color.WHITE))
+			var is_reachable: bool = (r == next_row and reach.has(ni))
+			btn.disabled = not is_reachable
+			if r == pos.x and ni == pos.y:
+				btn.add_theme_color_override("font_color", Color(1, 1, 0.5))
+			if is_reachable:
+				btn.pressed.connect(game.choose_map_node.bind(ni))
+			map_root.add_child(btn)
+
+# --- Overlays boutique / événement / repos ------------------------------------
+func show_shop(stock: Array, shards: int) -> void:
+	map_layer.visible = false
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("🏪 BOUTIQUE — Éclats : %d" % shards, Color(1.0, 0.85, 0.4))
+	for item in stock:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var txt: String
+		var col: Color
+		if item.get("kind", "") == "equip":
+			txt = "%s [%s]  (%s)" % [item["name"], item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])]
+			col = item.get("rarity_color", Color.WHITE)
+		else:
+			txt = "%s  (consommable)" % item["name"]
+			col = item.get("color", Color.WHITE)
+		var lbl := Ui.label(txt, 15, col)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lbl)
+		var price: int = int(item.get("price", 0))
+		var b := Ui.button("Acheter (%d é)" % price)
+		b.disabled = shards < price
+		b.pressed.connect(game.buy_shop_item.bind(item))
+		row.add_child(b)
+		overlay_content.add_child(row)
+	overlay_content.add_child(HSeparator.new())
+	var heal := Ui.button("Soin +50% PV   (15 é)", 40)
+	heal.disabled = shards < 15
+	heal.pressed.connect(game.buy_shop_heal)
+	overlay_content.add_child(heal)
+	var leave := Ui.button("Quitter la boutique", 42)
+	leave.pressed.connect(game.leave_shop)
+	overlay_content.add_child(leave)
+
+func show_event(event: Dictionary) -> void:
+	map_layer.visible = false
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("❔ %s" % event["title"], Color(0.7, 0.85, 1.0))
+	_overlay_label(event["desc"], Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	for i in event["choices"].size():
+		var btn := Ui.button(event["choices"][i]["label"], 46, 17)
+		btn.pressed.connect(game.resolve_event.bind(i))
+		overlay_content.add_child(btn)
+
+func show_rest() -> void:
+	map_layer.visible = false
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("❤ FEU DE CAMP", Color(0.6, 0.95, 0.6))
+	_overlay_label("Un moment de répit avant de poursuivre l'ascension.", Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	var b1 := Ui.button("Se reposer   (+40% PV)", 46, 17)
+	b1.pressed.connect(game.rest_choice.bind("heal"))
+	overlay_content.add_child(b1)
+	var b2 := Ui.button("S'entraîner   (+3 ATK ce run)", 46, 17)
+	b2.pressed.connect(game.rest_choice.bind("train"))
+	overlay_content.add_child(b2)
 
 # --- Écran HUB ----------------------------------------------------------------
 func show_hub(death_summary: String) -> void:

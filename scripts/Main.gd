@@ -3,11 +3,10 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { HUB, PLAYING, LEVELUP, INVENTORY, DEAD }
+enum State { HUB, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, DEAD }
 
 const MAP_W := 32
 const MAP_H := 19
-const BOSS_EVERY := 5          # un Gardien tous les 5 étages
 const MAX_LOG := 8
 const INV_CAP := 16
 
@@ -24,6 +23,14 @@ var run_shards: int = 0
 var messages: Array = []
 var inventory: Array = []        # sac : Array[item dict]
 var pending_levelups: int = 0
+
+# Carte de strate à embranchements
+var run_map: RunMap = null
+var map_act: int = 0
+var map_pos: Vector2i = Vector2i(-1, -1)   # (rangée, idx) ; -1 = pas encore entré
+var current_node_type: String = "combat"
+var shop_stock: Array = []
+var current_event: Dictionary = {}
 
 var map_view: Node2D
 var hud                          # instance de Hud (scripts/Hud.gd)
@@ -83,13 +90,76 @@ func start_run(hero_id: String) -> void:
 	messages.clear()
 	loot.clear()
 	inventory.clear()
-	add_message("[color=#9b8cff]Tu entres dans la Tour. Atteins l'escalier '>' pour monter.[/color]")
-	state = State.PLAYING
-	hud.show_game()
-	generate_floor()
+	add_message("[color=#9b8cff]Tu entres dans la Tour. Trace ta voie vers le Gardien.[/color]")
+	map_act = 0
+	_start_act()
 
-# --- Génération d'étage -------------------------------------------------------
-func generate_floor() -> void:
+# --- Carte de strate ----------------------------------------------------------
+func _start_act() -> void:
+	run_map = RunMap.new(map_act, rng)
+	map_pos = Vector2i(-1, -1)
+	enemies.clear()
+	dungeon = null
+	state = State.MAP
+	refresh()
+	hud.show_map(run_map, map_pos)
+
+func reachable_indices() -> Array:
+	var next_row: int = map_pos.x + 1
+	if run_map == null or next_row >= run_map.nodes.size():
+		return []
+	if map_pos.x < 0:
+		return range(run_map.nodes[0].size())
+	return run_map.nodes[map_pos.x][map_pos.y]["edges"]
+
+func choose_map_node(idx: int) -> void:
+	var next_row: int = map_pos.x + 1
+	if next_row >= run_map.nodes.size() or not reachable_indices().has(idx):
+		return
+	map_pos = Vector2i(next_row, idx)
+	_enter_node(run_map.nodes[next_row][idx])
+
+func _enter_node(node: Dictionary) -> void:
+	match node["type"]:
+		"shop":
+			open_shop()
+		"event":
+			open_event()
+		"rest":
+			open_rest()
+		_:
+			current_node_type = node["type"]
+			floor_num += 1
+			state = State.PLAYING
+			hud.hide_map()
+			hud.show_game()
+			generate_floor(current_node_type)
+
+func _node_cleared() -> void:
+	var was_boss: bool = current_node_type == "boss"
+	var healed: int = int(round(player.max_hp * 0.2))
+	player.heal(healed)
+	if was_boss:
+		map_act += 1
+		add_message("[color=#9b8cff]★ Strate franchie ! Tu pénètres dans la strate %d.[/color]" % (map_act + 1))
+		_start_act()
+	else:
+		add_message("[color=#9b8cff]Voie dégagée (+%d PV). Choisis ta route.[/color]" % healed)
+		_back_to_map()
+
+func _back_to_map() -> void:
+	state = State.MAP
+	refresh()
+	hud.show_map(run_map, map_pos)
+
+func _boss_alive() -> bool:
+	for e in enemies:
+		if e.is_boss and e.is_alive():
+			return true
+	return false
+
+# --- Génération d'un combat (combat / élite / boss) ---------------------------
+func generate_floor(node_type: String = "combat") -> void:
 	dungeon = Dungeon.new(MAP_W, MAP_H, rng)
 	player.x = dungeon.start.x
 	player.y = dungeon.start.y
@@ -98,23 +168,34 @@ func generate_floor() -> void:
 	enemies.clear()
 	loot.clear()
 	var occupied: Array = [dungeon.start, dungeon.stairs]
+	var is_elite: bool = node_type == "elite"
+	var is_boss: bool = node_type == "boss"
 
 	var count: int = min(3 + floor_num, 12)
+	if is_elite:
+		count = min(count + 2, 14)
 	for p in dungeon.random_floor_tiles(count, rng, occupied):
-		enemies.append(_make_enemy(_pick_enemy_def(), floor_num, p))
+		var e: Entity = _make_enemy(_pick_enemy_def(), floor_num, p)
+		if is_elite:
+			e.max_hp = int(e.max_hp * 1.25)
+			e.hp = e.max_hp
+			e.atk = int(e.atk * 1.2)
+		enemies.append(e)
 		occupied.append(p)
 
-	if floor_num % BOSS_EVERY == 0:
+	if is_boss:
 		var boss_spots: Array = dungeon.random_floor_tiles(1, rng, occupied)
 		if not boss_spots.is_empty():
 			enemies.append(_make_enemy(Data.BOSS, floor_num, boss_spots[0], true))
 			occupied.append(boss_spots[0])
-		add_message("[color=#ff6464]⚠ Étage %d : un GARDIEN veille ici ![/color]" % floor_num)
+		add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ! Vaincs-le pour ouvrir l'escalier.[/color]")
+	elif is_elite:
+		add_message("[color=#ff9a64]☠ Salle d'élite : ennemis renforcés, meilleur butin.[/color]")
 
-	var loot_count: int = rng.randi_range(1, 3)
+	var loot_count: int = rng.randi_range(1, 3) + (1 if is_elite else 0)
 	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
 		occupied.append(p)
-		_spawn_loot(p)
+		_spawn_loot(p, is_elite)
 
 	refresh()        # règle map_view.dungeon (nécessaire avant le centrage)
 	_center_map()
@@ -149,21 +230,23 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false
 	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
 	return e
 
-func _spawn_loot(p: Vector2i) -> void:
+func _spawn_loot(p: Vector2i, force_good: bool = false) -> void:
 	var roll: float = rng.randf()
 	var adef: Dictionary = {}
-	if roll < 0.18:
+	if roll < 0.18 and not force_good:
 		adef = _pick_artifact_def()
 	if not adef.is_empty():
 		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
 			"sprite": "artifact", "color": adef["color"], "data": adef })
-	elif roll < 0.42:
+	elif roll < 0.42 and not force_good:
 		var c: Dictionary = Data.generate_consumable(floor_num, rng)
 		loot.append({ "pos": p, "kind": "consumable", "glyph": "!",
 			"sprite": "potion", "color": c["color"], "data": c })
 	else:
+		# l'élite force un meilleur objet (étage virtuel plus élevé -> raretés boostées)
+		var lvl: int = floor_num + (4 if force_good else 0)
 		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
-		var item: Dictionary = Data.generate_item(slot, floor_num, rng)
+		var item: Dictionary = Data.generate_item(slot, lvl, rng)
 		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[slot],
 			"sprite": slot, "color": item["rarity_color"], "data": item })
 
@@ -222,11 +305,17 @@ func try_move(dx: int, dy: int) -> void:
 		_player_attack(target, player.atk, "Tu frappes")
 		_player_acted()
 	elif dungeon.is_walkable(nx, ny):
+		if Vector2i(nx, ny) == dungeon.stairs:
+			if current_node_type == "boss" and _boss_alive():
+				add_message("[color=#ff8a8a]Vaincs le Gardien avant de franchir l'escalier ![/color]")
+				refresh()
+				return
+			player.x = nx
+			player.y = ny
+			_node_cleared()
+			return
 		player.x = nx
 		player.y = ny
-		if player.pos() == dungeon.stairs:
-			next_floor()
-			return
 		_pickup_loot_at(player.pos())
 		_player_acted()
 	# sinon : mur → aucun tour consommé
@@ -480,13 +569,121 @@ func _enemy_act(e: Entity) -> void:
 			e.y = ny
 			return
 
-func next_floor() -> void:
-	floor_num += 1
-	GameState.record_floor(floor_num)
-	var healed: int = int(round(player.max_hp * 0.2))
-	player.heal(healed)
-	add_message("[color=#9b8cff]Tu gravis l'étage %d. (+%d PV en récupérant ton souffle)[/color]" % [floor_num, healed])
-	generate_floor()
+# --- Boutique -----------------------------------------------------------------
+func open_shop() -> void:
+	state = State.CHOICE
+	shop_stock = []
+	for i in 3:
+		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
+		var it: Dictionary = Data.generate_item(slot, floor_num + 1, rng)
+		it["price"] = int(it["salvage"] * 2.5)
+		shop_stock.append(it)
+	for i in 2:
+		var c: Dictionary = Data.generate_consumable(floor_num, rng)
+		c["price"] = 8 + floor_num
+		shop_stock.append(c)
+	hud.hide_map()
+	hud.show_shop(shop_stock, run_shards)
+
+func buy_shop_item(item: Dictionary) -> void:
+	var price: int = int(item.get("price", 99999))
+	if run_shards < price or not shop_stock.has(item):
+		return
+	run_shards -= price
+	shop_stock.erase(item)
+	_bag_add(item)
+	hud.show_shop(shop_stock, run_shards)
+
+func buy_shop_heal() -> void:
+	var price := 15
+	if run_shards < price:
+		return
+	run_shards -= price
+	player.heal(int(player.max_hp * 0.5))
+	add_message("Soin à la boutique (+50% PV).")
+	hud.show_shop(shop_stock, run_shards)
+
+func leave_shop() -> void:
+	_back_to_map()
+
+# --- Événement ----------------------------------------------------------------
+func open_event() -> void:
+	state = State.CHOICE
+	current_event = Data.EVENTS[rng.randi_range(0, Data.EVENTS.size() - 1)]
+	hud.hide_map()
+	hud.show_event(current_event)
+
+func resolve_event(choice_idx: int) -> void:
+	_apply_event_effect(current_event["choices"][choice_idx])
+	if not player.is_alive():
+		game_over()
+		return
+	_back_to_map()
+
+func _apply_event_effect(ch: Dictionary) -> void:
+	match ch.get("type", "none"):
+		"heal":
+			var a: int = int(player.max_hp * float(ch["value"]))
+			player.heal(a)
+			add_message("Tu récupères %d PV." % a)
+		"item_consumable":
+			_bag_add(Data.generate_consumable(floor_num, rng))
+		"shards":
+			run_shards += int(ch["value"])
+			add_message("+%d Éclats." % int(ch["value"]))
+		"gamble":
+			if rng.randf() < 0.6:
+				run_shards += 30
+				add_message("[color=#9fff9f]Chance ! +30 Éclats.[/color]")
+			else:
+				player.take_damage(10)
+				add_message("[color=#ff8a8a]Piège ! −10 PV.[/color]")
+		"trade_artifact":
+			if run_shards >= 20:
+				var a: Dictionary = _pick_artifact_def()
+				if not a.is_empty():
+					run_shards -= 20
+					_acquire_artifact(a)
+				else:
+					add_message("Le marchand n'a plus rien pour toi.")
+			else:
+				add_message("Pas assez d'Éclats.")
+		"stat_atk":
+			player.base_atk += 3
+			player.recompute_stats()
+			add_message("Entraînement : +3 ATK (ce run).")
+		"stat_hp":
+			player.base_max_hp += 15
+			player.recompute_stats()
+			player.heal(15)
+			add_message("Trempe : +15 PV max (ce run).")
+		"buy_revive":
+			if run_shards >= 15:
+				run_shards -= 15
+				player.talents.append({ "name": "Bénédiction", "mods": { "max_revives": 1 } })
+				player.recompute_stats()
+				add_message("[color=#ffd24a]Bénédiction : +1 résurrection.[/color]")
+			else:
+				add_message("Pas assez d'Éclats.")
+		_:
+			add_message("Tu passes ton chemin.")
+
+# --- Repos (feu de camp) ------------------------------------------------------
+func open_rest() -> void:
+	state = State.CHOICE
+	hud.hide_map()
+	hud.show_rest()
+
+func rest_choice(kind: String) -> void:
+	if kind == "heal":
+		var amt: int = int(player.max_hp * 0.4)
+		player.heal(amt)
+		add_message("Repos : +%d PV." % amt)
+	else:
+		player.base_atk += 3
+		player.recompute_stats()
+		add_message("Entraînement : +3 ATK (ce run).")
+	_back_to_map()
 
 func game_over() -> void:
 	GameState.add_shards(run_shards)

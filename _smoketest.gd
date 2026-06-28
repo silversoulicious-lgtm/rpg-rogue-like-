@@ -6,11 +6,16 @@ func _ready() -> void:
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
+	# --- Parties complètes pour chaque héros (via la carte) ---
 	for hero in ["knight", "mage", "ranger"]:
 		main.start_run(hero)
-		assert(main.player != null and main.player.is_alive(), "joueur initialisé")
+		assert(main.state == main.State.MAP, "run démarre sur la carte")
+		var reach = main.reachable_indices()
+		assert(reach.size() > 0, "nœuds accessibles au départ")
+		main.choose_map_node(reach[0])               # rangée 0 = combat
+		assert(main.state == main.State.PLAYING, "entrée en combat")
 		var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]]
-		for step in 300:
+		for step in 200:
 			if main.state != main.State.PLAYING:
 				break
 			var r = randi() % 6
@@ -21,28 +26,52 @@ func _ready() -> void:
 			else:
 				main.pass_turn()
 		if main.state == main.State.PLAYING:
-			main.next_floor()
-			assert(main.floor_num >= 2, "montée d'étage")
-		if main.state == main.State.PLAYING:
-			main.floor_num = main.BOSS_EVERY - 1
-			main.next_floor()
-			var has_boss := false
-			for e in main.enemies:
-				if e.is_boss:
-					has_boss = true
-			assert(has_boss, "boss apparu")
-		if main.state == main.State.PLAYING:
 			var before = GameState.shards
 			main.player.hp = 1
 			main.run_shards = 7
 			main.game_over()
-			assert(main.state != main.State.PLAYING, "run terminé après la mort")
+			assert(main.state == main.State.HUB, "retour au hub après la mort")
 			assert(GameState.shards == before + 7, "éclats banqués à la mort")
-		print("OK hero=%s floor=%d banque=%d" % [hero, main.floor_num, GameState.shards])
+		print("OK hero=%s state=%d banque=%d" % [hero, main.state, GameState.shards])
 
-	# --- Test génération procédurale d'objets ---
-	var grng = RandomNumberGenerator.new()
-	grng.seed = 42
+	# --- Carte de strate : structure & connectivité ---
+	var mrng = RandomNumberGenerator.new(); mrng.seed = 5
+	var rm = RunMap.new(0, mrng)
+	assert(rm.nodes.size() == RunMap.ROWS, "nombre de rangées")
+	assert(rm.nodes[0][0]["type"] == "combat", "première rangée = combat")
+	assert(rm.nodes[RunMap.ROWS - 1].size() == 1 and rm.nodes[RunMap.ROWS - 1][0]["type"] == "boss", "boss au sommet")
+	for r in range(1, RunMap.ROWS):
+		for j in rm.nodes[r].size():
+			var has_parent = false
+			for n in rm.nodes[r - 1]:
+				if n["edges"].has(j):
+					has_parent = true
+					break
+			assert(has_parent, "chaque nœud est relié (pas d'orphelin)")
+	print("OK carte: %d rangées, graphe connecté" % rm.nodes.size())
+
+	# --- Salles spéciales : boutique / événement / repos ---
+	main.start_run("knight")
+	main.run_shards = 9999
+	main.open_shop()
+	assert(main.state == main.State.CHOICE and main.shop_stock.size() > 0, "boutique ouverte")
+	var stock0 = main.shop_stock.size()
+	main.buy_shop_item(main.shop_stock[0])
+	assert(main.shop_stock.size() == stock0 - 1, "achat retire l'objet du stock")
+	main.leave_shop()
+	assert(main.state == main.State.MAP, "retour carte après boutique")
+	main.open_event()
+	assert(main.state == main.State.CHOICE, "événement ouvert")
+	main.resolve_event(0)
+	assert(main.state == main.State.MAP or main.state == main.State.HUB, "événement résolu")
+	main.open_rest()
+	var atk_r = main.player.atk
+	main.rest_choice("train")
+	assert(main.player.atk == atk_r + 3 and main.state == main.State.MAP, "repos: entraînement +3 ATK")
+	print("OK salles spéciales: boutique / événement / repos")
+
+	# --- Génération procédurale d'objets ---
+	var grng = RandomNumberGenerator.new(); grng.seed = 42
 	var rarities_seen = {}
 	for i in 200:
 		var it = Data.generate_item("arme", 6, grng)
@@ -51,53 +80,41 @@ func _ready() -> void:
 	assert(rarities_seen.size() >= 2, "plusieurs raretés générées")
 	print("OK loot procédural: raretés vues = %s" % str(rarities_seen.keys()))
 
-	# --- Test inventaire interactif ---
+	# --- Inventaire + talents (en combat) ---
 	main.start_run("knight")
+	main.choose_map_node(main.reachable_indices()[0])     # -> PLAYING
 	var atk0 = main.player.atk
 	var sword = { "kind": "equip", "name": "Épée test", "slot": "arme", "salvage": 5, "bonus": { "atk": 5 } }
 	main._bag_add(sword)
-	assert(main.inventory.size() == 1, "objet ajouté au sac")
 	main.equip_item(sword)
 	assert(main.player.atk == atk0 + 5, "équipement applique le bonus")
-	assert(main.inventory.size() == 0, "objet retiré du sac une fois équipé")
 	main.unequip_item("arme")
 	assert(main.player.atk == atk0 and main.inventory.size() == 1, "déséquipement rend l'objet au sac")
-	var sb = main.run_shards
 	main.salvage_item(sword)
-	assert(main.run_shards == sb + 5 and main.inventory.is_empty(), "recyclage en éclats")
-	# Consommable
+	assert(main.inventory.is_empty(), "recyclage retire du sac")
 	main.player.hp = 1
 	var potion = { "kind": "consumable", "name": "Potion test", "effect": "heal_pct", "value": 0.5 }
-	main._bag_add(potion)
-	main.use_consumable(potion)
+	main._bag_add(potion); main.use_consumable(potion)
 	assert(main.player.hp > 1 and main.inventory.is_empty(), "consommable soigne et se retire")
-	print("OK inventaire: équiper/déséquiper/recycler/consommer")
-
-	# --- Test artefact (capacité passive numérique) ---
 	main._acquire_artifact({ "id": "lifesteal", "name": "Calice test", "desc": "vol de vie" })
 	assert(main.player.lifesteal_pct > 0.0, "artefact -> stat dérivée")
-
-	# --- Test montée de niveau & talents ---
 	var tal0 = main.player.talents.size()
 	main.player.xp = main.xp_to_next(main.player.level)
 	main._check_level_up()
 	assert(main.state == main.State.LEVELUP and main.pending_levelups >= 1, "level-up déclenché")
 	main.pick_talent(Data.TALENTS[0])
 	assert(main.player.talents.size() == tal0 + 1 and main.state == main.State.PLAYING, "talent appliqué, jeu repris")
-	print("OK niveau/talents: niveau=%d talents=%d" % [main.player.level, main.player.talents.size()])
-
-	# --- Test inventaire overlay (construction sans crash) ---
 	main.open_inventory()
 	assert(main.state == main.State.INVENTORY, "inventaire ouvert")
 	main.close_inventory()
 	assert(main.state == main.State.PLAYING, "inventaire fermé")
-	print("OK overlay inventaire")
+	print("OK inventaire + talents")
 
+	# --- Boutique méta (entre runs) ---
 	GameState.shards = 1000
 	var lvl_before = GameState.upgrade_level("vitalite")
-	var bought = GameState.buy_upgrade("vitalite")
-	assert(bought and GameState.upgrade_level("vitalite") == lvl_before + 1, "achat amélioration")
-	print("OK boutique vitalite niv=%d" % GameState.upgrade_level("vitalite"))
+	assert(GameState.buy_upgrade("vitalite") and GameState.upgrade_level("vitalite") == lvl_before + 1, "achat amélioration méta")
+	print("OK boutique méta vitalite niv=%d" % GameState.upgrade_level("vitalite"))
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

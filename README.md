@@ -9,7 +9,8 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 ## 🎮 Concept
 
 - **Choisis un héros** au Pied de la Tour, puis grimpe.
-- **Chaque étage est généré procéduralement** (salles + couloirs différents à chaque run).
+- **Carte de strate à embranchements** (façon *Slay the Spire*) : à chaque pas, choisis ta voie parmi des salles — Combat, **Élite** (dur, meilleur butin), **Boutique**, **Événement** (risque/récompense), **Repos**, et le **Gardien** au sommet de chaque strate.
+- **Chaque combat est généré procéduralement** (salles + couloirs différents à chaque fois).
 - **Combat tactique tour-par-tour sur grille** : le positionnement compte.
 - **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque.
 - **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité) qui rendent les runs suivants plus forts.
@@ -98,6 +99,7 @@ scripts/
   Ui.gd                Fabrique de widgets (label/button/styles) anti-boilerplate
   GameState.gd         Autoload : méta-progression persistante + sauvegarde
   Data.gd              Données (héros, ennemis, objets procéduraux, talents…)
+  RunMap.gd            Carte de strate à embranchements (graphe en couches)
   Dungeon.gd           Génération procédurale (salles + couloirs)
   Entity.gd            Entité de grille + stats dérivées (héros / ennemi)
   MapView.gd           Rendu par tuiles : textures + sprites (repli ASCII)
@@ -126,9 +128,10 @@ Doit afficher `=== SMOKETEST PASSED ===`.
 
 - Objets/équipement à ramasser pendant le run (armes, armures, sorts).
 - Plus d'archétypes d'ennemis et de comportements d'IA (à distance, fuite, invocation).
-- Étages thématiques (façon « strates » d'Aincrad) avec biomes visuels / palettes de textures par strate.
-- Animations (déplacement, attaque, dégâts).
-- Sons et musique.
+- Intentions ennemies télégraphiées + variété d'IA (archers, invocateurs) — façon *Into the Breach*.
+- Effets de statut & éléments (poison, brûlure, gel, étourdissement).
+- Synergies/sets d'équipement, biomes visuels par strate.
+- Animations (déplacement, attaque, dégâts), sons et musique.
 
 ---
 

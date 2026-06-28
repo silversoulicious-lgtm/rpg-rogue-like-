@@ -218,6 +218,31 @@ const ARTIFACT_MODS := {
 	"phoenix":   { "max_revives": 1 },
 }
 
+# --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
+# Chaque choix porte un "type" interprété par Main._apply_event_effect.
+const EVENTS := [
+	{ "title": "Fontaine scintillante", "desc": "Une eau claire jaillit d'une source oubliée.",
+	  "choices": [
+		{ "label": "Boire (+40% PV)", "type": "heal", "value": 0.40 },
+		{ "label": "Remplir une fiole (1 consommable)", "type": "item_consumable" } ] },
+	{ "title": "Coffre suspect", "desc": "Un coffre orné… peut-être piégé.",
+	  "choices": [
+		{ "label": "Forcer l'ouverture (pari)", "type": "gamble" },
+		{ "label": "Passer son chemin", "type": "none" } ] },
+	{ "title": "Marchand errant", "desc": "Une silhouette encapuchonnée propose un troc.",
+	  "choices": [
+		{ "label": "Troquer 20 Éclats contre un artefact", "type": "trade_artifact" },
+		{ "label": "Décliner", "type": "none" } ] },
+	{ "title": "Forge ancienne", "desc": "Une enclume rougeoie encore. Tu peux affûter ton corps.",
+	  "choices": [
+		{ "label": "Renforcer ses bras (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Tremper sa peau (+15 PV max ce run)", "type": "stat_hp" } ] },
+	{ "title": "Pèlerin blessé", "desc": "Un voyageur agonisant murmure une bénédiction.",
+	  "choices": [
+		{ "label": "L'aider (−15 Éclats, +1 résurrection)", "type": "buy_revive" },
+		{ "label": "L'ignorer (+12 Éclats)", "type": "shards", "value": 12 } ] },
+]
+
 # --- AMÉLIORATIONS MÉTA (entre les runs) --------------------------------------
 const UPGRADES := {
 	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                "base_cost": 12 },
