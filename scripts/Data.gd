@@ -40,15 +40,15 @@ const HERO_ORDER := ["knight", "mage", "ranger"]
 
 # --- ENNEMIS ------------------------------------------------------------------
 const ENEMIES := [
-	{ "name": "Gobelin",  "glyph": "g", "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },
-	{ "name": "Loup",     "glyph": "w", "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1 },
-	{ "name": "Squelette","glyph": "s", "color": Color(0.9, 0.9, 0.85),"max_hp": 14, "atk": 5, "defense": 2, "speed": 100, "shards": 4, "min_floor": 3 },
-	{ "name": "Orc",      "glyph": "o", "color": Color(0.4, 0.7, 0.4), "max_hp": 20, "atk": 7, "defense": 3, "speed": 90,  "shards": 6, "min_floor": 5 },
-	{ "name": "Spectre",  "glyph": "S", "color": Color(0.7, 0.5, 1.0), "max_hp": 18, "atk": 9, "defense": 1, "speed": 115, "shards": 8, "min_floor": 7 },
+	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },
+	{ "name": "Loup",     "glyph": "w", "sprite": "loup",      "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1 },
+	{ "name": "Squelette","glyph": "s", "sprite": "squelette", "color": Color(0.9, 0.9, 0.85),"max_hp": 14, "atk": 5, "defense": 2, "speed": 100, "shards": 4, "min_floor": 3 },
+	{ "name": "Orc",      "glyph": "o", "sprite": "orc",       "color": Color(0.4, 0.7, 0.4), "max_hp": 20, "atk": 7, "defense": 3, "speed": 90,  "shards": 6, "min_floor": 5 },
+	{ "name": "Spectre",  "glyph": "S", "sprite": "spectre",   "color": Color(0.7, 0.5, 1.0), "max_hp": 18, "atk": 9, "defense": 1, "speed": 115, "shards": 8, "min_floor": 7 },
 ]
 
 const BOSS := {
-	"name": "Gardien de l'Étage", "glyph": "B", "color": Color(1.0, 0.3, 0.3),
+	"name": "Gardien de l'Étage", "glyph": "B", "sprite": "boss", "color": Color(1.0, 0.3, 0.3),
 	"max_hp": 60, "atk": 10, "defense": 4, "speed": 100, "shards": 40, "min_floor": 1,
 }
 

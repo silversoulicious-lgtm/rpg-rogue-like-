@@ -8,6 +8,7 @@ const ACTION_COST := 100        # énergie nécessaire pour agir (système de vi
 
 var display_name: String = "?"
 var glyph: String = "?"
+var sprite: String = ""          # nom de la texture (res://assets/<sprite>.png)
 var color: Color = Color.WHITE
 var x: int = 0
 var y: int = 0

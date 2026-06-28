@@ -261,6 +261,7 @@ func start_run(hero_id: String) -> void:
 	player = Entity.new()
 	player.display_name = h["name"]
 	player.glyph = h["glyph"]
+	player.sprite = hero_id
 	player.color = h["color"]
 	player.faction = Entity.Faction.PLAYER
 	player.base_max_hp = int(h["max_hp"]) + GameState.bonus_hp()
@@ -336,6 +337,7 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i) -> Entity:
 	var scale: float = 1.0 + float(floor - 1) * 0.12
 	e.display_name = def["name"]
 	e.glyph = def["glyph"]
+	e.sprite = def.get("sprite", "")
 	e.color = def["color"]
 	e.faction = Entity.Faction.ENEMY
 	e.max_hp = int(round(def["max_hp"] * scale))
@@ -355,6 +357,7 @@ func _make_boss(floor: int, p: Vector2i) -> Entity:
 	var e := Entity.new()
 	e.display_name = def["name"]
 	e.glyph = def["glyph"]
+	e.sprite = def.get("sprite", "boss")
 	e.color = def["color"]
 	e.faction = Entity.Faction.ENEMY
 	e.is_boss = true
@@ -375,11 +378,11 @@ func _spawn_loot(p: Vector2i) -> void:
 		adef = _pick_artifact_def()
 	if not adef.is_empty():
 		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
-			"color": adef["color"], "data": adef })
+			"sprite": "artifact", "color": adef["color"], "data": adef })
 	else:
 		var edef: Dictionary = _pick_equip_def()
 		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[edef["slot"]],
-			"color": Data.SLOT_COLOR[edef["slot"]], "data": edef })
+			"sprite": edef["slot"], "color": Data.SLOT_COLOR[edef["slot"]], "data": edef })
 
 func _pick_equip_def() -> Dictionary:
 	var pool: Array = []

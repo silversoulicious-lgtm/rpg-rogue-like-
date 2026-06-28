@@ -2,7 +2,7 @@
 
 Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincrad (Sword Art Online)**, étage par étage. À chaque mort, tu améliores tes capacités de façon permanente grâce au butin (Éclats) récolté dans le donjon.
 
-> Prototype jouable développé sous **Godot 4.3**. Rendu ASCII-roguelike (aucun asset requis), 100% remplaçable par des sprites plus tard.
+> Prototype jouable développé sous **Godot 4.3**. Rendu par **sprites & textures pixel-art** générés par code (avec repli ASCII automatique si un asset manque).
 
 ---
 
@@ -84,8 +84,19 @@ scripts/
   Data.gd              Données (héros, ennemis, boss, améliorations)
   Dungeon.gd           Génération procédurale (salles + couloirs)
   Entity.gd            Entité de grille (héros / ennemi)
-  MapView.gd           Rendu ASCII via _draw()
+  MapView.gd           Rendu par tuiles : textures + sprites (repli ASCII)
+assets/                Sprites & textures pixel-art (PNG 24x24, générés)
+_assets_gen.gd         Générateur d'assets (régénère assets/ par code)
 _smoketest.gd          Test de fumée headless (pilote une partie complète)
+```
+
+### Régénérer les assets (sprites & textures)
+
+Tous les visuels sont générés par code dans `_assets_gen.gd`. Pour les
+recréer (après avoir modifié les couleurs/formes) :
+
+```bash
+godot --headless --path . --script res://_assets_gen.gd
 ```
 
 ### Tester sans interface (headless)
@@ -99,8 +110,8 @@ Doit afficher `=== SMOKETEST PASSED ===`.
 
 - Objets/équipement à ramasser pendant le run (armes, armures, sorts).
 - Plus d'archétypes d'ennemis et de comportements d'IA (à distance, fuite, invocation).
-- Étages thématiques (façon « strates » d'Aincrad) avec biomes visuels.
-- Sprites/tuiles en remplacement du rendu ASCII.
+- Étages thématiques (façon « strates » d'Aincrad) avec biomes visuels / palettes de textures par strate.
+- Animations (déplacement, attaque, dégâts).
 - Sons et musique.
 
 ---
