@@ -1,0 +1,11 @@
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="16" fill="#1a1626"/>
+  <!-- tower -->
+  <rect x="48" y="20" width="32" height="88" fill="#3b3a5a"/>
+  <rect x="44" y="44" width="40" height="6" fill="#5a5888"/>
+  <rect x="44" y="64" width="40" height="6" fill="#5a5888"/>
+  <rect x="44" y="84" width="40" height="6" fill="#5a5888"/>
+  <polygon points="44,20 64,4 84,20" fill="#7a6cf0"/>
+  <!-- hero glyph -->
+  <text x="64" y="118" font-family="monospace" font-size="20" fill="#ffd24a" text-anchor="middle">@</text>
+</svg>

@@ -1,0 +1,14 @@
+# Godot 4 — cache d'import et fichiers générés
+.godot/
+*.tmp
+
+# Exports
+/build/
+/export/
+*.exe
+*.pck
+*.zip
+
+# OS
+.DS_Store
+Thumbs.db
