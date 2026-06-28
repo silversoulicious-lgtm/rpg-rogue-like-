@@ -1,4 +1,5 @@
-## Contrôleur principal : flux d'écrans, boucle tour-par-tour, combat, IA, capacités.
+## Contrôleur principal : flux d'écrans, tour-par-tour à énergie, combat, IA,
+## capacités, équipement et artefacts.
 ## "Les Strates" — grimpe une tour façon Aincrad ; la mort améliore tes capacités.
 extends Node2D
 
@@ -15,9 +16,11 @@ var rng := RandomNumberGenerator.new()
 # Run en cours
 var player: Entity = null
 var enemies: Array = []         # Array[Entity]
+var loot: Array = []            # Array[dict] : { pos, kind, glyph, color, data }
 var dungeon: Dungeon = null
 var floor_num: int = 1
 var run_shards: int = 0
+var meta_ability_power: int = 0
 var messages: Array = []
 
 # Noeuds
@@ -25,6 +28,7 @@ var map_view: Node2D
 var hud_layer: CanvasLayer
 var hud_label: Label
 var ability_label: Label
+var gear_label: Label
 var log_label: RichTextLabel
 var menu_layer: CanvasLayer
 var menu_content: VBoxContainer
@@ -47,14 +51,20 @@ func _build_nodes() -> void:
 	add_child(hud_layer)
 
 	hud_label = Label.new()
-	hud_label.position = Vector2(16, 10)
-	hud_label.add_theme_font_size_override("font_size", 18)
+	hud_label.position = Vector2(16, 8)
+	hud_label.add_theme_font_size_override("font_size", 17)
 	hud_layer.add_child(hud_label)
 
 	ability_label = Label.new()
-	ability_label.position = Vector2(16, 38)
-	ability_label.add_theme_font_size_override("font_size", 16)
+	ability_label.position = Vector2(16, 32)
+	ability_label.add_theme_font_size_override("font_size", 15)
 	hud_layer.add_child(ability_label)
+
+	gear_label = Label.new()
+	gear_label.position = Vector2(16, 54)
+	gear_label.add_theme_font_size_override("font_size", 14)
+	gear_label.add_theme_color_override("font_color", Color(0.75, 0.85, 0.95))
+	hud_layer.add_child(gear_label)
 
 	var log_panel := PanelContainer.new()
 	log_panel.position = Vector2(16, VIEW.y - 150)
@@ -83,8 +93,8 @@ func _build_nodes() -> void:
 	menu_layer.add_child(center)
 
 	menu_content = VBoxContainer.new()
-	menu_content.add_theme_constant_override("separation", 10)
-	menu_content.custom_minimum_size = Vector2(720, 0)
+	menu_content.add_theme_constant_override("separation", 9)
+	menu_content.custom_minimum_size = Vector2(760, 0)
 	center.add_child(menu_content)
 
 # --- Écran HUB : Pied de la Tour (titre / boutique méta / choix du héros) -----
@@ -106,7 +116,6 @@ func show_hub(death_summary: String) -> void:
 	_add_label("Éclats en banque : %d        Record : Étage %d" % [GameState.shards, GameState.best_floor],
 		18, Color(1.0, 0.85, 0.35))
 
-	# --- Boutique d'améliorations méta ---
 	_add_label("— Améliorations permanentes (dépense tes Éclats) —", 16, Color(0.6, 0.85, 1.0))
 	for key in Data.UPGRADE_ORDER:
 		var lvl: int = GameState.upgrade_level(key)
@@ -123,15 +132,15 @@ func show_hub(death_summary: String) -> void:
 	for hero_id in Data.HERO_ORDER:
 		var h: Dictionary = Data.HEROES[hero_id]
 		var btn := Button.new()
-		btn.text = "%s  —  PV %d | ATK %d | Capacité : %s" % [
-			h["name"], h["max_hp"] + GameState.bonus_hp(),
-			h["atk"] + GameState.bonus_atk(), h["ability_name"]]
+		btn.text = "%s — PV %d | ATK %d | MAG %d | DEF %d | VIT %d | %s" % [
+			h["name"], h["max_hp"] + GameState.bonus_hp(), h["atk"] + GameState.bonus_atk(),
+			h["magic"], h["defense"], h["speed"], h["ability_name"]]
 		btn.tooltip_text = h["lore"] + "\n" + h["ability_desc"]
 		btn.pressed.connect(_on_choose_hero.bind(hero_id))
 		menu_content.add_child(btn)
 
 	_add_sep()
-	_add_label("Déplacement : WASD / flèches / HJKL    •    Capacité : ESPACE    •    Attendre : .",
+	_add_label("Déplacer : WASD / flèches / HJKL   •   Capacité : ESPACE   •   Attendre : .   •   Ramasse le butin en marchant dessus",
 		13, Color(0.6, 0.6, 0.7))
 
 func _on_buy_upgrade(key: String) -> void:
@@ -151,18 +160,27 @@ func start_run(hero_id: String) -> void:
 	player.glyph = h["glyph"]
 	player.color = h["color"]
 	player.faction = Entity.Faction.PLAYER
-	player.max_hp = h["max_hp"] + GameState.bonus_hp()
-	player.hp = player.max_hp
-	player.atk = h["atk"] + GameState.bonus_atk()
+	player.base_max_hp = int(h["max_hp"]) + GameState.bonus_hp()
+	player.base_atk = int(h["atk"]) + GameState.bonus_atk()
+	player.base_magic = int(h["magic"])
+	player.base_defense = int(h["defense"])
+	player.base_speed = int(h["speed"])
+	player.base_hp_regen = int(h["hp_regen"])
 	player.ability_id = h["ability_id"]
-	player.ability_range = h["ability_range"]
-	player.ability_cd_max = h["ability_cd"]
+	player.ability_range = int(h["ability_range"])
+	player.ability_cd_max = int(h["ability_cd"])
 	player.ability_cd = 0
-	player.ability_power = GameState.bonus_ability_power()
+	player.equipment = {}
+	player.artifacts = []
+	player.revive_used = false
+	player.recompute_stats()
+	player.hp = player.max_hp
 
+	meta_ability_power = GameState.bonus_ability_power()
 	floor_num = 1
 	run_shards = 0
 	messages.clear()
+	loot.clear()
 	add_message("[color=#9b8cff]Tu entres dans la Tour. Atteins l'escalier '>' pour monter.[/color]")
 	menu_layer.visible = false
 	hud_layer.visible = true
@@ -173,22 +191,30 @@ func generate_floor() -> void:
 	dungeon = Dungeon.new(MAP_W, MAP_H, rng)
 	player.x = dungeon.start.x
 	player.y = dungeon.start.y
+	player.energy = Entity.ACTION_COST   # le joueur agit en premier
 
 	enemies.clear()
+	loot.clear()
 	var occupied: Array = [dungeon.start, dungeon.stairs]
 	var is_boss_floor: bool = (floor_num % BOSS_EVERY == 0)
 
-	var count: int = 3 + floor_num
-	count = min(count, 12)
-	var spots: Array = dungeon.random_floor_tiles(count, rng, occupied)
-	for p in spots:
+	var count: int = min(3 + floor_num, 12)
+	for p in dungeon.random_floor_tiles(count, rng, occupied):
 		enemies.append(_make_enemy(_pick_enemy_def(), floor_num, p))
+		occupied.append(p)
 
 	if is_boss_floor:
-		var boss_spots: Array = dungeon.random_floor_tiles(1, rng, occupied + _enemy_positions())
+		var boss_spots: Array = dungeon.random_floor_tiles(1, rng, occupied)
 		if not boss_spots.is_empty():
 			enemies.append(_make_boss(floor_num, boss_spots[0]))
+			occupied.append(boss_spots[0])
 		add_message("[color=#ff6464]⚠ Étage %d : un GARDIEN veille ici ![/color]" % floor_num)
+
+	# Butin au sol : équipement + artefact occasionnel
+	var loot_count: int = rng.randi_range(1, 3)
+	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
+		occupied.append(p)
+		_spawn_loot(p)
 
 	_center_map()
 	refresh()
@@ -212,9 +238,12 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i) -> Entity:
 	e.max_hp = int(round(def["max_hp"] * scale))
 	e.hp = e.max_hp
 	e.atk = int(round(def["atk"] * scale))
+	e.defense = int(def.get("defense", 0))
+	e.speed = int(def.get("speed", 100))
 	e.shard_value = def["shards"]
 	e.x = p.x
 	e.y = p.y
+	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
 	return e
 
 func _make_boss(floor: int, p: Vector2i) -> Entity:
@@ -229,10 +258,43 @@ func _make_boss(floor: int, p: Vector2i) -> Entity:
 	e.max_hp = int(round(def["max_hp"] * scale))
 	e.hp = e.max_hp
 	e.atk = int(round(def["atk"] * scale))
+	e.defense = int(def.get("defense", 0))
+	e.speed = int(def.get("speed", 100))
 	e.shard_value = def["shards"]
 	e.x = p.x
 	e.y = p.y
+	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
 	return e
+
+func _spawn_loot(p: Vector2i) -> void:
+	var adef: Dictionary = {}
+	if rng.randf() < 0.25:
+		adef = _pick_artifact_def()
+	if not adef.is_empty():
+		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
+			"color": adef["color"], "data": adef })
+	else:
+		var edef: Dictionary = _pick_equip_def()
+		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[edef["slot"]],
+			"color": Data.SLOT_COLOR[edef["slot"]], "data": edef })
+
+func _pick_equip_def() -> Dictionary:
+	var pool: Array = []
+	for def in Data.EQUIPMENT:
+		if def["min_floor"] <= floor_num:
+			pool.append(def)
+	if pool.is_empty():
+		pool = [Data.EQUIPMENT[0]]
+	return pool[rng.randi_range(0, pool.size() - 1)]
+
+func _pick_artifact_def() -> Dictionary:
+	var pool: Array = []
+	for def in Data.ARTIFACTS:
+		if def["min_floor"] <= floor_num and not player.has_artifact(def["id"]):
+			pool.append(def)
+	if pool.is_empty():
+		return {}
+	return pool[rng.randi_range(0, pool.size() - 1)]
 
 func _enemy_positions() -> Array:
 	var arr: Array = []
@@ -244,7 +306,7 @@ func _center_map() -> void:
 	var gsize: Vector2 = map_view.grid_pixel_size()
 	map_view.position = Vector2(
 		round((VIEW.x - gsize.x) * 0.5),
-		round((VIEW.y - gsize.y) * 0.5) + 20
+		round((VIEW.y - gsize.y) * 0.5) + 28
 	)
 
 # --- Entrées clavier ----------------------------------------------------------
@@ -253,8 +315,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	var k: int = event.keycode
-	match k:
+	match event.keycode:
 		KEY_W, KEY_UP, KEY_K:
 			try_move(0, -1)
 		KEY_S, KEY_DOWN, KEY_J:
@@ -264,67 +325,71 @@ func _unhandled_input(event: InputEvent) -> void:
 		KEY_D, KEY_RIGHT, KEY_L:
 			try_move(1, 0)
 		KEY_PERIOD, KEY_KP_5:
-			end_turn()                       # attendre
+			pass_turn()
 		KEY_SPACE, KEY_E:
 			use_ability()
 
 # --- Actions du joueur --------------------------------------------------------
 func try_move(dx: int, dy: int) -> void:
+	if state != State.PLAYING:
+		return
 	var nx: int = player.x + dx
 	var ny: int = player.y + dy
 	var target: Entity = enemy_at(nx, ny)
 	if target != null:
-		attack(player, target)
-		end_turn()
+		_player_attack(target, player.atk, "Tu frappes")
+		_player_acted()
 	elif dungeon.is_walkable(nx, ny):
 		player.x = nx
 		player.y = ny
 		if player.pos() == dungeon.stairs:
 			next_floor()
-		else:
-			end_turn()
+			return
+		_pickup_loot_at(player.pos())
+		_player_acted()
 	# sinon : mur → aucun tour consommé
 
+func pass_turn() -> void:
+	if state != State.PLAYING:
+		return
+	_player_acted()
+
 func use_ability() -> void:
+	if state != State.PLAYING:
+		return
 	if not player.ability_ready():
 		add_message("[color=#888888]Capacité en recharge (%d tour(s)).[/color]" % player.ability_cd)
 		refresh()
 		return
-	var hit_any := false
+	var hit := false
 	match player.ability_id:
 		"whirl":
-			hit_any = _ability_whirl()
+			hit = _do_whirl()
 		"bolt":
-			hit_any = _ability_ranged(int(player.atk * 2) + player.ability_power, "[color=#7ab8ff]Éclair[/color]")
+			hit = _do_ranged(player.magic * 2 + player.atk + meta_ability_power, "[color=#7ab8ff]Éclair[/color] foudroie")
 		"volley":
-			hit_any = _ability_ranged(player.atk + int(ceil(player.atk * 0.5)) + player.ability_power, "[color=#7aff8a]Flèche[/color]")
-	if not hit_any:
+			hit = _do_ranged(int(player.atk * 1.5) + player.magic + meta_ability_power, "[color=#7aff8a]Flèche[/color] transperce")
+	if not hit:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
 		return
 	player.ability_cd = player.ability_cd_max
-	end_turn()
+	_player_acted()
 
-func _ability_whirl() -> bool:
-	var dmg: int = player.atk + player.ability_power
+func _do_whirl() -> bool:
+	var base: int = player.atk + player.magic + meta_ability_power
 	var hit := false
 	for e in enemies.duplicate():
 		if e.is_alive() and _chebyshev(player.pos(), e.pos()) == 1:
 			hit = true
-			var dealt: int = e.take_damage(dmg)
-			add_message("[color=#ffd24a]Tourbillon[/color] touche %s (-%d)." % [e.display_name, dealt])
-			if not e.is_alive():
-				on_enemy_killed(e)
+			_player_attack(e, base, "[color=#ffd24a]Tourbillon[/color] frappe")
 	return hit
 
-func _ability_ranged(dmg: int, label: String) -> bool:
+func _do_ranged(base: int, verb: String) -> bool:
 	var target: Entity = _nearest_enemy_in_range(player.ability_range)
 	if target == null:
 		return false
-	var dealt: int = target.take_damage(dmg)
-	add_message("%s frappe %s (-%d)." % [label, target.display_name, dealt])
-	if not target.is_alive():
-		on_enemy_killed(target)
+	_player_attack(target, base, verb)
 	return true
 
 func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
@@ -339,17 +404,49 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 			best = e
 	return best
 
-# --- Combat & fin de tour -----------------------------------------------------
-func attack(attacker: Entity, defender: Entity) -> void:
-	var dealt: int = defender.take_damage(attacker.atk)
-	if attacker.faction == Entity.Faction.PLAYER:
-		add_message("Tu frappes %s (-%d)." % [defender.display_name, dealt])
-		if not defender.is_alive():
-			on_enemy_killed(defender)
-	else:
-		add_message("[color=#ff8a8a]%s te frappe (-%d).[/color]" % [attacker.display_name, dealt])
+# --- Combat -------------------------------------------------------------------
+## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie.
+func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
+	var raw: int = base_raw
+	var crit: bool = player.has_artifact("crit") and rng.randf() < 0.25
+	if crit:
+		raw *= 2
+	var dmg: int = max(1, raw - target.defense)
+	var dealt: int = target.take_damage(dmg)
+	var suffix: String = "  [color=#ffec5a]CRITIQUE![/color]" if crit else ""
+	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, suffix])
+	if player.has_artifact("lifesteal") and dealt > 0:
+		var healed: int = int(ceil(dealt * 0.3))
+		player.heal(healed)
+		add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
+	if not target.is_alive():
+		on_enemy_killed(target)
+
+## Attaque d'un ENNEMI vers le joueur : gère esquive, défense, épines, Phénix.
+func _enemy_attack_player(attacker: Entity) -> void:
+	if player.has_artifact("dodge") and rng.randf() < 0.2:
+		add_message("[color=#b3a8e0]Tu esquives %s ![/color]" % attacker.display_name)
+		return
+	var dmg: int = max(1, attacker.atk - player.defense)
+	player.take_damage(dmg)
+	add_message("[color=#ff8a8a]%s te frappe (-%d).[/color]" % [attacker.display_name, dmg])
+	if player.has_artifact("thorns"):
+		var refl: int = max(1, int(ceil(player.defense * 0.5)) + 2)
+		var d2: int = attacker.take_damage(refl)
+		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
+		if not attacker.is_alive():
+			on_enemy_killed(attacker)
+	_check_revive()
+
+func _check_revive() -> void:
+	if player.hp <= 0 and player.has_artifact("phoenix") and not player.revive_used:
+		player.revive_used = true
+		player.hp = max(1, int(player.max_hp * 0.5))
+		add_message("[color=#ffd24a]✦ La Plume de Phénix te ramène à la vie ![/color]")
 
 func on_enemy_killed(e: Entity) -> void:
+	if not enemies.has(e):
+		return
 	run_shards += e.shard_value
 	enemies.erase(e)
 	if e.is_boss:
@@ -357,25 +454,99 @@ func on_enemy_killed(e: Entity) -> void:
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
 
-func end_turn() -> void:
-	# Tour des ennemis
-	for e in enemies.duplicate():
-		if not e.is_alive():
-			continue
-		_enemy_act(e)
-		if not player.is_alive():
-			break
+# --- Butin & équipement -------------------------------------------------------
+func _pickup_loot_at(p: Vector2i) -> void:
+	for item in loot.duplicate():
+		if item["pos"] == p:
+			loot.erase(item)
+			if item["kind"] == "equip":
+				_acquire_equipment(item["data"])
+			else:
+				_acquire_artifact(item["data"])
+
+func _acquire_equipment(def: Dictionary) -> void:
+	var slot: String = def["slot"]
+	var new_power: int = _equip_power(def)
+	if player.equipment.has(slot):
+		var cur: Dictionary = player.equipment[slot]
+		if _equip_power(cur) >= new_power:
+			run_shards += int(def.get("salvage", 1))
+			add_message("Tu gardes %s ; %s recyclé (+%d Éclats)." % [cur["name"], def["name"], int(def.get("salvage", 1))])
+			return
+		run_shards += int(cur.get("salvage", 1))
+		add_message("Tu remplaces %s (+%d Éclats)." % [cur["name"], int(cur.get("salvage", 1))])
+	player.equipment[slot] = def
+	player.recompute_stats()
+	add_message("[color=#9fe0ff]Équipé : %s [%s] — %s[/color]" % [
+		def["name"], Data.SLOT_NAMES[slot], Data.bonus_summary(def["bonus"])])
+
+func _equip_power(def: Dictionary) -> int:
+	var s: int = 0
+	for k in def["bonus"]:
+		s += int(def["bonus"][k])
+	return s
+
+func _acquire_artifact(def: Dictionary) -> void:
+	if player.has_artifact(def["id"]):
+		run_shards += 5
+		add_message("Artefact %s déjà actif (+5 Éclats)." % def["name"])
+		return
+	player.artifacts.append(def)
+	player.recompute_stats()
+	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
+
+# --- Boucle de tour à énergie -------------------------------------------------
+func _player_acted() -> void:
+	player.energy -= Entity.ACTION_COST
+	_apply_regen(player)
 	player.tick_cooldown()
+	if not player.is_alive():
+		_check_revive()
 	if not player.is_alive():
 		game_over()
 		return
+	advance_world()
+	if state != State.PLAYING:
+		return
 	refresh()
+
+## Laisse agir les autres acteurs (selon leur vitesse) jusqu'au prochain tour du joueur.
+func advance_world() -> void:
+	var safety := 0
+	while true:
+		safety += 1
+		if safety > 10000:
+			return
+		if player.energy >= Entity.ACTION_COST:
+			return
+		var ready: Array = []
+		for e in enemies:
+			if e.is_alive() and e.energy >= Entity.ACTION_COST:
+				ready.append(e)
+		if ready.is_empty():
+			player.energy += player.speed
+			for e in enemies:
+				if e.is_alive():
+					e.energy += e.speed
+			continue
+		for e in ready:
+			if not e.is_alive():
+				continue
+			e.energy -= Entity.ACTION_COST
+			_apply_regen(e)
+			_enemy_act(e)
+			if not player.is_alive():
+				game_over()
+				return
+
+func _apply_regen(e: Entity) -> void:
+	if e.hp_regen > 0 and e.is_alive():
+		e.heal(e.hp_regen)
 
 func _enemy_act(e: Entity) -> void:
 	if _manhattan(e.pos(), player.pos()) == 1:
-		attack(e, player)
+		_enemy_attack_player(e)
 		return
-	# Pas vers le joueur (glouton), évite murs et entités.
 	var dx: int = signi(player.x - e.x)
 	var dy: int = signi(player.y - e.y)
 	var tries: Array = []
@@ -408,22 +579,37 @@ func game_over() -> void:
 	var summary := "💀 Tu es tombé à l'Étage %d. Butin du run : %d Éclats (ajoutés à la banque)." % [floor_num, run_shards]
 	show_hub(summary)
 
-# --- Aide rendu / utilitaires -------------------------------------------------
+# --- Rendu / HUD --------------------------------------------------------------
 func refresh() -> void:
-	map_view.refresh(dungeon, [player] + enemies)
+	map_view.refresh(dungeon, [player] + enemies, loot)
 	_update_hud()
 	_update_log()
 
 func _update_hud() -> void:
-	hud_label.text = "Étage %d   •   %s   PV %d/%d   ATK %d   •   Éclats (run) : %d   •   Banque : %d" % [
-		floor_num, player.display_name, player.hp, player.max_hp, player.atk, run_shards, GameState.shards]
+	hud_label.text = "Étage %d   •   %s   PV %d/%d   •   ATK %d  MAG %d  DEF %d  VIT %d  REGEN %d   •   Éclats %d   •   Banque %d" % [
+		floor_num, player.display_name, player.hp, player.max_hp,
+		player.atk, player.magic, player.defense, player.speed, player.hp_regen,
+		run_shards, GameState.shards]
+
 	var h: Dictionary = Data.HEROES[GameState.last_hero]
 	if player.ability_ready():
 		ability_label.text = "Capacité [ESPACE] : %s — PRÊTE" % h["ability_name"]
 		ability_label.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 	else:
 		ability_label.text = "Capacité [ESPACE] : %s — recharge %d" % [h["ability_name"], player.ability_cd]
-		ability_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.5))
+		ability_label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.5))
+
+	var parts: Array = []
+	for slot in Data.SLOTS:
+		if player.equipment.has(slot):
+			parts.append("%s: %s" % [Data.SLOT_NAMES[slot], player.equipment[slot]["name"]])
+		else:
+			parts.append("%s: —" % Data.SLOT_NAMES[slot])
+	var arts: Array = []
+	for a in player.artifacts:
+		arts.append(a["name"])
+	var art_str: String = "Artefacts: " + (", ".join(arts) if not arts.is_empty() else "—")
+	gear_label.text = "   |   ".join(parts) + "        " + art_str
 
 func _update_log() -> void:
 	log_label.text = "\n".join(messages)
@@ -433,6 +619,7 @@ func add_message(msg: String) -> void:
 	while messages.size() > MAX_LOG:
 		messages.pop_front()
 
+# --- Utilitaires --------------------------------------------------------------
 func enemy_at(x: int, y: int) -> Entity:
 	for e in enemies:
 		if e.is_alive() and e.x == x and e.y == y:
@@ -445,7 +632,6 @@ func _manhattan(a: Vector2i, b: Vector2i) -> int:
 func _chebyshev(a: Vector2i, b: Vector2i) -> int:
 	return max(abs(a.x - b.x), abs(a.y - b.y))
 
-# --- Petits aides UI ----------------------------------------------------------
 func _add_label(txt: String, fsize: int, col: Color) -> void:
 	var l := Label.new()
 	l.text = txt
@@ -456,5 +642,4 @@ func _add_label(txt: String, fsize: int, col: Color) -> void:
 	menu_content.add_child(l)
 
 func _add_sep() -> void:
-	var s := HSeparator.new()
-	menu_content.add_child(s)
+	menu_content.add_child(HSeparator.new())

@@ -19,7 +19,7 @@ func _ready() -> void:
 			elif r == 4:
 				main.use_ability()
 			else:
-				main.end_turn()
+				main.pass_turn()
 		if main.state == main.State.PLAYING:
 			main.next_floor()
 			assert(main.floor_num >= 2, "montée d'étage")
@@ -39,6 +39,29 @@ func _ready() -> void:
 			assert(main.state != main.State.PLAYING, "run terminé après la mort")
 			assert(GameState.shards == before + 7, "éclats banqués à la mort")
 		print("OK hero=%s floor=%d banque=%d" % [hero, main.floor_num, GameState.shards])
+
+	# --- Test équipement + artefacts ---
+	main.start_run("knight")
+	var atk0 = main.player.atk
+	var def0 = main.player.defense
+	# Équipe une arme +ATK puis une armure +DEF
+	var sword = { "name": "Épée test", "slot": "arme", "salvage": 3, "bonus": { "atk": 5 } }
+	main._acquire_equipment(sword)
+	assert(main.player.atk == atk0 + 5, "bonus arme appliqué")
+	var armor = { "name": "Plastron test", "slot": "armure", "salvage": 3, "bonus": { "defense": 4, "max_hp": 10 } }
+	var hp_before = main.player.max_hp
+	main._acquire_equipment(armor)
+	assert(main.player.defense == def0 + 4, "bonus armure DEF appliqué")
+	assert(main.player.max_hp == hp_before + 10, "bonus armure PV appliqué")
+	# Remplacement par une meilleure arme -> recyclage en éclats
+	var shards_before = main.run_shards
+	main._acquire_equipment({ "name": "Lame test", "slot": "arme", "salvage": 7, "bonus": { "atk": 9 } })
+	assert(main.player.atk == atk0 + 9, "remplacement par meilleure arme")
+	assert(main.run_shards == shards_before + 3, "ancienne arme recyclée en éclats")
+	# Artefact : capacité passive active
+	main._acquire_artifact({ "id": "lifesteal", "name": "Calice test", "desc": "vol de vie" })
+	assert(main.player.has_artifact("lifesteal"), "artefact actif")
+	print("OK équipement+artefacts: ATK=%d DEF=%d artefacts=%d" % [main.player.atk, main.player.defense, main.player.artifacts.size()])
 
 	GameState.shards = 1000
 	var lvl_before = GameState.upgrade_level("vitalite")

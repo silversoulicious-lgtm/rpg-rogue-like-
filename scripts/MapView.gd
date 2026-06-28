@@ -10,15 +10,17 @@ const COLOR_STAIRS := Color(1.0, 0.85, 0.3)
 
 var dungeon: Dungeon = null
 var entities: Array = []          # Array[Entity]
+var loot: Array = []              # Array[dict] : { pos, glyph, color }
 var _font: Font
 var _font_size := 22
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 
-func refresh(d: Dungeon, ents: Array) -> void:
+func refresh(d: Dungeon, ents: Array, loot_items: Array) -> void:
 	dungeon = d
 	entities = ents
+	loot = loot_items
 	queue_redraw()
 
 func grid_pixel_size() -> Vector2:
@@ -40,6 +42,10 @@ func _draw() -> void:
 				draw_rect(Rect2(rpos, Vector2(CELL, CELL)), COLOR_WALL, true)
 	# Escalier
 	_draw_glyph(dungeon.stairs.x, dungeon.stairs.y, ">", COLOR_STAIRS)
+	# Butin au sol (équipement / artefacts)
+	for item in loot:
+		var p: Vector2i = item["pos"]
+		_draw_glyph(p.x, p.y, item["glyph"], item["color"])
 	# Entités (par-dessus)
 	for e in entities:
 		if e.is_alive():

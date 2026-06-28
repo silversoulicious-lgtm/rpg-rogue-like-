@@ -13,6 +13,9 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Combat tactique tour-par-tour sur grille** : le positionnement compte.
 - **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque.
 - **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité) qui rendent les runs suivants plus forts.
+- **Équipement** (Arme / Armure / Relique) ramassé dans le donjon, qui améliore tes stats principales : Attaque, Magie, Défense, Vitesse, Régén PV/tour.
+- **Artefacts** ramassés dans le donjon, qui ajoutent des **capacités spéciales passives** (vol de vie, épines, critique, esquive, résurrection).
+- **Système de vitesse** : la stat Vitesse régit l'économie de tours (être rapide = agir plus souvent).
 - **Boss** : un *Gardien de l'Étage* apparaît tous les 5 étages.
 
 ## 🕹️ Contrôles
@@ -32,6 +35,28 @@ Se déplacer **dans** un ennemi l'attaque. Marcher sur l'escalier `>` monte d'un
 | **Chevalier** | Robuste, corps-à-corps | *Tourbillon d'acier* — frappe tous les ennemis adjacents |
 | **Mage** | Fragile, distance | *Éclair foudroyant* — foudroie l'ennemi le plus proche |
 | **Rôdeur** | Polyvalent | *Tir précis* — flèche puissante à distance |
+
+## 🛡️ Équipement & Artefacts
+
+Le butin apparaît au sol et se ramasse en marchant dessus.
+
+**Équipement** (3 slots, améliore les stats principales) :
+| Slot | Glyphe | Améliore surtout |
+|---|---|---|
+| Arme `/` | orange | Attaque, Magie, Vitesse |
+| Armure `]` | bleu | Défense, PV max |
+| Relique `=` | vert | Vitesse, Régén PV, mixte |
+
+L'équipement s'équipe automatiquement s'il est meilleur que l'actuel ; l'ancien est recyclé en Éclats.
+
+**Artefacts** `✦` (capacités spéciales passives, cumulables) :
+| Artefact | Effet |
+|---|---|
+| Calice de Sang | Vol de vie : soigne 30% des dégâts infligés |
+| Carapace d'Épines | Renvoie des dégâts aux attaquants |
+| Croc Sauvage | 25% de coups critiques (x2) |
+| Voile d'Ombre | 20% d'esquive |
+| Plume de Phénix | Ressuscite une fois à 50% PV |
 
 ## ▶️ Lancer le jeu
 
