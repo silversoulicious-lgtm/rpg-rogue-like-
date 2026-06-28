@@ -22,8 +22,10 @@ var visible: Array = []         # visible[y][x] -> dans le champ de vision actue
 var biome: Dictionary = {}      # biome courant (Data.BIOMES[i])
 var start: Vector2i = Vector2i.ZERO
 var stairs: Vector2i = Vector2i.ZERO
+var reachable_tiles: Array = []  # cases praticables atteignables (calculé une fois)
 
 var _rng: RandomNumberGenerator
+var _vis_cells: Array = []       # cases actuellement visibles (pour effacer vite)
 
 func _init(w: int, h: int, rng: RandomNumberGenerator, biome_def: Dictionary = {}) -> void:
 	width = w
@@ -63,8 +65,11 @@ func _generate(rng: RandomNumberGenerator) -> void:
 	_carve_path(start, stairs, biome.get("road", false))
 
 	# Garantit la connexité : si l'escalier reste inatteignable, on force un couloir
-	if not _reachable(start, stairs):
+	var reach: Dictionary = _reachable_set(start)
+	if not reach.has(stairs):
 		_carve_path(start, stairs, false, true)
+		reach = _reachable_set(start)
+	reachable_tiles = reach.keys()   # mis en cache : peuplement O(count), pas O(aire)
 
 	_scatter_decor(rng)
 
@@ -171,10 +176,11 @@ func is_walkable(x: int, y: int) -> bool:
 	return t == FLOOR or t == ROAD
 
 ## Met à jour le brouillard de guerre : tout dans le rayon devient visible+exploré.
+## N'efface que les cases précédemment visibles (rapide même sur immense carte).
 func reveal(center: Vector2i, radius: int) -> void:
-	for y in height:
-		for x in width:
-			visible[y][x] = false
+	for c in _vis_cells:
+		visible[c.y][c.x] = false
+	_vis_cells.clear()
 	var r2: int = radius * radius
 	for y in range(max(0, center.y - radius), min(height, center.y + radius + 1)):
 		for x in range(max(0, center.x - radius), min(width, center.x + radius + 1)):
@@ -183,6 +189,7 @@ func reveal(center: Vector2i, radius: int) -> void:
 			if dx * dx + dy * dy <= r2:
 				visible[y][x] = true
 				explored[y][x] = true
+				_vis_cells.append(Vector2i(x, y))
 
 func is_visible(x: int, y: int) -> bool:
 	return _in_bounds(x, y) and visible[y][x]
@@ -191,17 +198,23 @@ func is_explored(x: int, y: int) -> bool:
 	return _in_bounds(x, y) and explored[y][x]
 
 ## Positions praticables aléatoires ATTEIGNABLES depuis `start`, hors `exclude`.
+## Échantillonnage par indices aléatoires (O(count)) sur le cache reachable_tiles.
 func random_floor_tiles(count: int, rng: RandomNumberGenerator, exclude: Array) -> Array:
-	var reach: Dictionary = _reachable_set(start)
-	var candidates: Array = []
-	for key in reach:
-		var p: Vector2i = key
-		if not exclude.has(p):
-			candidates.append(p)
-	candidates.shuffle()
 	var result: Array = []
-	for i in min(count, candidates.size()):
-		result.append(candidates[i])
+	if reachable_tiles.is_empty():
+		return result
+	var used: Dictionary = {}
+	for p in exclude:
+		used[p] = true
+	var tries: int = 0
+	var budget: int = count * 40 + 50
+	while result.size() < count and tries < budget:
+		tries += 1
+		var p: Vector2i = reachable_tiles[rng.randi_range(0, reachable_tiles.size() - 1)]
+		if used.has(p):
+			continue
+		used[p] = true
+		result.append(p)
 	return result
 
 func _reachable_set(a: Vector2i) -> Dictionary:

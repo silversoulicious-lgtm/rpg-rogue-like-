@@ -5,8 +5,6 @@ extends Node2D
 
 enum State { HUB, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, DEAD }
 
-const MAP_W := 64
-const MAP_H := 40
 const MAX_LOG := 8
 const INV_CAP := 16
 
@@ -198,7 +196,8 @@ func _boss_alive() -> bool:
 # --- Génération d'un combat (combat / élite / boss) ---------------------------
 func generate_floor(node_type: String = "combat") -> void:
 	first_strike_used = false
-	dungeon = Dungeon.new(MAP_W, MAP_H, rng, Data.biome_for_floor(floor_num))
+	var msize: Vector2i = Data.random_map_size(rng)
+	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_floor(floor_num))
 	player.x = dungeon.start.x
 	player.y = dungeon.start.y
 	player.energy = Entity.ACTION_COST   # le joueur agit en premier
@@ -210,9 +209,11 @@ func generate_floor(node_type: String = "combat") -> void:
 	var is_elite: bool = node_type == "elite"
 	var is_boss: bool = node_type == "boss"
 
-	var count: int = min(3 + floor_num, 12)
+	# Le peuplement s'adapte à la taille de la carte (exploration jamais vide).
+	var area: int = dungeon.width * dungeon.height
+	var count: int = clampi(3 + floor_num + int(area / 2200), 5, 30)
 	if is_elite:
-		count = min(count + 2, 14)
+		count = mini(count + 3, 34)
 	for p in dungeon.random_floor_tiles(count, rng, occupied):
 		var e: Entity = _make_enemy(_pick_enemy_def(), floor_num, p)
 		if is_elite:
@@ -231,7 +232,7 @@ func generate_floor(node_type: String = "combat") -> void:
 	elif is_elite:
 		add_message("[color=#ff9a64]☠ Salle d'élite : ennemis renforcés, meilleur butin.[/color]")
 
-	var loot_count: int = rng.randi_range(1, 3) + (1 if is_elite else 0)
+	var loot_count: int = mini(rng.randi_range(1, 3) + int(area / 9000) + (1 if is_elite else 0), 14)
 	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
 		occupied.append(p)
 		_spawn_loot(p, is_elite)

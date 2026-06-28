@@ -216,6 +216,24 @@ func _ready() -> void:
 	var b2 = Data.biome_for_floor(1 + Data.BIOME_SPAN)
 	assert(b1["id"] != b2["id"], "le biome change selon l'étage")
 	assert(Data.BIOMES.size() >= 5, "plusieurs biomes définis")
+
+	# tailles de carte procédurales (bornes + ratio ~1.6 + variabilité)
+	var srng = RandomNumberGenerator.new(); srng.seed = 99
+	var small_h := 9999
+	var big_h := 0
+	for i in 500:
+		var ms = Data.random_map_size(srng)
+		assert(ms.x >= 64 and ms.x <= 640 and ms.y >= 40 and ms.y <= 400, "taille de carte dans les bornes")
+		assert(absf(float(ms.x) / float(ms.y) - Data.MAP_RATIO) < 0.06, "ratio largeur/hauteur ~1.6")
+		small_h = mini(small_h, ms.y)
+		big_h = maxi(big_h, ms.y)
+	assert(small_h <= 90 and big_h >= 320, "la taille varie (petites ET grandes cartes)")
+	# génère et peuple la plus GRANDE carte (640x400 = 256k cases)
+	var bigmap = Dungeon.new(640, 400, srng, Data.biome_for_floor(50))
+	assert(bigmap._reachable(bigmap.start, bigmap.stairs), "grande carte connexe")
+	assert(bigmap.random_floor_tiles(30, srng, [bigmap.start]).size() == 30, "grande carte peuplée")
+	print("OK tailles: hauteur %d..%d, ratio 1.6, grande carte 640x400 connexe & peuplée" % [small_h, big_h])
+
 	var drng = RandomNumberGenerator.new(); drng.seed = 11
 	var dg = Dungeon.new(64, 40, drng, Data.biome_for_floor(1))
 	assert(dg.width == 64 and dg.height == 40, "carte large générée")

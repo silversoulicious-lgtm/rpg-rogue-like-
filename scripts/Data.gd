@@ -50,6 +50,29 @@ const BASE_VISION := 4
 # (générés par _assets_gen.gd, mappés par MapView.gd).
 const BIOME_SPAN := 12
 
+# --- TAILLE DE CARTE (procédurale, ré-échantillonnée à chaque étage) -----------
+# Ratio largeur:hauteur = 1.6 (64x40, 320x200, 640x400 le respectent tous).
+# Distribution triangulaire sur la hauteur : la carte la plus FRÉQUENTE est
+# 320x200, tandis que la minuscule (64x40) et l'immense (640x400) sont rares.
+const MAP_MIN_H := 40
+const MAP_MAX_H := 400
+const MAP_MODE_H := 200
+const MAP_RATIO := 1.6
+
+static func random_map_size(rng: RandomNumberGenerator) -> Vector2i:
+	var h: int = int(round(_triangular(rng, float(MAP_MIN_H), float(MAP_MAX_H), float(MAP_MODE_H))))
+	h = clampi(h, MAP_MIN_H, MAP_MAX_H)
+	var w: int = clampi(int(round(h * MAP_RATIO)), 64, 640)
+	return Vector2i(w, h)
+
+# Distribution triangulaire (inverse de la CDF) : pic en `mode`, extrêmes rares.
+static func _triangular(rng: RandomNumberGenerator, lo: float, hi: float, mode: float) -> float:
+	var u: float = rng.randf()
+	var c: float = (mode - lo) / (hi - lo)
+	if u < c:
+		return lo + sqrt(u * (hi - lo) * (mode - lo))
+	return hi - sqrt((1.0 - u) * (hi - lo) * (hi - mode))
+
 const BIOMES := [
 	{ "id": "plaine", "name": "Plaines verdoyantes",
 	  "tree_density": 0.05, "rock_density": 0.03, "water_density": 0.04, "decor_density": 0.10, "road": true,
