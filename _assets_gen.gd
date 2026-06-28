@@ -33,6 +33,7 @@ func _init() -> void:
 	_save(_gen_armor(), "armure")
 	_save(_gen_relic(), "relique")
 	_save(_gen_artifact(), "artifact")
+	_save(_gen_potion(), "potion")
 
 	print("=== ASSETS GENERATED ===")
 	quit()
@@ -312,4 +313,20 @@ func _gen_artifact() -> Image:
 		_rect(img, 12 + i, 12 - h, 1, h * 2, core)   # droite
 		_rect(img, 12 - i, 12 - h, 1, h * 2, core)   # gauche
 	_ellipse(img, 12, 12, 2.0, 2.0, bright)     # cœur
+	return img
+
+func _gen_potion() -> Image:
+	var img := _new(false)
+	var glass := Color(0.5, 0.85, 0.95)
+	var liquid := Color(0.95, 0.3, 0.4)
+	var cork := Color(0.55, 0.4, 0.25)
+	# fiole : col étroit + corps arrondi
+	_rect(img, 10, 4, 4, 4, glass.darkened(0.1))   # col
+	_rect(img, 10, 3, 4, 2, cork)                   # bouchon
+	_ellipse(img, 12, 15, 6.0, 6.5, glass.darkened(0.3))
+	_ellipse(img, 12, 15, 5.0, 5.5, glass)
+	# liquide (bas)
+	_ellipse(img, 12, 17, 4.2, 3.8, liquid)
+	# reflet
+	_rect(img, 9, 12, 1, 5, Color(1, 1, 1, 0.7))
 	return img

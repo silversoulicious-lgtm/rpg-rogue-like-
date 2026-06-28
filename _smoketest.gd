@@ -40,28 +40,58 @@ func _ready() -> void:
 			assert(GameState.shards == before + 7, "éclats banqués à la mort")
 		print("OK hero=%s floor=%d banque=%d" % [hero, main.floor_num, GameState.shards])
 
-	# --- Test équipement + artefacts ---
+	# --- Test génération procédurale d'objets ---
+	var grng = RandomNumberGenerator.new()
+	grng.seed = 42
+	var rarities_seen = {}
+	for i in 200:
+		var it = Data.generate_item("arme", 6, grng)
+		assert(it["slot"] == "arme" and it.has("bonus") and it.has("rarity"), "objet généré valide")
+		rarities_seen[it["rarity"]] = true
+	assert(rarities_seen.size() >= 2, "plusieurs raretés générées")
+	print("OK loot procédural: raretés vues = %s" % str(rarities_seen.keys()))
+
+	# --- Test inventaire interactif ---
 	main.start_run("knight")
 	var atk0 = main.player.atk
-	var def0 = main.player.defense
-	# Équipe une arme +ATK puis une armure +DEF
-	var sword = { "name": "Épée test", "slot": "arme", "salvage": 3, "bonus": { "atk": 5 } }
-	main._acquire_equipment(sword)
-	assert(main.player.atk == atk0 + 5, "bonus arme appliqué")
-	var armor = { "name": "Plastron test", "slot": "armure", "salvage": 3, "bonus": { "defense": 4, "max_hp": 10 } }
-	var hp_before = main.player.max_hp
-	main._acquire_equipment(armor)
-	assert(main.player.defense == def0 + 4, "bonus armure DEF appliqué")
-	assert(main.player.max_hp == hp_before + 10, "bonus armure PV appliqué")
-	# Remplacement par une meilleure arme -> recyclage en éclats
-	var shards_before = main.run_shards
-	main._acquire_equipment({ "name": "Lame test", "slot": "arme", "salvage": 7, "bonus": { "atk": 9 } })
-	assert(main.player.atk == atk0 + 9, "remplacement par meilleure arme")
-	assert(main.run_shards == shards_before + 3, "ancienne arme recyclée en éclats")
-	# Artefact : capacité passive active
+	var sword = { "kind": "equip", "name": "Épée test", "slot": "arme", "salvage": 5, "bonus": { "atk": 5 } }
+	main._bag_add(sword)
+	assert(main.inventory.size() == 1, "objet ajouté au sac")
+	main.equip_item(sword)
+	assert(main.player.atk == atk0 + 5, "équipement applique le bonus")
+	assert(main.inventory.size() == 0, "objet retiré du sac une fois équipé")
+	main.unequip_item("arme")
+	assert(main.player.atk == atk0 and main.inventory.size() == 1, "déséquipement rend l'objet au sac")
+	var sb = main.run_shards
+	main.salvage_item(sword)
+	assert(main.run_shards == sb + 5 and main.inventory.is_empty(), "recyclage en éclats")
+	# Consommable
+	main.player.hp = 1
+	var potion = { "kind": "consumable", "name": "Potion test", "effect": "heal_pct", "value": 0.5 }
+	main._bag_add(potion)
+	main.use_consumable(potion)
+	assert(main.player.hp > 1 and main.inventory.is_empty(), "consommable soigne et se retire")
+	print("OK inventaire: équiper/déséquiper/recycler/consommer")
+
+	# --- Test artefact (capacité passive numérique) ---
 	main._acquire_artifact({ "id": "lifesteal", "name": "Calice test", "desc": "vol de vie" })
-	assert(main.player.has_artifact("lifesteal"), "artefact actif")
-	print("OK équipement+artefacts: ATK=%d DEF=%d artefacts=%d" % [main.player.atk, main.player.defense, main.player.artifacts.size()])
+	assert(main.player.lifesteal_pct > 0.0, "artefact -> stat dérivée")
+
+	# --- Test montée de niveau & talents ---
+	var tal0 = main.player.talents.size()
+	main.player.xp = main.xp_to_next(main.player.level)
+	main._check_level_up()
+	assert(main.state == main.State.LEVELUP and main.pending_levelups >= 1, "level-up déclenché")
+	main._on_pick_talent(Data.TALENTS[0])
+	assert(main.player.talents.size() == tal0 + 1 and main.state == main.State.PLAYING, "talent appliqué, jeu repris")
+	print("OK niveau/talents: niveau=%d talents=%d" % [main.player.level, main.player.talents.size()])
+
+	# --- Test inventaire overlay (construction sans crash) ---
+	main.open_inventory()
+	assert(main.state == main.State.INVENTORY, "inventaire ouvert")
+	main.close_inventory()
+	assert(main.state == main.State.PLAYING, "inventaire fermé")
+	print("OK overlay inventaire")
 
 	GameState.shards = 1000
 	var lvl_before = GameState.upgrade_level("vitalite")

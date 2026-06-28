@@ -13,8 +13,10 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 - **Combat tactique tour-par-tour sur grille** : le positionnement compte.
 - **Permadeath** : à la mort, le run s'arrête… mais tes Éclats vont en banque.
 - **Méta-progression** : dépense tes Éclats pour des améliorations permanentes (PV, Attaque, puissance de capacité) qui rendent les runs suivants plus forts.
-- **Équipement** (Arme / Armure / Relique) ramassé dans le donjon, qui améliore tes stats principales : Attaque, Magie, Défense, Vitesse, Régén PV/tour.
-- **Artefacts** ramassés dans le donjon, qui ajoutent des **capacités spéciales passives** (vol de vie, épines, critique, esquive, résurrection).
+- **Loot procédural** : équipement généré aléatoirement avec **rareté** (Commun / Rare / Épique / Légendaire) et **affixes** (ex. *Hache du Vampire* : ATK+9, VIT−9, Vol de vie +6%). Les raretés montent avec l'étage.
+- **Inventaire interactif** (`I`) : un vrai sac — ramasse plusieurs objets, compare, équipe/déséquipe, recycle en Éclats, et utilise des **consommables** (potions, cristaux).
+- **Montée de niveau & talents** : gagne de l'XP en tuant ; à chaque niveau, choisis 1 **talent** parmi 3 (build émergent à la *Hades*).
+- **Artefacts** ramassés dans le donjon : **capacités spéciales passives** (vol de vie, épines, critique, esquive, résurrection).
 - **Système de vitesse** : la stat Vitesse régit l'économie de tours (être rapide = agir plus souvent).
 - **Boss** : un *Gardien de l'Étage* apparaît tous les 5 étages.
 
@@ -34,6 +36,7 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 | Se déplacer / attaquer | `WASD`, flèches, ou `HJKL` |
 | Utiliser la capacité | `ESPACE` (ou `E`) |
 | Attendre un tour | `.` |
+| Ouvrir / fermer l'inventaire | `I` (ou `Échap` pour fermer) |
 
 Se déplacer **dans** un ennemi l'attaque. Marcher sur l'escalier `>` monte d'un étage.
 
@@ -57,6 +60,17 @@ Le butin apparaît au sol et se ramasse en marchant dessus.
 | Relique `=` | vert | Vitesse, Régén PV, mixte |
 
 L'équipement s'équipe automatiquement s'il est meilleur que l'actuel ; l'ancien est recyclé en Éclats.
+
+**Rareté & affixes** : chaque objet a une rareté qui détermine le nombre d'affixes aléatoires en plus de sa stat de base :
+
+| Rareté | Affixes | Couleur |
+|---|---|---|
+| Commun | 0 | gris |
+| Rare | 1 | bleu |
+| Épique | 2 | violet |
+| Légendaire | 3 | or |
+
+Les affixes peuvent ajouter : ATK, MAG, DEF, VIT, PV, Régén, mais aussi Critique, Esquive, Vol de vie ou Épines. Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des consommables.
 
 **Artefacts** `✦` (capacités spéciales passives, cumulables) :
 | Artefact | Effet |

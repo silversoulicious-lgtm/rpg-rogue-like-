@@ -64,25 +64,133 @@ const SLOT_COLOR := {
 	"relique": Color(0.5, 1.0, 0.8),
 }
 
-const EQUIPMENT := [
-	# Armes (atk / magic / speed)
-	{ "name": "Épée courte",      "slot": "arme", "min_floor": 1, "salvage": 4,  "bonus": { "atk": 2 } },
-	{ "name": "Dague véloce",     "slot": "arme", "min_floor": 2, "salvage": 5,  "bonus": { "atk": 1, "speed": 15 } },
-	{ "name": "Bâton runique",    "slot": "arme", "min_floor": 2, "salvage": 6,  "bonus": { "magic": 3 } },
-	{ "name": "Hache de guerre",  "slot": "arme", "min_floor": 4, "salvage": 9,  "bonus": { "atk": 5, "speed": -10 } },
-	{ "name": "Lame spectrale",   "slot": "arme", "min_floor": 6, "salvage": 14, "bonus": { "atk": 4, "magic": 3 } },
-	# Armures (defense / max_hp)
-	{ "name": "Tunique de cuir",  "slot": "armure", "min_floor": 1, "salvage": 4,  "bonus": { "defense": 2 } },
-	{ "name": "Cotte de mailles", "slot": "armure", "min_floor": 3, "salvage": 8,  "bonus": { "defense": 4, "max_hp": 6, "speed": -5 } },
-	{ "name": "Robe enchantée",   "slot": "armure", "min_floor": 3, "salvage": 8,  "bonus": { "defense": 1, "magic": 2, "max_hp": 4 } },
-	{ "name": "Armure de plates", "slot": "armure", "min_floor": 6, "salvage": 14, "bonus": { "defense": 7, "speed": -15 } },
-	{ "name": "Carapace draconique","slot": "armure","min_floor": 8, "salvage": 18, "bonus": { "defense": 5, "max_hp": 12 } },
-	# Reliques (speed / hp_regen / mixte)
-	{ "name": "Anneau de vitalité","slot": "relique", "min_floor": 1, "salvage": 5,  "bonus": { "max_hp": 8, "hp_regen": 1 } },
-	{ "name": "Bottes ailées",    "slot": "relique", "min_floor": 2, "salvage": 6,  "bonus": { "speed": 25 } },
-	{ "name": "Amulette de régén","slot": "relique", "min_floor": 4, "salvage": 9,  "bonus": { "hp_regen": 3 } },
-	{ "name": "Talisman du mage", "slot": "relique", "min_floor": 4, "salvage": 10, "bonus": { "magic": 4 } },
-	{ "name": "Couronne du grimpeur","slot": "relique","min_floor": 8, "salvage": 20, "bonus": { "atk": 2, "magic": 2, "defense": 2, "speed": 10, "hp_regen": 1 } },
+# --- GÉNÉRATION PROCÉDURALE D'OBJETS ------------------------------------------
+# Bases d'objets : donnent une stat "primaire" garantie, puis des affixes s'ajoutent.
+const ITEM_BASES := [
+	{ "name": "Dague",    "slot": "arme",    "primary": { "atk": 1, "speed": 8 } },
+	{ "name": "Épée",     "slot": "arme",    "primary": { "atk": 3 } },
+	{ "name": "Hache",    "slot": "arme",    "primary": { "atk": 5, "speed": -5 } },
+	{ "name": "Bâton",    "slot": "arme",    "primary": { "magic": 4 } },
+	{ "name": "Tunique",  "slot": "armure",  "primary": { "defense": 2 } },
+	{ "name": "Cotte",    "slot": "armure",  "primary": { "defense": 4, "max_hp": 4 } },
+	{ "name": "Plastron", "slot": "armure",  "primary": { "defense": 6, "speed": -5 } },
+	{ "name": "Robe",     "slot": "armure",  "primary": { "defense": 1, "magic": 3, "max_hp": 3 } },
+	{ "name": "Anneau",   "slot": "relique", "primary": { "max_hp": 6, "hp_regen": 1 } },
+	{ "name": "Amulette", "slot": "relique", "primary": { "magic": 3 } },
+	{ "name": "Bottes",   "slot": "relique", "primary": { "speed": 18 } },
+	{ "name": "Talisman", "slot": "relique", "primary": { "hp_regen": 2, "max_hp": 4 } },
+]
+
+# Raretés : nb d'affixes, multiplicateur de valeur, valeur de recyclage, poids de base.
+const RARITIES := [
+	{ "id": "commun",     "name": "Commun",     "color": Color(0.78, 0.78, 0.82), "affixes": 0, "mult": 1.0, "salvage": 3,  "weight": 58.0, "wfloor": -3.0 },
+	{ "id": "rare",       "name": "Rare",       "color": Color(0.45, 0.7, 1.0),   "affixes": 1, "mult": 1.15,"salvage": 7,  "weight": 28.0, "wfloor": 1.0 },
+	{ "id": "epique",     "name": "Épique",     "color": Color(0.75, 0.45, 1.0),  "affixes": 2, "mult": 1.35,"salvage": 14, "weight": 11.0, "wfloor": 1.6 },
+	{ "id": "legendaire", "name": "Légendaire", "color": Color(1.0, 0.78, 0.3),   "affixes": 3, "mult": 1.6, "salvage": 26, "weight": 3.0,  "wfloor": 0.7 },
+]
+
+# Affixes : clé de stat -> {nom, min, max, float?}. Les entiers montent avec l'étage.
+const AFFIXES := [
+	{ "key": "atk",          "name": "de Force",       "min": 1,    "max": 3 },
+	{ "key": "magic",        "name": "de l'Arcane",    "min": 1,    "max": 3 },
+	{ "key": "defense",      "name": "du Gardien",     "min": 1,    "max": 3 },
+	{ "key": "speed",        "name": "de Hâte",        "min": 6,    "max": 14 },
+	{ "key": "max_hp",       "name": "de Vitalité",    "min": 4,    "max": 10 },
+	{ "key": "hp_regen",     "name": "de Régén.",      "min": 1,    "max": 2 },
+	{ "key": "crit_chance",  "name": "de Précision",   "min": 0.05, "max": 0.12, "is_float": true },
+	{ "key": "dodge_chance", "name": "d'Esquive",      "min": 0.05, "max": 0.10, "is_float": true },
+	{ "key": "lifesteal_pct","name": "du Vampire",     "min": 0.05, "max": 0.12, "is_float": true },
+	{ "key": "thorns_flat",  "name": "des Épines",     "min": 2,    "max": 5 },
+]
+
+## Génère un objet d'équipement aléatoire pour un slot donné et un étage.
+static func generate_item(slot: String, floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var bases: Array = []
+	for b in ITEM_BASES:
+		if b["slot"] == slot:
+			bases.append(b)
+	var base: Dictionary = bases[rng.randi_range(0, bases.size() - 1)]
+	var rarity: Dictionary = _pick_rarity(floor, rng)
+	var fscale: float = 1.0 + float(floor - 1) * 0.08
+	var bonus: Dictionary = {}
+	for k in base["primary"]:
+		var v: float = float(base["primary"][k]) * fscale * rarity["mult"]
+		bonus[k] = int(round(v)) + int(bonus.get(k, 0))
+	var affix_names: Array = []
+	for i in range(int(rarity["affixes"])):
+		var af: Dictionary = AFFIXES[rng.randi_range(0, AFFIXES.size() - 1)]
+		var key: String = af["key"]
+		if af.get("is_float", false):
+			var fv: float = rng.randf_range(af["min"], af["max"])
+			bonus[key] = float(bonus.get(key, 0.0)) + snappedf(fv, 0.01)
+			affix_names.append(af["name"])
+		else:
+			var iv: int = int(round(rng.randi_range(af["min"], af["max"]) * fscale))
+			bonus[key] = int(bonus.get(key, 0)) + iv
+			affix_names.append(af["name"])
+	var name: String = base["name"]
+	if not affix_names.is_empty():
+		name += " " + affix_names[0]
+	return {
+		"kind": "equip", "name": name, "slot": slot,
+		"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
+		"bonus": bonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
+	}
+
+static func _pick_rarity(floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var weights: Array = []
+	var total: float = 0.0
+	for r in RARITIES:
+		var w: float = maxf(2.0, float(r["weight"]) + float(r["wfloor"]) * float(floor))
+		weights.append(w)
+		total += w
+	var roll: float = rng.randf() * total
+	for i in RARITIES.size():
+		roll -= weights[i]
+		if roll <= 0.0:
+			return RARITIES[i]
+	return RARITIES[0]
+
+# --- CONSOMMABLES (drops, scope = run) ----------------------------------------
+const CONSUMABLES := [
+	{ "id": "potion",  "name": "Potion de soin",   "effect": "heal_pct",  "value": 0.40, "weight": 5.0, "color": Color(0.95, 0.3, 0.4) },
+	{ "id": "potion_g","name": "Grande potion",    "effect": "heal_pct",  "value": 0.75, "weight": 3.0, "color": Color(0.95, 0.3, 0.4) },
+	{ "id": "elixir",  "name": "Élixir de vie",    "effect": "heal_full", "value": 1.0,  "weight": 1.0, "color": Color(0.9, 0.5, 0.9) },
+	{ "id": "crystal", "name": "Cristal d'Éclats", "effect": "shards",    "value": 12.0, "weight": 2.0, "color": Color(1.0, 0.85, 0.35) },
+]
+
+static func generate_consumable(floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var total: float = 0.0
+	for c in CONSUMABLES:
+		total += float(c["weight"])
+	var roll: float = rng.randf() * total
+	for c in CONSUMABLES:
+		roll -= float(c["weight"])
+		if roll <= 0.0:
+			var item: Dictionary = c.duplicate(true)
+			item["kind"] = "consumable"
+			item["sprite"] = "potion"
+			if c["effect"] == "shards":
+				item["value"] = float(c["value"]) + floor
+			return item
+	return CONSUMABLES[0].duplicate(true)
+
+# --- TALENTS (choix de montée de niveau pendant un run) -----------------------
+const TALENTS := [
+	{ "id": "vigueur",   "name": "Vigueur",       "desc": "+12 PV max",                 "mods": { "max_hp": 12 } },
+	{ "id": "puissance", "name": "Puissance",     "desc": "+2 Attaque",                 "mods": { "atk": 2 } },
+	{ "id": "arcane",    "name": "Arcane",        "desc": "+3 Magie",                   "mods": { "magic": 3 } },
+	{ "id": "carapace",  "name": "Carapace",      "desc": "+2 Défense",                 "mods": { "defense": 2 } },
+	{ "id": "celerite",  "name": "Célérité",      "desc": "+15 Vitesse",                "mods": { "speed": 15 } },
+	{ "id": "regen",     "name": "Régénération",  "desc": "+2 Régén PV/tour",           "mods": { "hp_regen": 2 } },
+	{ "id": "precision", "name": "Précision",     "desc": "+10% Coup critique",         "mods": { "crit_chance": 0.10 } },
+	{ "id": "agilite",   "name": "Agilité",       "desc": "+10% Esquive",               "mods": { "dodge_chance": 0.10 } },
+	{ "id": "sangsue",   "name": "Sangsue",       "desc": "+12% Vol de vie",            "mods": { "lifesteal_pct": 0.12 } },
+	{ "id": "represaille","name": "Représailles", "desc": "+4 Épines",                  "mods": { "thorns_flat": 4 } },
+	{ "id": "affutage",  "name": "Affûtage",      "desc": "+3 puissance de capacité",   "mods": { "ability_power": 3 } },
+	{ "id": "focus",     "name": "Concentration", "desc": "-1 recharge de capacité",    "mods": { "ability_cd": -1 } },
+	{ "id": "phenix",    "name": "Second souffle","desc": "+1 résurrection (50% PV)",   "mods": { "max_revives": 1 } },
+	{ "id": "brutalite", "name": "Brutalité",     "desc": "+1 ATK et +6% critique",     "mods": { "atk": 1, "crit_chance": 0.06 } },
 ]
 
 # --- ARTEFACTS (drops, scope = run) -------------------------------------------
@@ -101,6 +209,15 @@ const ARTIFACTS := [
 	  "desc": "Une fois par run : ressuscite à 50% PV au lieu de mourir." },
 ]
 
+# Effets des artefacts, exprimés comme modificateurs (lus par Entity.recompute_stats).
+const ARTIFACT_MODS := {
+	"lifesteal": { "lifesteal_pct": 0.30 },
+	"thorns":    { "thorns_flat": 4 },
+	"crit":      { "crit_chance": 0.25 },
+	"dodge":     { "dodge_chance": 0.20 },
+	"phoenix":   { "max_revives": 1 },
+}
+
 # --- AMÉLIORATIONS MÉTA (entre les runs) --------------------------------------
 const UPGRADES := {
 	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                "base_cost": 12 },
@@ -112,12 +229,15 @@ const UPGRADE_ORDER := ["vitalite", "force", "maitrise"]
 static func upgrade_cost(key: String, level: int) -> int:
 	return UPGRADES[key]["base_cost"] + level * UPGRADES[key]["base_cost"]
 
-# Résumé court d'un bonus d'équipement, pour l'affichage.
+# Résumé court d'un bonus d'objet, pour l'affichage.
 static func bonus_summary(bonus: Dictionary) -> String:
 	var parts: Array = []
-	var labels := { "atk": "ATK", "magic": "MAG", "defense": "DEF", "speed": "VIT", "max_hp": "PV", "hp_regen": "REGEN" }
 	for k in ["atk", "magic", "defense", "speed", "max_hp", "hp_regen"]:
-		if bonus.has(k):
-			var v: int = int(bonus[k])
-			parts.append("%s%+d" % [labels[k], v])
+		if bonus.has(k) and int(bonus[k]) != 0:
+			parts.append("%s%+d" % [{ "atk": "ATK", "magic": "MAG", "defense": "DEF", "speed": "VIT", "max_hp": "PV", "hp_regen": "REGEN" }[k], int(bonus[k])])
+	for k in ["crit_chance", "dodge_chance", "lifesteal_pct"]:
+		if bonus.has(k) and float(bonus[k]) != 0.0:
+			parts.append("%s+%d%%" % [{ "crit_chance": "CRIT", "dodge_chance": "ESQ", "lifesteal_pct": "VAMP" }[k], int(round(float(bonus[k]) * 100.0))])
+	if bonus.has("thorns_flat") and int(bonus["thorns_flat"]) != 0:
+		parts.append("ÉPINES+%d" % int(bonus["thorns_flat"]))
 	return ", ".join(parts)

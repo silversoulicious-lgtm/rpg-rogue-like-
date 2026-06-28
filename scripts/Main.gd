@@ -3,7 +3,7 @@
 ## "Les Strates" — grimpe une tour façon Aincrad ; la mort améliore tes capacités.
 extends Node2D
 
-enum State { HUB, PLAYING, DEAD }
+enum State { HUB, PLAYING, LEVELUP, INVENTORY, DEAD }
 
 const MAP_W := 32
 const MAP_H := 19
@@ -20,8 +20,10 @@ var loot: Array = []            # Array[dict] : { pos, kind, glyph, color, data 
 var dungeon: Dungeon = null
 var floor_num: int = 1
 var run_shards: int = 0
-var meta_ability_power: int = 0
 var messages: Array = []
+var inventory: Array = []        # sac : Array[item dict] (équipement + consommables)
+var pending_levelups: int = 0
+const INV_CAP := 16
 
 # Noeuds
 var map_view: Node2D
@@ -29,8 +31,12 @@ var hud_layer: CanvasLayer
 var log_label: RichTextLabel
 var menu_layer: CanvasLayer
 var menu_content: VBoxContainer
+var overlay_layer: CanvasLayer
+var overlay_content: VBoxContainer
 
 # Sidebar (HUD permanent)
+var sb_level: Label
+var xp_bar: ProgressBar
 var sb_floor: Label
 var sb_hero: Label
 var hp_bar: ProgressBar
@@ -78,6 +84,31 @@ func _build_nodes() -> void:
 	menu_content.add_theme_constant_override("separation", 9)
 	menu_content.custom_minimum_size = Vector2(760, 0)
 	center.add_child(menu_content)
+
+	# Overlay en cours de run (talents / inventaire)
+	overlay_layer = CanvasLayer.new()
+	overlay_layer.layer = 3
+	overlay_layer.visible = false
+	add_child(overlay_layer)
+	var odim := ColorRect.new()
+	odim.color = Color(0.04, 0.03, 0.07, 0.93)
+	odim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay_layer.add_child(odim)
+	var oscroll := ScrollContainer.new()
+	oscroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	oscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	overlay_layer.add_child(oscroll)
+	var ocenter := MarginContainer.new()
+	ocenter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ocenter.add_theme_constant_override("margin_left", 80)
+	ocenter.add_theme_constant_override("margin_right", 80)
+	ocenter.add_theme_constant_override("margin_top", 40)
+	ocenter.add_theme_constant_override("margin_bottom", 40)
+	oscroll.add_child(ocenter)
+	overlay_content = VBoxContainer.new()
+	overlay_content.add_theme_constant_override("separation", 8)
+	overlay_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ocenter.add_child(overlay_content)
 
 # --- Sidebar (HUD permanent : stats + équipement + artefacts) -----------------
 func _panel_style(bg: Color) -> StyleBoxFlat:
@@ -136,6 +167,23 @@ func _build_sidebar() -> void:
 	hp_bar.add_theme_stylebox_override("background", bg)
 	v.add_child(hp_bar)
 
+	sb_level = Label.new()
+	sb_level.add_theme_font_size_override("font_size", 14)
+	sb_level.add_theme_color_override("font_color", Color(0.7, 0.95, 0.7))
+	v.add_child(sb_level)
+	xp_bar = ProgressBar.new()
+	xp_bar.show_percentage = false
+	xp_bar.custom_minimum_size = Vector2(0, 8)
+	var xfill := StyleBoxFlat.new()
+	xfill.bg_color = Color(0.55, 0.85, 0.4)
+	xfill.set_corner_radius_all(3)
+	var xbg := StyleBoxFlat.new()
+	xbg.bg_color = Color(0.12, 0.15, 0.1)
+	xbg.set_corner_radius_all(3)
+	xp_bar.add_theme_stylebox_override("fill", xfill)
+	xp_bar.add_theme_stylebox_override("background", xbg)
+	v.add_child(xp_bar)
+
 	v.add_child(_section_header("STATISTIQUES"))
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -145,6 +193,7 @@ func _build_sidebar() -> void:
 	v.add_child(grid)
 	for pair in [["atk", "Attaque"], ["magic", "Magie"], ["defense", "Défense"],
 			["speed", "Vitesse"], ["hp_regen", "Régén PV/tour"],
+			["crit", "Critique"], ["dodge", "Esquive"], ["lifesteal", "Vol de vie"],
 			["run_shards", "Éclats (run)"], ["bank", "Banque"]]:
 		_make_stat_row(grid, pair[0], pair[1])
 
@@ -164,6 +213,12 @@ func _build_sidebar() -> void:
 	artifact_box = VBoxContainer.new()
 	artifact_box.add_theme_constant_override("separation", 6)
 	v.add_child(artifact_box)
+
+	var hint := Label.new()
+	hint.text = "[I] Inventaire"
+	hint.add_theme_font_size_override("font_size", 13)
+	hint.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
+	v.add_child(hint)
 
 func _section_header(txt: String) -> Control:
 	var l := Label.new()
@@ -270,21 +325,26 @@ func start_run(hero_id: String) -> void:
 	player.base_defense = int(h["defense"])
 	player.base_speed = int(h["speed"])
 	player.base_hp_regen = int(h["hp_regen"])
+	player.base_ability_power = GameState.bonus_ability_power()
+	player.base_ability_cd = int(h["ability_cd"])
 	player.ability_id = h["ability_id"]
 	player.ability_range = int(h["ability_range"])
-	player.ability_cd_max = int(h["ability_cd"])
 	player.ability_cd = 0
 	player.equipment = {}
 	player.artifacts = []
-	player.revive_used = false
+	player.talents = []
+	player.level = 1
+	player.xp = 0
+	player.revives_used = 0
 	player.recompute_stats()
 	player.hp = player.max_hp
 
-	meta_ability_power = GameState.bonus_ability_power()
 	floor_num = 1
 	run_shards = 0
+	pending_levelups = 0
 	messages.clear()
 	loot.clear()
+	inventory.clear()
 	add_message("[color=#9b8cff]Tu entres dans la Tour. Atteins l'escalier '>' pour monter.[/color]")
 	menu_layer.visible = false
 	hud_layer.visible = true
@@ -373,25 +433,22 @@ func _make_boss(floor: int, p: Vector2i) -> Entity:
 	return e
 
 func _spawn_loot(p: Vector2i) -> void:
+	var roll: float = rng.randf()
 	var adef: Dictionary = {}
-	if rng.randf() < 0.25:
+	if roll < 0.18:
 		adef = _pick_artifact_def()
 	if not adef.is_empty():
 		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
 			"sprite": "artifact", "color": adef["color"], "data": adef })
+	elif roll < 0.42:
+		var c: Dictionary = Data.generate_consumable(floor_num, rng)
+		loot.append({ "pos": p, "kind": "consumable", "glyph": "!",
+			"sprite": "potion", "color": c["color"], "data": c })
 	else:
-		var edef: Dictionary = _pick_equip_def()
-		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[edef["slot"]],
-			"sprite": edef["slot"], "color": Data.SLOT_COLOR[edef["slot"]], "data": edef })
-
-func _pick_equip_def() -> Dictionary:
-	var pool: Array = []
-	for def in Data.EQUIPMENT:
-		if def["min_floor"] <= floor_num:
-			pool.append(def)
-	if pool.is_empty():
-		pool = [Data.EQUIPMENT[0]]
-	return pool[rng.randi_range(0, pool.size() - 1)]
+		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
+		var item: Dictionary = Data.generate_item(slot, floor_num, rng)
+		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[slot],
+			"sprite": slot, "color": item["rarity_color"], "data": item })
 
 func _pick_artifact_def() -> Dictionary:
 	var pool: Array = []
@@ -419,11 +476,16 @@ func _center_map() -> void:
 
 # --- Entrées clavier ----------------------------------------------------------
 func _unhandled_input(event: InputEvent) -> void:
-	if state != State.PLAYING:
-		return
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	match event.keycode:
+	var k: int = event.keycode
+	if state == State.INVENTORY:
+		if k == KEY_I or k == KEY_ESCAPE:
+			close_inventory()
+		return
+	if state != State.PLAYING:
+		return
+	match k:
 		KEY_W, KEY_UP, KEY_K:
 			try_move(0, -1)
 		KEY_S, KEY_DOWN, KEY_J:
@@ -436,6 +498,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			pass_turn()
 		KEY_SPACE, KEY_E:
 			use_ability()
+		KEY_I:
+			open_inventory()
 
 # --- Actions du joueur --------------------------------------------------------
 func try_move(dx: int, dy: int) -> void:
@@ -474,9 +538,9 @@ func use_ability() -> void:
 		"whirl":
 			hit = _do_whirl()
 		"bolt":
-			hit = _do_ranged(player.magic * 2 + player.atk + meta_ability_power, "[color=#7ab8ff]Éclair[/color] foudroie")
+			hit = _do_ranged(player.magic * 2 + player.atk + player.ability_power, "[color=#7ab8ff]Éclair[/color] foudroie")
 		"volley":
-			hit = _do_ranged(int(player.atk * 1.5) + player.magic + meta_ability_power, "[color=#7aff8a]Flèche[/color] transperce")
+			hit = _do_ranged(int(player.atk * 1.5) + player.magic + player.ability_power, "[color=#7aff8a]Flèche[/color] transperce")
 	if not hit:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
@@ -485,7 +549,7 @@ func use_ability() -> void:
 	_player_acted()
 
 func _do_whirl() -> bool:
-	var base: int = player.atk + player.magic + meta_ability_power
+	var base: int = player.atk + player.magic + player.ability_power
 	var hit := false
 	for e in enemies.duplicate():
 		if e.is_alive() and _chebyshev(player.pos(), e.pos()) == 1:
@@ -516,46 +580,47 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 ## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie.
 func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
 	var raw: int = base_raw
-	var crit: bool = player.has_artifact("crit") and rng.randf() < 0.25
+	var crit: bool = rng.randf() < player.crit_chance
 	if crit:
 		raw *= 2
 	var dmg: int = max(1, raw - target.defense)
 	var dealt: int = target.take_damage(dmg)
 	var suffix: String = "  [color=#ffec5a]CRITIQUE![/color]" if crit else ""
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, suffix])
-	if player.has_artifact("lifesteal") and dealt > 0:
-		var healed: int = int(ceil(dealt * 0.3))
-		player.heal(healed)
-		add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
+	if player.lifesteal_pct > 0.0 and dealt > 0:
+		var healed: int = int(ceil(dealt * player.lifesteal_pct))
+		if healed > 0:
+			player.heal(healed)
+			add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
 	if not target.is_alive():
 		on_enemy_killed(target)
 
 ## Attaque d'un ENNEMI vers le joueur : gère esquive, défense, épines, Phénix.
 func _enemy_attack_player(attacker: Entity) -> void:
-	if player.has_artifact("dodge") and rng.randf() < 0.2:
+	if rng.randf() < player.dodge_chance:
 		add_message("[color=#b3a8e0]Tu esquives %s ![/color]" % attacker.display_name)
 		return
 	var dmg: int = max(1, attacker.atk - player.defense)
 	player.take_damage(dmg)
 	add_message("[color=#ff8a8a]%s te frappe (-%d).[/color]" % [attacker.display_name, dmg])
-	if player.has_artifact("thorns"):
-		var refl: int = max(1, int(ceil(player.defense * 0.5)) + 2)
-		var d2: int = attacker.take_damage(refl)
+	if player.thorns_flat > 0:
+		var d2: int = attacker.take_damage(player.thorns_flat)
 		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
 		if not attacker.is_alive():
 			on_enemy_killed(attacker)
 	_check_revive()
 
 func _check_revive() -> void:
-	if player.hp <= 0 and player.has_artifact("phoenix") and not player.revive_used:
-		player.revive_used = true
+	if player.hp <= 0 and player.revive_available():
+		player.revives_used += 1
 		player.hp = max(1, int(player.max_hp * 0.5))
-		add_message("[color=#ffd24a]✦ La Plume de Phénix te ramène à la vie ![/color]")
+		add_message("[color=#ffd24a]✦ Une résurrection te ramène à la vie (50% PV) ![/color]")
 
 func on_enemy_killed(e: Entity) -> void:
 	if not enemies.has(e):
 		return
 	run_shards += e.shard_value
+	player.xp += e.shard_value
 	enemies.erase(e)
 	if e.is_boss:
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
@@ -567,32 +632,68 @@ func _pickup_loot_at(p: Vector2i) -> void:
 	for item in loot.duplicate():
 		if item["pos"] == p:
 			loot.erase(item)
-			if item["kind"] == "equip":
-				_acquire_equipment(item["data"])
-			else:
+			if item["kind"] == "artifact":
 				_acquire_artifact(item["data"])
+			else:
+				_bag_add(item["data"])
 
-func _acquire_equipment(def: Dictionary) -> void:
-	var slot: String = def["slot"]
-	var new_power: int = _equip_power(def)
+func _bag_add(item: Dictionary) -> void:
+	if inventory.size() >= INV_CAP:
+		var s: int = int(item.get("salvage", 3))
+		run_shards += s
+		add_message("Sac plein : %s recyclé (+%d Éclats)." % [item.get("name", "?"), s])
+		return
+	inventory.append(item)
+	var rc: Color = item.get("rarity_color", Color(0.85, 0.85, 0.9))
+	add_message("Ramassé : [color=#%s]%s[/color].  [I] pour gérer." % [rc.to_html(false), item.get("name", "?")])
+
+func equip_item(item: Dictionary) -> void:
+	if item.get("kind", "") != "equip":
+		return
+	inventory.erase(item)
+	var slot: String = item["slot"]
 	if player.equipment.has(slot):
-		var cur: Dictionary = player.equipment[slot]
-		if _equip_power(cur) >= new_power:
-			run_shards += int(def.get("salvage", 1))
-			add_message("Tu gardes %s ; %s recyclé (+%d Éclats)." % [cur["name"], def["name"], int(def.get("salvage", 1))])
-			return
-		run_shards += int(cur.get("salvage", 1))
-		add_message("Tu remplaces %s (+%d Éclats)." % [cur["name"], int(cur.get("salvage", 1))])
-	player.equipment[slot] = def
+		var old: Dictionary = player.equipment[slot]
+		if inventory.size() < INV_CAP:
+			inventory.append(old)
+		else:
+			run_shards += int(old.get("salvage", 3))
+	player.equipment[slot] = item
 	player.recompute_stats()
-	add_message("[color=#9fe0ff]Équipé : %s [%s] — %s[/color]" % [
-		def["name"], Data.SLOT_NAMES[slot], Data.bonus_summary(def["bonus"])])
+	add_message("[color=#9fe0ff]Équipé : %s[/color]" % item["name"])
 
-func _equip_power(def: Dictionary) -> int:
-	var s: int = 0
-	for k in def["bonus"]:
-		s += int(def["bonus"][k])
-	return s
+func unequip_item(slot: String) -> void:
+	if not player.equipment.has(slot):
+		return
+	var it: Dictionary = player.equipment[slot]
+	player.equipment.erase(slot)
+	if inventory.size() < INV_CAP:
+		inventory.append(it)
+	else:
+		run_shards += int(it.get("salvage", 3))
+	player.recompute_stats()
+	add_message("Déséquipé : %s" % it["name"])
+
+func salvage_item(item: Dictionary) -> void:
+	inventory.erase(item)
+	var s: int = int(item.get("salvage", 3))
+	run_shards += s
+	add_message("Recyclé : %s (+%d Éclats)." % [item.get("name", "?"), s])
+
+func use_consumable(item: Dictionary) -> void:
+	match item.get("effect", ""):
+		"heal_pct":
+			var amt: int = int(ceil(player.max_hp * float(item["value"])))
+			player.heal(amt)
+			add_message("[color=#7aff8a]%s : +%d PV.[/color]" % [item["name"], amt])
+		"heal_full":
+			player.heal(player.max_hp)
+			add_message("[color=#7aff8a]%s : PV au maximum ![/color]" % item["name"])
+		"shards":
+			var s: int = int(item["value"])
+			run_shards += s
+			add_message("[color=#ffd24a]%s : +%d Éclats.[/color]" % [item["name"], s])
+	inventory.erase(item)
 
 func _acquire_artifact(def: Dictionary) -> void:
 	if player.has_artifact(def["id"]):
@@ -609,14 +710,13 @@ func _player_acted() -> void:
 	_apply_regen(player)
 	player.tick_cooldown()
 	if not player.is_alive():
-		_check_revive()
-	if not player.is_alive():
 		game_over()
 		return
 	advance_world()
 	if state != State.PLAYING:
 		return
 	refresh()
+	_check_level_up()
 
 ## Laisse agir les autres acteurs (selon leur vitesse) jusqu'au prochain tour du joueur.
 func advance_world() -> void:
@@ -684,8 +784,160 @@ func game_over() -> void:
 	GameState.add_shards(run_shards)
 	GameState.record_floor(floor_num)
 	state = State.DEAD
-	var summary := "💀 Tu es tombé à l'Étage %d. Butin du run : %d Éclats (ajoutés à la banque)." % [floor_num, run_shards]
+	var summary := "💀 Tu es tombé à l'Étage %d (niveau %d). Butin du run : %d Éclats (ajoutés à la banque)." % [floor_num, player.level, run_shards]
 	show_hub(summary)
+
+# --- Montée de niveau & talents -----------------------------------------------
+func xp_to_next(level: int) -> int:
+	return 6 + level * 5
+
+func _check_level_up() -> void:
+	while player.xp >= xp_to_next(player.level):
+		player.xp -= xp_to_next(player.level)
+		player.level += 1
+		pending_levelups += 1
+		add_message("[color=#9fff9f]★ Niveau %d ![/color]" % player.level)
+	if pending_levelups > 0 and state == State.PLAYING:
+		_open_levelup()
+
+func _open_levelup() -> void:
+	state = State.LEVELUP
+	overlay_layer.visible = true
+	_overlay_clear()
+	_add_overlay_title("★ NIVEAU %d — choisis un talent" % player.level, Color(0.7, 1.0, 0.7))
+	var pool: Array = Data.TALENTS.duplicate()
+	pool.shuffle()
+	for i in min(3, pool.size()):
+		var t: Dictionary = pool[i]
+		var btn := Button.new()
+		btn.text = "%s — %s" % [t["name"], t["desc"]]
+		btn.custom_minimum_size = Vector2(0, 46)
+		btn.add_theme_font_size_override("font_size", 18)
+		btn.pressed.connect(_on_pick_talent.bind(t))
+		overlay_content.add_child(btn)
+
+func _on_pick_talent(t: Dictionary) -> void:
+	player.talents.append(t)
+	player.recompute_stats()
+	add_message("Talent acquis : [color=#9fff9f]%s[/color]." % t["name"])
+	pending_levelups -= 1
+	if pending_levelups > 0:
+		_open_levelup()
+	else:
+		overlay_layer.visible = false
+		state = State.PLAYING
+		refresh()
+
+# --- Inventaire ---------------------------------------------------------------
+func open_inventory() -> void:
+	state = State.INVENTORY
+	overlay_layer.visible = true
+	_build_inventory_overlay()
+
+func close_inventory() -> void:
+	overlay_layer.visible = false
+	state = State.PLAYING
+	refresh()
+
+func _build_inventory_overlay() -> void:
+	_overlay_clear()
+	_add_overlay_title("SAC  (%d/%d)     Éclats : %d" % [inventory.size(), INV_CAP, run_shards], Color(0.82, 0.9, 1.0))
+
+	_add_overlay_label("— Équipé —", Color(0.6, 0.85, 1.0))
+	for slot in Data.SLOTS:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var lbl := Label.new()
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("font_size", 15)
+		if player.equipment.has(slot):
+			var it: Dictionary = player.equipment[slot]
+			lbl.text = "%s : %s  (%s)" % [Data.SLOT_NAMES[slot], it["name"], Data.bonus_summary(it["bonus"])]
+			lbl.add_theme_color_override("font_color", it.get("rarity_color", Color.WHITE))
+			row.add_child(lbl)
+			var b := Button.new()
+			b.text = "Déséquiper"
+			b.pressed.connect(_inv_unequip.bind(slot))
+			row.add_child(b)
+		else:
+			lbl.text = "%s : —" % Data.SLOT_NAMES[slot]
+			lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.58))
+			row.add_child(lbl)
+		overlay_content.add_child(row)
+
+	_add_overlay_label("— Objets —", Color(0.6, 0.85, 1.0))
+	if inventory.is_empty():
+		_add_overlay_label("(sac vide)", Color(0.5, 0.5, 0.58))
+	for item in inventory:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lbl := Label.new()
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.add_theme_font_size_override("font_size", 15)
+		if item.get("kind", "") == "equip":
+			lbl.text = "%s [%s]  (%s)" % [item["name"], item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])]
+			lbl.add_theme_color_override("font_color", item.get("rarity_color", Color.WHITE))
+			row.add_child(lbl)
+			var be := Button.new()
+			be.text = "Équiper"
+			be.pressed.connect(_inv_equip.bind(item))
+			row.add_child(be)
+		else:
+			lbl.text = "%s  (consommable)" % item["name"]
+			lbl.add_theme_color_override("font_color", item.get("color", Color.WHITE))
+			row.add_child(lbl)
+			var bu := Button.new()
+			bu.text = "Utiliser"
+			bu.pressed.connect(_inv_use.bind(item))
+			row.add_child(bu)
+		var bsv := Button.new()
+		bsv.text = "Recycler"
+		bsv.pressed.connect(_inv_salvage.bind(item))
+		row.add_child(bsv)
+		overlay_content.add_child(row)
+
+	overlay_content.add_child(HSeparator.new())
+	var close := Button.new()
+	close.text = "Fermer   [I / Échap]"
+	close.custom_minimum_size = Vector2(0, 42)
+	close.pressed.connect(close_inventory)
+	overlay_content.add_child(close)
+
+func _inv_equip(item: Dictionary) -> void:
+	equip_item(item)
+	_build_inventory_overlay()
+
+func _inv_unequip(slot: String) -> void:
+	unequip_item(slot)
+	_build_inventory_overlay()
+
+func _inv_salvage(item: Dictionary) -> void:
+	salvage_item(item)
+	_build_inventory_overlay()
+
+func _inv_use(item: Dictionary) -> void:
+	use_consumable(item)
+	_build_inventory_overlay()
+
+func _overlay_clear() -> void:
+	for c in overlay_content.get_children():
+		overlay_content.remove_child(c)
+		c.queue_free()
+
+func _add_overlay_title(txt: String, col: Color) -> void:
+	var l := Label.new()
+	l.text = txt
+	l.add_theme_font_size_override("font_size", 24)
+	l.add_theme_color_override("font_color", col)
+	overlay_content.add_child(l)
+	overlay_content.add_child(HSeparator.new())
+
+func _add_overlay_label(txt: String, col: Color) -> void:
+	var l := Label.new()
+	l.text = txt
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", col)
+	overlay_content.add_child(l)
 
 # --- Rendu / HUD --------------------------------------------------------------
 func refresh() -> void:
@@ -701,11 +953,19 @@ func _update_hud() -> void:
 	hp_bar.value = clampi(player.hp, 0, player.max_hp)
 	hp_text.text = "PV  %d / %d" % [player.hp, player.max_hp]
 
+	var need: int = xp_to_next(player.level)
+	sb_level.text = "Niveau %d   (XP %d/%d)" % [player.level, player.xp, need]
+	xp_bar.max_value = max(1, need)
+	xp_bar.value = clampi(player.xp, 0, need)
+
 	stat_labels["atk"].text = str(player.atk)
 	stat_labels["magic"].text = str(player.magic)
 	stat_labels["defense"].text = str(player.defense)
 	stat_labels["speed"].text = str(player.speed)
 	stat_labels["hp_regen"].text = str(player.hp_regen)
+	stat_labels["crit"].text = "%d%%" % int(round(player.crit_chance * 100.0))
+	stat_labels["dodge"].text = "%d%%" % int(round(player.dodge_chance * 100.0))
+	stat_labels["lifesteal"].text = "%d%%" % int(round(player.lifesteal_pct * 100.0))
 	stat_labels["run_shards"].text = str(run_shards)
 	stat_labels["bank"].text = str(GameState.shards)
 
@@ -736,7 +996,7 @@ func _rebuild_equip() -> void:
 		if player.equipment.has(slot):
 			var it: Dictionary = player.equipment[slot]
 			line.text = "%s  (%s)" % [it["name"], Data.bonus_summary(it["bonus"])]
-			line.add_theme_color_override("font_color", Color(0.92, 0.95, 1.0))
+			line.add_theme_color_override("font_color", it.get("rarity_color", Color(0.92, 0.95, 1.0)))
 		else:
 			line.text = "— vide —"
 			line.add_theme_color_override("font_color", Color(0.5, 0.5, 0.58))
