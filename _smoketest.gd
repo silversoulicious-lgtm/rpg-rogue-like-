@@ -360,5 +360,55 @@ func _ready() -> void:
 	assert(main.player.active_skill_id == "double_strike", "sélection d'une compétence incompatible refusée")
 	print("OK compétences: drop, apprentissage, sélection + filtre de compatibilité")
 
+	# --- Phase 3 : pouvoirs passifs (cumul illimité, exclusions, drops) -----------
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])   # -> PLAYING (nécessaire pour pass_turn)
+	main.player.powers.clear()
+	var pdrone = {}
+	var pturret = {}
+	var pglass = {}
+	for d in Data.POWERS:
+		if d["id"] == "drone": pdrone = d
+		if d["id"] == "turret": pturret = d
+		if d["id"] == "coeur_de_verre": pglass = d
+	main._acquire_power(pdrone)
+	assert(main.player.has_power("drone"), "pouvoir drone acquis")
+	main._acquire_power(pdrone)
+	assert(main.player.powers.size() == 1, "doublon de pouvoir refusé (Éclats à la place)")
+	main._acquire_power(pglass)
+	assert(main.player.has_power("coeur_de_verre"), "cœur de verre acquis (cumul avec drone)")
+	var atk_before = main.player.atk
+	main._acquire_power(pturret)
+	assert(not main.player.has_power("turret"), "tourelle refusée : exclusion mutuelle avec cœur de verre")
+	assert(main.player.atk == atk_before, "stats inchangées après refus d'un pouvoir exclu")
+
+	# Le drone tire automatiquement sur l'ennemi le plus proche après l'action du joueur.
+	main.enemies.clear()
+	var de = Entity.new()
+	de.faction = Entity.Faction.ENEMY
+	de.display_name = "cible drone"; de.max_hp = 9999; de.hp = 9999; de.defense = 0
+	de.x = main.player.x + 2; de.y = main.player.y
+	main.enemies.append(de)
+	var hp_before_drone = de.hp
+	main.pass_turn()
+	assert(de.hp < hp_before_drone, "le drone tire automatiquement sur l'ennemi le plus proche")
+
+	# Venin : applique un poison automatique sur les attaques.
+	main.player.powers.clear()
+	main._acquire_power(pdrone)   # gardé inerte: pas de venin -> pas de poison
+	main.enemies.clear()
+	var dv = Entity.new()
+	dv.faction = Entity.Faction.ENEMY
+	dv.display_name = "cible venin"; dv.max_hp = 9999; dv.hp = 9999
+	dv.x = main.player.x + 1; dv.y = main.player.y
+	main.enemies.append(dv)
+	var pvenin = {}
+	for d in Data.POWERS:
+		if d["id"] == "venin": pvenin = d
+	main._acquire_power(pvenin)
+	main._player_attack(dv, 5, "test")
+	assert(dv.has_status("poison"), "venin empoisonne automatiquement la cible touchée")
+	print("OK pouvoirs: acquisition, doublon, exclusion mutuelle, drone, venin")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

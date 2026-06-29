@@ -35,6 +35,7 @@ var first_strike_used: bool = false   # pour le proc d'objet unique "premier_cou
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
 var last_dir: Vector2i = Vector2i(1, 0)   # dernière direction de déplacement (visée auto)
 const SKILL_DROP_CHANCE := 0.06       # chance qu'un monstre lâche une compétence
+const LEGENDARY_CHANCE := 0.025       # chance qu'un monstre soit légendaire (lâche un pouvoir)
 
 # Statistiques du run en cours (pour le journal de fin de run)
 var run_kills: int = 0
@@ -104,6 +105,7 @@ func start_run(loadout_id: String = "melee") -> void:
 	player.equipment = { "arme": Data.make_starter_weapon(loadout_id) }
 	player.active_skill_id = Data.WEAPON_TYPE_BASE_SKILL[loadout_id]
 	player.artifacts = []
+	player.powers = []
 	player.talents = []
 	player.level = 1
 	player.xp = 0
@@ -243,6 +245,13 @@ func generate_floor(node_type: String = "combat") -> void:
 			e.max_hp = int(e.max_hp * 1.25)
 			e.hp = e.max_hp
 			e.atk = int(e.atk * 1.2)
+		elif not is_boss and rng.randf() < LEGENDARY_CHANCE:
+			e.is_legendary = true
+			e.display_name = "Légendaire : " + e.display_name
+			e.max_hp = int(e.max_hp * 1.8)
+			e.hp = e.max_hp
+			e.atk = int(e.atk * 1.4)
+			e.shard_value = e.shard_value * 2
 		enemies.append(e)
 		occupied.append(p)
 
@@ -671,6 +680,8 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 	elif crit:
 		flair = "  [color=#ffec5a]CRITIQUE![/color]"
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
+	if player.has_power("venin") and target.is_alive():
+		apply_poison(target, 3, maxf(1.0, round(float(dealt) * 0.25)))
 	if player.lifesteal_pct > 0.0 and dealt > 0:
 		var healed: int = int(ceil(dealt * player.lifesteal_pct))
 		if healed > 0:
@@ -725,16 +736,26 @@ func on_enemy_killed(e: Entity) -> void:
 			player.heal(heal_amt)
 			add_message("[color=#7cfc9a]Soif de sang : +%d PV.[/color]" % heal_amt)
 	var death_pos: Vector2i = e.pos()
+	var was_legendary: bool = e.is_legendary
 	enemies.erase(e)
+	if player.has_power("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
+		var boom: int = maxi(2, player.atk / 2 + player.ability_power)
+		var hits: int = aoe_attack(death_pos, 1, boom, "Détonation frappe")
+		if hits > 0:
+			add_message("[color=#ff8a4a]✹ %s explose au contact de la mort.[/color]" % e.display_name)
 	if e.is_boss:
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
 		_bag_add(reward)
 		_drop_skill(death_pos, true)        # le boss lâche aussi une compétence
+		if floor_num % 15 == 0:
+			_drop_power(death_pos)
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
-		if rng.randf() < SKILL_DROP_CHANCE:
+		if was_legendary:
+			_drop_power(death_pos)
+		elif rng.randf() < SKILL_DROP_CHANCE:
 			_drop_skill(death_pos, false)
 
 # --- Butin & inventaire -------------------------------------------------------
@@ -745,6 +766,8 @@ func _pickup_loot_at(p: Vector2i) -> void:
 			match item["kind"]:
 				"artifact":
 					_acquire_artifact(item["data"])
+				"power":
+					_acquire_power(item["data"])
 				"skill":
 					_acquire_skill(String(item["data"]["id"]))
 				_:
@@ -899,11 +922,72 @@ func _acquire_artifact(def: Dictionary) -> void:
 	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
 	refresh()
 
+# --- Pouvoirs passifs (Phase 3) ------------------------------------------------
+func _drop_power(pos: Vector2i) -> void:
+	var def: Dictionary = _pick_power_def()
+	if def.is_empty():
+		return
+	loot.append({ "pos": pos, "kind": "power", "glyph": Data.POWER_GLYPH,
+		"sprite": "artifact", "color": def["color"], "data": def })
+	add_message("[color=#ffb84a]Ω Un pouvoir puissant scintille au sol…[/color]")
+
+func _pick_power_def() -> Dictionary:
+	var pool: Array = []
+	for def in Data.POWERS:
+		if not player.has_power(def["id"]):
+			pool.append(def)
+	if pool.is_empty():
+		return {}
+	return pool[rng.randi_range(0, pool.size() - 1)]
+
+## Renvoie le pouvoir déjà actif qui s'exclut mutuellement avec `def` (vide si aucun).
+func _power_conflict(def: Dictionary) -> Dictionary:
+	for ex_id in def.get("excludes", []):
+		for p in player.powers:
+			if p.get("id", "") == ex_id:
+				return p
+	for p in player.powers:
+		if p.get("excludes", []).has(def["id"]):
+			return p
+	return {}
+
+func _acquire_power(def: Dictionary) -> void:
+	if player.has_power(def["id"]):
+		run_shards += 10
+		add_message("Pouvoir %s déjà actif (+10 Éclats)." % def["name"])
+		return
+	var conflict: Dictionary = _power_conflict(def)
+	if not conflict.is_empty():
+		run_shards += 10
+		add_message("[color=#ff8a8a]%s est incompatible avec %s, déjà actif (+10 Éclats).[/color]" % [def["name"], conflict["name"]])
+		return
+	player.powers.append(def)
+	player.recompute_stats()
+	add_message("[color=#ffb84a]Ω Pouvoir : %s — %s[/color]" % [def["name"], def["desc"]])
+	refresh()
+
+## Déclenche les pouvoirs à activation automatique (drone/tourelle), après l'action du joueur.
+func _trigger_powers() -> void:
+	if not player.is_alive():
+		return
+	if player.has_power("drone"):
+		var t: Entity = _nearest_enemy_in_range(6)
+		if t != null:
+			_player_attack(t, maxi(1, int(round(player.atk * 0.5)) + player.ability_power), "Le drone tire sur")
+	if player.has_power("turret"):
+		var t2: Entity = _nearest_enemy_in_range(8)
+		if t2 != null:
+			aoe_attack(t2.pos(), 1, maxi(1, int(round(player.atk * 0.35)) + player.ability_power), "La tourelle frappe")
+
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:
 	player.energy -= Entity.ACTION_COST
 	_begin_turn(player)
 	player.tick_cooldown()
+	if not player.is_alive():
+		game_over()
+		return
+	_trigger_powers()
 	if not player.is_alive():
 		game_over()
 		return
@@ -1002,6 +1086,13 @@ func open_shop() -> void:
 		var c: Dictionary = Data.generate_consumable(floor_num, rng)
 		c["price"] = 8 + floor_num
 		shop_stock.append(c)
+	if rng.randf() < 0.5:
+		var pdef: Dictionary = _pick_power_def()
+		if not pdef.is_empty():
+			var pitem: Dictionary = pdef.duplicate(true)
+			pitem["kind"] = "power"
+			pitem["price"] = 40
+			shop_stock.append(pitem)
 	hud.hide_map()
 	hud.show_shop(shop_stock, run_shards)
 
@@ -1011,7 +1102,10 @@ func buy_shop_item(item: Dictionary) -> void:
 		return
 	run_shards -= price
 	shop_stock.erase(item)
-	_bag_add(item)
+	if item.get("kind", "") == "power":
+		_acquire_power(item)
+	else:
+		_bag_add(item)
 	hud.show_shop(shop_stock, run_shards)
 
 func buy_shop_heal() -> void:

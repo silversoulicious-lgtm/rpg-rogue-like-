@@ -44,6 +44,7 @@ var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
 var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
+var power_box: VBoxContainer
 var synergy_box: VBoxContainer
 var status_box: VBoxContainer
 
@@ -124,6 +125,8 @@ func _build_sidebar() -> void:
 	equip_box = Ui.vbox(6); v.add_child(equip_box)
 	v.add_child(_section("ARTEFACTS"))
 	artifact_box = Ui.vbox(6); v.add_child(artifact_box)
+	v.add_child(_section("POUVOIRS"))
+	power_box = Ui.vbox(6); v.add_child(power_box)
 	v.add_child(_section("SYNERGIES"))
 	synergy_box = Ui.vbox(4); v.add_child(synergy_box)
 	v.add_child(Ui.label("[I] Inventaire", 13, Color(0.6, 0.85, 1.0)))
@@ -320,6 +323,9 @@ func show_shop(stock: Array, shards: int) -> void:
 		if item.get("kind", "") == "equip":
 			txt = "%s [%s]  (%s)" % [item["name"], item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])]
 			col = item.get("rarity_color", Color.WHITE)
+		elif item.get("kind", "") == "power":
+			txt = "Ω %s  (pouvoir)" % item["name"]
+			col = item.get("color", Color.WHITE)
 		else:
 			txt = "%s  (consommable)" % item["name"]
 			col = item.get("color", Color.WHITE)
@@ -762,6 +768,7 @@ func refresh() -> void:
 
 	_rebuild_equip()
 	_rebuild_artifacts()
+	_rebuild_powers()
 	_rebuild_synergies()
 	_rebuild_statuses()
 	log_label.text = "\n".join(game.messages)
@@ -789,6 +796,16 @@ func _rebuild_artifacts() -> void:
 	for a in game.player.artifacts:
 		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
 		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+
+func _rebuild_powers() -> void:
+	for c in power_box.get_children():
+		c.queue_free()
+	if game.player.powers.is_empty():
+		power_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
+		return
+	for p in game.player.powers:
+		power_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
+		power_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
 	for c in synergy_box.get_children():

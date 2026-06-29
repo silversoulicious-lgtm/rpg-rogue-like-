@@ -548,6 +548,28 @@ const ARTIFACT_MODS := {
 	"phoenix":   { "max_revives": 1 },
 }
 
+# --- POUVOIRS (Phase 3, drops rares, scope = run) -----------------------------
+# Cumul illimité (pas de slot), sauf exclusions mutuelles explicites ("excludes").
+# Sources : monstres légendaires (rares), Gardien tous les 15 étages, boutique.
+const POWER_GLYPH := "Ω"
+const POWERS := [
+	{ "id": "drone", "name": "Drone d'assaut", "color": Color(0.55, 0.85, 1.0), "excludes": [],
+	  "desc": "Un drone tire automatiquement sur l'ennemi le plus proche (portée 6) à chaque tour." },
+	{ "id": "turret", "name": "Tourelle spectrale", "color": Color(0.85, 0.65, 0.35), "excludes": ["coeur_de_verre"],
+	  "desc": "Une tourelle frappe en zone (rayon 1) l'ennemi le plus proche à chaque tour." },
+	{ "id": "coeur_de_verre", "name": "Cœur de Verre", "color": Color(0.95, 0.75, 0.95), "excludes": ["turret"],
+	  "desc": "+50% Attaque et +20% Critique, mais -30% PV max. Tout repose sur l'offensive." },
+	{ "id": "detonation", "name": "Pacte de Détonation", "color": Color(1.0, 0.45, 0.25), "excludes": [],
+	  "desc": "Chaque ennemi tué près de toi explose, infligeant des dégâts en zone aux alentours." },
+	{ "id": "venin", "name": "Glande à Venin", "color": Color(0.55, 0.9, 0.4), "excludes": [],
+	  "desc": "Chacune de tes attaques empoisonne sa cible." },
+]
+
+# Effets des pouvoirs exprimables en modificateurs de stats simples.
+const POWER_MODS := {
+	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
+}
+
 # --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
 # Chaque choix porte un "type" interprété par Main._apply_event_effect.
 const EVENTS := [

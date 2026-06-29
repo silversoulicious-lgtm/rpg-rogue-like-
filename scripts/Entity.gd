@@ -14,6 +14,7 @@ var x: int = 0
 var y: int = 0
 var faction: int = Faction.ENEMY
 var is_boss: bool = false
+var is_legendary: bool = false    # spawn rare : stats boostées, lâche un pouvoir
 var enraged: bool = false        # boss : passe en rage sous 50% PV (dégâts accrus)
 var shard_value: int = 0
 
@@ -52,6 +53,7 @@ var base_vision: int = 4
 # --- Sources de modificateurs (héros) ---
 var equipment: Dictionary = {}   # slot -> item dict
 var artifacts: Array = []        # Array[dict] (capacités passives)
+var powers: Array = []           # Array[dict] (pouvoirs passifs, Phase 3 — cumul illimité)
 var talents: Array = []          # Array[dict] (choix de montée de niveau)
 
 # --- Progression de run (héros) ---
@@ -163,6 +165,12 @@ func has_artifact(id: String) -> bool:
 			return true
 	return false
 
+func has_power(id: String) -> bool:
+	for p in powers:
+		if p.get("id", "") == id:
+			return true
+	return false
+
 func revive_available() -> bool:
 	return revives_used < max_revives
 
@@ -219,6 +227,17 @@ func recompute_stats() -> void:
 		_apply_mods(Data.ARTIFACT_MODS.get(a.get("id", ""), {}))
 	for t in talents:
 		_apply_mods(t.get("mods", {}))
+	var atk_pct: float = 0.0
+	var max_hp_pct: float = 0.0
+	for pw in powers:
+		var pm: Dictionary = Data.POWER_MODS.get(pw.get("id", ""), {})
+		_apply_mods(pm)
+		atk_pct += float(pm.get("atk_pct", 0.0))
+		max_hp_pct += float(pm.get("max_hp_pct", 0.0))
+	if atk_pct != 0.0:
+		atk = int(round(atk * (1.0 + atk_pct)))
+	if max_hp_pct != 0.0:
+		max_hp = int(round(max_hp * (1.0 + max_hp_pct)))
 	_detect_synergies()
 	speed = max(20, speed)
 	ability_cd_max = max(0, ability_cd_max)
