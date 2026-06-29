@@ -6,6 +6,10 @@ const SAVE_PATH := "user://save.json"
 
 # Banque d'Éclats récoltés (monnaie méta dépensée pour les améliorations)
 var shards: int = 0
+# Banque de Connaissances (2ᵉ monnaie méta : débloque des systèmes via l'Arbre)
+var knowledge: int = 0
+# Nœuds de l'Arbre de Connaissances déjà débloqués (ids de Data.KNOWLEDGE_NODES)
+var knowledge_nodes: Array = []
 # Niveaux d'amélioration achetés : { "vitalite": int, "force": int, "maitrise": int }
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
@@ -61,6 +65,41 @@ func start_talents() -> int:
 func add_shards(amount: int) -> void:
 	shards += amount
 
+# --- Arbre de Connaissances ---------------------------------------------------
+func add_knowledge(amount: int) -> void:
+	knowledge += amount
+
+func has_node(id: String) -> bool:
+	return knowledge_nodes.has(id)
+
+## Tous les prérequis d'un nœud sont-ils débloqués ?
+func node_prereqs_met(id: String) -> bool:
+	for req in Data.KNOWLEDGE_NODES.get(id, {}).get("requires", []):
+		if not has_node(req):
+			return false
+	return true
+
+func can_unlock_node(id: String) -> bool:
+	if has_node(id) or not Data.KNOWLEDGE_NODES.has(id):
+		return false
+	return node_prereqs_met(id) and knowledge >= int(Data.KNOWLEDGE_NODES[id]["cost"])
+
+func buy_knowledge_node(id: String) -> bool:
+	if not can_unlock_node(id):
+		return false
+	knowledge -= int(Data.KNOWLEDGE_NODES[id]["cost"])
+	knowledge_nodes.append(id)
+	save_game()
+	return true
+
+# Raccourcis de lecture des déblocages (utilisés par la logique de run).
+func starts_with_power() -> bool:    return has_node("pacte_pouvoir")
+func better_drop_pool() -> bool:     return has_node("affinite")
+func shop_always_power() -> bool:    return has_node("arsenal")
+func oaths_unlocked() -> bool:       return has_node("serments")
+func major_oaths_unlocked() -> bool: return has_node("serment_majeur")
+func legendary_boost() -> bool:      return has_node("chasseur")
+
 # Enregistre le bilan d'un run terminé (met à jour les records, persiste).
 func record_run(stats: Dictionary) -> void:
 	last_run = stats
@@ -72,6 +111,8 @@ func record_run(stats: Dictionary) -> void:
 func save_game() -> void:
 	var data := {
 		"shards": shards,
+		"knowledge": knowledge,
+		"knowledge_nodes": knowledge_nodes,
 		"upgrades": upgrades,
 		"best_floor": best_floor,
 		"best_kills": best_kills,
@@ -93,6 +134,11 @@ func load_game() -> void:
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
 	shards = int(parsed.get("shards", 0))
+	knowledge = int(parsed.get("knowledge", 0))
+	knowledge_nodes = []
+	for nid in parsed.get("knowledge_nodes", []):
+		if Data.KNOWLEDGE_NODES.has(nid):
+			knowledge_nodes.append(str(nid))
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
 	last_loadout = str(parsed.get("last_loadout", "melee"))

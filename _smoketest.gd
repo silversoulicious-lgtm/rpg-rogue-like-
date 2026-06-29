@@ -410,5 +410,53 @@ func _ready() -> void:
 	assert(dv.has_status("poison"), "venin empoisonne automatiquement la cible touchée")
 	print("OK pouvoirs: acquisition, doublon, exclusion mutuelle, drone, venin")
 
+	# --- Phase 5 : Arbre de Connaissances + Serments ------------------------------
+	GameState.knowledge = 0
+	GameState.knowledge_nodes = []
+	assert(not GameState.can_unlock_node("affinite"), "nœud à prérequis verrouillé sans son parent")
+	GameState.knowledge = 100
+	assert(GameState.can_unlock_node("pacte_pouvoir"), "nœud racine déblocable avec assez de Connaissances")
+	assert(GameState.buy_knowledge_node("pacte_pouvoir"), "achat d'un nœud de l'arbre")
+	assert(GameState.has_node("pacte_pouvoir") and GameState.starts_with_power(), "nœud débloqué + raccourci de lecture")
+	assert(GameState.can_unlock_node("affinite"), "prérequis désormais satisfait")
+	# Pacte de Pouvoir : le run démarre avec un pouvoir.
+	main.active_oaths = []
+	main.start_run("melee")
+	assert(main.player.powers.size() >= 1, "Pacte de Pouvoir : pouvoir de départ accordé")
+	# Serments : nécessitent le nœud 'serments' ; les majeurs un palier de plus.
+	assert(GameState.buy_knowledge_node("serments"), "achat du nœud Serments")
+	main.active_oaths = []
+	main.toggle_oath("fragilite")
+	assert(main.has_oath("fragilite"), "serment mineur activable une fois débloqué")
+	main.toggle_oath("elite")
+	assert(not main.has_oath("elite"), "serment majeur refusé sans le palier majeur")
+	# Fragilité réduit les PV de départ.
+	main.active_oaths = []
+	main.start_run("melee")
+	var hp_full = main.player.max_hp
+	main.active_oaths = ["fragilite"]
+	main.start_run("melee")
+	assert(main.player.max_hp < hp_full, "Serment de Fragilité : PV max réduits")
+	# Récompense des serments : multiplicateur d'Éclats + bonus de Connaissances.
+	main.active_oaths = ["fragilite", "horde"]
+	assert(main.oath_shard_mult() > 1.3, "multiplicateur d'Éclats cumulé des serments")
+	assert(main.oath_knowledge_bonus() >= 1, "bonus de Connaissances des serments")
+	# Chasseur augmente le taux de monstres légendaires.
+	main.active_oaths = []
+	var base_chance = main._legendary_chance()
+	assert(GameState.buy_knowledge_node("chasseur"), "achat du nœud Chasseur")
+	assert(main._legendary_chance() > base_chance, "Chasseur augmente le taux de légendaires")
+	# Gain de Connaissances en fin de run (progrès + Gardiens).
+	GameState.best_floor = 1
+	GameState.knowledge = 0
+	main.start_run("melee")
+	main.floor_num = 6
+	main.run_bosses = 2
+	main.active_oaths = []
+	main.player.hp = 1
+	main.game_over()
+	assert(GameState.knowledge >= 5 + 4, "Connaissances gagnées = étages au-delà du record + 2/Gardien")
+	print("OK Phase 5: arbre (prérequis/achat/persistance), Pacte de Pouvoir, Serments (toggle/gate/effet/récompense), gain de Connaissances")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

@@ -620,6 +620,55 @@ static func upgrade_cost(key: String, level: int) -> int:
 static func upgrade_max(key: String) -> int:
 	return int(UPGRADES[key].get("max", 99))
 
+# --- ARBRE DE CONNAISSANCES (Phase 5, 2ᵉ monnaie méta) ------------------------
+# Les Connaissances ne s'achètent PAS en stats : chaque nœud débloque un SYSTÈME,
+# une RÈGLE ou une OPTION qui change la façon de jouer (inspiré des arbres
+# d'Integrated Strategies d'Arknights). Graphe à prérequis (DAG).
+const KNOWLEDGE_BRANCHES := {
+	"arsenal": { "name": "Voie de l'Arsenal", "color": Color(0.95, 0.6, 0.35) },
+	"serment": { "name": "Voie du Serment",   "color": Color(0.85, 0.4, 0.45) },
+}
+const KNOWLEDGE_NODES := {
+	# Voie de l'Arsenal — élargit le build et la variété de drops.
+	"pacte_pouvoir": { "name": "Pacte de Pouvoir", "branch": "arsenal", "cost": 4, "requires": [],
+		"desc": "Tu démarres chaque run avec un pouvoir passif aléatoire déjà actif." },
+	"affinite": { "name": "Affinité Arcane", "branch": "arsenal", "cost": 6, "requires": ["pacte_pouvoir"],
+		"desc": "Les compétences droppées sont tirées dans un meilleur pool de rareté." },
+	"arsenal": { "name": "Arsenal Étendu", "branch": "arsenal", "cost": 5, "requires": ["pacte_pouvoir"],
+		"desc": "La boutique propose toujours un pouvoir à l'achat." },
+	# Voie du Serment — risque/récompense (cœur IS).
+	"serments": { "name": "Serments", "branch": "serment", "cost": 3, "requires": [],
+		"desc": "Débloque les Serments : modificateurs de difficulté optionnels au départ d'un run, qui augmentent tes gains." },
+	"serment_majeur": { "name": "Serments Majeurs", "branch": "serment", "cost": 6, "requires": ["serments"],
+		"desc": "Débloque des Serments plus durs et bien plus rémunérateurs." },
+	"chasseur": { "name": "Chasseur de Légendes", "branch": "serment", "cost": 5, "requires": ["serments"],
+		"desc": "Les monstres légendaires (porteurs de pouvoirs) apparaissent bien plus souvent." },
+}
+const KNOWLEDGE_ORDER := ["pacte_pouvoir", "affinite", "arsenal", "serments", "serment_majeur", "chasseur"]
+
+# --- SERMENTS (modificateurs de difficulté optionnels, débloqués par l'arbre) --
+# reward = bonus additif aux Éclats du run ; knowledge = Connaissances en plus.
+const OATHS := [
+	{ "id": "fragilite", "name": "Serment de Fragilité", "major": false, "reward": 0.15, "knowledge": 0,
+	  "desc": "−25% PV max ce run.  Récompense : +15% Éclats." },
+	{ "id": "pauvrete", "name": "Serment de Pauvreté", "major": false, "reward": 0.20, "knowledge": 0,
+	  "desc": "Aucun bonus de départ (Fortune/Héritage/Instinct ignorés).  +20% Éclats." },
+	{ "id": "horde", "name": "Serment de la Horde", "major": false, "reward": 0.20, "knowledge": 1,
+	  "desc": "+50% d'ennemis par étage.  +20% Éclats, +1 Connaissance." },
+	{ "id": "elite", "name": "Serment d'Élite", "major": true, "reward": 0.30, "knowledge": 1,
+	  "desc": "Tous les combats sont des salles d'élite.  +30% Éclats, +1 Connaissance." },
+	{ "id": "glas", "name": "Serment du Glas", "major": true, "reward": 0.25, "knowledge": 0,
+	  "desc": "Le Gardien entre en rage dès 80% PV.  +25% Éclats." },
+	{ "id": "funeste", "name": "Serment Funeste", "major": true, "reward": 0.25, "knowledge": 2,
+	  "desc": "Plus aucun soin entre les étages.  +25% Éclats, +2 Connaissances." },
+]
+
+static func oath_by_id(id: String) -> Dictionary:
+	for o in OATHS:
+		if o["id"] == id:
+			return o
+	return {}
+
 # Résumé court d'un bonus d'objet, pour l'affichage.
 static func bonus_summary(bonus: Dictionary) -> String:
 	var parts: Array = []

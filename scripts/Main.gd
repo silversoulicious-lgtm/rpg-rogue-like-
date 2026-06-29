@@ -41,6 +41,10 @@ const LEGENDARY_CHANCE := 0.025       # chance qu'un monstre soit légendaire (l
 var run_kills: int = 0
 var run_best_hit: int = 0
 var run_best_item: Dictionary = {}
+var run_bosses: int = 0          # Gardiens vaincus ce run (gain de Connaissances)
+
+# Serments actifs pour le run en cours (ids de Data.OATHS, choisis au loadout)
+var active_oaths: Array = []
 
 var map_view: Node2D
 var hud                          # instance de Hud (scripts/Hud.gd)
@@ -72,6 +76,11 @@ func open_loadout() -> void:
 func open_meta() -> void:
 	state = State.META
 	hud.show_meta()
+
+## Arbre de Connaissances : déblocage de systèmes via la 2ᵉ monnaie méta.
+func open_knowledge() -> void:
+	state = State.META
+	hud.show_knowledge()
 
 func quit_game() -> void:
 	get_tree().quit()
@@ -114,11 +123,14 @@ func start_run(loadout_id: String = "melee") -> void:
 	player.recompute_stats()
 	player.hp = player.max_hp
 
+	# Serments : ne garder que ceux réellement débloqués (sécurité).
+	active_oaths = active_oaths.filter(func(id): return _oath_available(id))
 	floor_num = 1
-	run_shards = GameState.bonus_start_shards()
+	run_shards = 0 if has_oath("pauvrete") else GameState.bonus_start_shards()
 	run_kills = 0
 	run_best_hit = 0
 	run_best_item = {}
+	run_bosses = 0
 	pending_levelups = 0
 	messages.clear()
 	loot.clear()
@@ -128,21 +140,66 @@ func start_run(loadout_id: String = "melee") -> void:
 	map_act = 0
 	_start_act()
 
-## Applique les bonus de départ achetés en méta-progression (Héritage/Instinct).
+## Applique les bonus de départ : méta-progression (Héritage/Instinct), déblocages
+## de l'Arbre (Pacte de Pouvoir) et Serments (Pauvreté annule, Fragilité réduit les PV).
 func _grant_starting_bonuses() -> void:
-	if run_shards > 0:
-		add_message("[color=#ffd24a]Fortune : tu démarres avec %d Éclats.[/color]" % run_shards)
-	for i in GameState.start_artifacts():
-		var a: Dictionary = _pick_any_artifact()
-		if not a.is_empty():
-			player.artifacts.append(a)
-			add_message("[color=#f0b8ff]✦ Héritage : %s[/color]" % a["name"])
-	for i in GameState.start_talents():
-		var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
-		player.talents.append(t)
-		add_message("[color=#9fff9f]Instinct : talent de départ — %s.[/color]" % t["name"])
+	if not has_oath("pauvrete"):
+		if run_shards > 0:
+			add_message("[color=#ffd24a]Fortune : tu démarres avec %d Éclats.[/color]" % run_shards)
+		for i in GameState.start_artifacts():
+			var a: Dictionary = _pick_any_artifact()
+			if not a.is_empty():
+				player.artifacts.append(a)
+				add_message("[color=#f0b8ff]✦ Héritage : %s[/color]" % a["name"])
+		for i in GameState.start_talents():
+			var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
+			player.talents.append(t)
+			add_message("[color=#9fff9f]Instinct : talent de départ — %s.[/color]" % t["name"])
+	elif GameState.oaths_unlocked():
+		add_message("[color=#d88a8a]Serment de Pauvreté : aucun bonus de départ.[/color]")
+	if GameState.starts_with_power():
+		var pw: Dictionary = _pick_power_def()
+		if not pw.is_empty():
+			player.powers.append(pw)
+			add_message("[color=#ffb84a]Ω Pacte de Pouvoir : %s[/color]" % pw["name"])
+	if has_oath("fragilite"):
+		player.base_max_hp = maxi(10, int(round(player.base_max_hp * 0.75)))
+		add_message("[color=#d88a8a]Serment de Fragilité : −25% PV max.[/color]")
 	player.recompute_stats()
 	player.hp = player.max_hp
+
+# --- Serments (helpers) -------------------------------------------------------
+func has_oath(id: String) -> bool:
+	return active_oaths.has(id)
+
+## Un serment est disponible si la Voie est débloquée (et le palier majeur pour les majeurs).
+func _oath_available(id: String) -> bool:
+	var o: Dictionary = Data.oath_by_id(id)
+	if o.is_empty() or not GameState.oaths_unlocked():
+		return false
+	return GameState.major_oaths_unlocked() if o.get("major", false) else true
+
+## Bascule un serment (depuis l'écran de loadout). Refuse les serments non disponibles.
+func toggle_oath(id: String) -> void:
+	if active_oaths.has(id):
+		active_oaths.erase(id)
+	elif _oath_available(id):
+		active_oaths.append(id)
+	hud.show_loadout()
+
+## Multiplicateur d'Éclats cumulé des serments actifs.
+func oath_shard_mult() -> float:
+	var m: float = 1.0
+	for id in active_oaths:
+		m += float(Data.oath_by_id(id).get("reward", 0.0))
+	return m
+
+## Connaissances bonus cumulées des serments actifs.
+func oath_knowledge_bonus() -> int:
+	var k: int = 0
+	for id in active_oaths:
+		k += int(Data.oath_by_id(id).get("knowledge", 0))
+	return k
 
 func _pick_any_artifact() -> Dictionary:
 	var pool: Array = []
@@ -196,14 +253,17 @@ func _enter_node(node: Dictionary) -> void:
 
 func _node_cleared() -> void:
 	var was_boss: bool = current_node_type == "boss"
-	var healed: int = int(round(player.max_hp * 0.2))
+	var healed: int = 0 if has_oath("funeste") else int(round(player.max_hp * 0.2))
 	player.heal(healed)
 	if was_boss:
 		map_act += 1
 		add_message("[color=#9b8cff]★ Strate franchie ! Tu pénètres dans la strate %d.[/color]" % (map_act + 1))
 		_start_act()
-	else:
+	elif healed > 0:
 		add_message("[color=#9b8cff]Voie dégagée (+%d PV). Choisis ta route.[/color]" % healed)
+		_back_to_map()
+	else:
+		add_message("[color=#9b8cff]Voie dégagée. Choisis ta route.[/color]")
 		_back_to_map()
 
 func _back_to_map() -> void:
@@ -231,21 +291,24 @@ func generate_floor(node_type: String = "combat") -> void:
 	enemies.clear()
 	loot.clear()
 	var occupied: Array = [dungeon.start, dungeon.stairs]
-	var is_elite: bool = node_type == "elite"
 	var is_boss: bool = node_type == "boss"
+	# Serment d'Élite : tout combat hors boss devient une salle d'élite.
+	var is_elite: bool = node_type == "elite" or (has_oath("elite") and not is_boss)
 
 	# Le peuplement s'adapte à la taille de la carte (exploration jamais vide).
 	var area: int = dungeon.width * dungeon.height
 	var count: int = clampi(3 + floor_num + int(area / 2200), 5, 30)
 	if is_elite:
 		count = mini(count + 3, 34)
+	if has_oath("horde"):        # Serment de la Horde : +50% d'ennemis
+		count = mini(int(round(count * 1.5)), 40)
 	for p in dungeon.random_floor_tiles(count, rng, occupied):
 		var e: Entity = _make_enemy(_pick_enemy_def(), floor_num, p)
 		if is_elite:
 			e.max_hp = int(e.max_hp * 1.25)
 			e.hp = e.max_hp
 			e.atk = int(e.atk * 1.2)
-		elif not is_boss and rng.randf() < LEGENDARY_CHANCE:
+		elif not is_boss and rng.randf() < _legendary_chance():
 			e.is_legendary = true
 			e.display_name = "Légendaire : " + e.display_name
 			e.max_hp = int(e.max_hp * 1.8)
@@ -270,6 +333,10 @@ func generate_floor(node_type: String = "combat") -> void:
 		_spawn_loot(p, is_elite)
 
 	refresh()        # règle map_view.dungeon, le brouillard et la caméra
+
+## Probabilité qu'un monstre soit légendaire (porteur de pouvoir), ×4 avec Chasseur.
+func _legendary_chance() -> float:
+	return LEGENDARY_CHANCE * (4.0 if GameState.legendary_boost() else 1.0)
 
 func _pick_enemy_def() -> Dictionary:
 	var pool: Array = []
@@ -744,6 +811,7 @@ func on_enemy_killed(e: Entity) -> void:
 		if hits > 0:
 			add_message("[color=#ff8a4a]✹ %s explose au contact de la mort.[/color]" % e.display_name)
 	if e.is_boss:
+		run_bosses += 1
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
@@ -796,12 +864,26 @@ func _pick_droppable_skill() -> String:
 		pool.append(id); weights.append(w); total += w
 	if pool.is_empty():
 		return ""
+	var pick: String = _weighted_skill_pick(pool, weights, total)
+	# Affinité Arcane : tire deux fois et garde la compétence la plus rare.
+	if GameState.better_drop_pool():
+		var alt: String = _weighted_skill_pick(pool, weights, total)
+		if _skill_weight(alt) < _skill_weight(pick):
+			pick = alt
+	return pick
+
+func _weighted_skill_pick(pool: Array, weights: Array, total: float) -> String:
 	var roll: float = rng.randf() * total
 	for i in pool.size():
 		roll -= weights[i]
 		if roll <= 0.0:
 			return pool[i]
 	return pool[pool.size() - 1]
+
+## Poids de rareté d'une compétence (plus petit = plus rare).
+func _skill_weight(id: String) -> float:
+	var s: Dictionary = Data.SKILLS.get(id, {})
+	return float(Data.SKILL_RARITIES.get(s.get("rarity", "commune"), {"weight": 999.0})["weight"])
 
 func _acquire_skill(id: String) -> void:
 	if not Data.SKILLS.has(id):
@@ -1049,7 +1131,8 @@ func _begin_turn(e: Entity) -> bool:
 	return stunned
 
 func _enemy_act(e: Entity) -> void:
-	if e.is_boss and not e.enraged and e.hp <= e.max_hp * 0.5:
+	var rage_at: float = 0.8 if has_oath("glas") else 0.5
+	if e.is_boss and not e.enraged and e.hp <= e.max_hp * rage_at:
 		e.enraged = true
 		e.atk = int(round(e.atk * 1.4))
 		add_message("[color=#ff4040]⚡ Le Gardien entre en RAGE ! Ses coups redoublent.[/color]")
@@ -1086,7 +1169,7 @@ func open_shop() -> void:
 		var c: Dictionary = Data.generate_consumable(floor_num, rng)
 		c["price"] = 8 + floor_num
 		shop_stock.append(c)
-	if rng.randf() < 0.5:
+	if GameState.shop_always_power() or rng.randf() < 0.5:
 		var pdef: Dictionary = _pick_power_def()
 		if not pdef.is_empty():
 			var pitem: Dictionary = pdef.duplicate(true)
@@ -1215,10 +1298,21 @@ func game_over() -> void:
 		"item": str(run_best_item.get("name", "")),
 		"item_color": run_best_item.get("rarity_color", Color(0.82, 0.82, 0.88)).to_html(false),
 	}
-	GameState.add_shards(run_shards)
+	# Serments : multiplie les Éclats banqués.
+	var banked: int = int(round(run_shards * oath_shard_mult()))
+	GameState.add_shards(banked)
+	# Connaissances : récompense le progrès (étages au-delà du record) et la nouveauté
+	# (Gardiens vaincus), + bonus des Serments. Calculé AVANT record_run (qui maj le record).
+	var knowledge_gained: int = maxi(0, floor_num - GameState.best_floor) + run_bosses * 2 + oath_knowledge_bonus()
+	if knowledge_gained > 0:
+		GameState.add_knowledge(knowledge_gained)
+	stats["knowledge"] = knowledge_gained
 	GameState.record_run(stats)
 	state = State.GAMEOVER
-	hud.show_gameover("Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level])
+	var summary: String = "Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level]
+	if knowledge_gained > 0:
+		summary += "   ✶ +%d Connaissance(s) acquise(s)." % knowledge_gained
+	hud.show_gameover(summary)
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:

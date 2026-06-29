@@ -391,6 +391,9 @@ func show_title() -> void:
 	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 360.0)
 	sanct.pressed.connect(game.open_meta)
 	col.add_child(sanct)
+	var know := Ui.menu_button("✶   Arbre de Connaissances  (%d)" % GameState.knowledge, 360.0)
+	know.pressed.connect(game.open_knowledge)
+	col.add_child(know)
 	var opt := Ui.menu_button("⚙   Options", 360.0)
 	opt.pressed.connect(show_options)
 	col.add_child(opt)
@@ -416,10 +419,26 @@ func show_loadout() -> void:
 	col.add_child(row)
 	for wtype in Data.WEAPON_TYPES:
 		row.add_child(_weapon_card(wtype))
+	if GameState.oaths_unlocked():
+		col.add_child(_spacer(10))
+		_build_oaths_panel(col)
 	col.add_child(_spacer(14))
 	var back := Ui.menu_button("↩   Retour", 240.0, 16)
 	back.pressed.connect(game.return_to_title)
 	col.add_child(back)
+
+## Serments : modificateurs de difficulté optionnels (toggles) avant de choisir l'arme.
+func _build_oaths_panel(col: VBoxContainer) -> void:
+	col.add_child(Ui.label("⚔  SERMENTS — opte pour plus de difficulté contre de meilleures récompenses", 16, Color(0.9, 0.55, 0.55), true))
+	for o in Data.OATHS:
+		if o.get("major", false) and not GameState.major_oaths_unlocked():
+			continue
+		var on: bool = game.has_oath(o["id"])
+		var mark: String = "[✓] " if on else "[  ] "
+		var btn := Ui.button("%s%s — %s" % [mark, o["name"], o["desc"]], 46, 14)
+		btn.add_theme_color_override("font_color", Color(0.95, 0.7, 0.7) if on else Color(0.7, 0.7, 0.78))
+		btn.pressed.connect(game.toggle_oath.bind(o["id"]))
+		col.add_child(btn)
 
 func _weapon_card(wtype: String) -> Control:
 	var h: Dictionary = Data.HEROINE
@@ -516,6 +535,53 @@ func show_meta() -> void:
 func _on_buy(key: String) -> void:
 	if GameState.buy_upgrade(key):
 		show_meta()
+
+# --- Arbre de Connaissances ---------------------------------------------------
+func show_knowledge() -> void:
+	_menu_show()
+	var col := _menu_column(820.0, true)
+	col.add_child(Ui.label("✶  ARBRE DE CONNAISSANCES", 30, Color(0.7, 0.85, 1.0), true))
+	col.add_child(Ui.label("Les Connaissances ne s'achètent pas en force brute : elles débloquent des systèmes qui changent ta façon de jouer.", 14, Ui.MUTED, true, true, 760))
+	col.add_child(_spacer(4))
+	col.add_child(Ui.label("Connaissances : %d   —   gagnées en repoussant ton record et en terrassant les Gardiens." % GameState.knowledge, 17, Color(0.7, 0.85, 1.0), true))
+	col.add_child(HSeparator.new())
+
+	for bkey in Data.KNOWLEDGE_BRANCHES:
+		var binfo: Dictionary = Data.KNOWLEDGE_BRANCHES[bkey]
+		col.add_child(Ui.label("◈ " + str(binfo["name"]), 19, binfo.get("color", Color.WHITE), true))
+		for nid in Data.KNOWLEDGE_ORDER:
+			var node: Dictionary = Data.KNOWLEDGE_NODES[nid]
+			if String(node["branch"]) != bkey:
+				continue
+			col.add_child(_knowledge_row(nid, node))
+		col.add_child(_spacer(6))
+
+	col.add_child(HSeparator.new())
+	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
+	back.pressed.connect(game.return_to_title)
+	col.add_child(back)
+
+func _knowledge_row(nid: String, node: Dictionary) -> Control:
+	var owned: bool = GameState.has_node(nid)
+	var prereq_ok: bool = GameState.node_prereqs_met(nid)
+	var label_txt: String
+	if owned:
+		label_txt = "✔ %s  —  %s     ★ DÉBLOQUÉ" % [node["name"], node["desc"]]
+	elif not prereq_ok:
+		var reqs: Array = []
+		for r in node["requires"]:
+			reqs.append(str(Data.KNOWLEDGE_NODES[r]["name"]))
+		label_txt = "🔒 %s  —  %s     (requiert : %s)" % [node["name"], node["desc"], ", ".join(reqs)]
+	else:
+		label_txt = "%s  —  %s     [%d Connaissance(s)]" % [node["name"], node["desc"], int(node["cost"])]
+	var btn := Ui.button(label_txt, 52, 14)
+	btn.disabled = owned or not GameState.can_unlock_node(nid)
+	btn.pressed.connect(_on_buy_knowledge.bind(nid))
+	return btn
+
+func _on_buy_knowledge(nid: String) -> void:
+	if GameState.buy_knowledge_node(nid):
+		show_knowledge()
 
 # --- Écran de fin de run (mort) -----------------------------------------------
 func show_gameover(death_summary: String) -> void:
