@@ -65,9 +65,13 @@ func _init() -> void:
 	_save(_gen_artifact(), "artifact")
 	_save(_gen_potion(), "potion")
 
-	# --- Icônes de la carte à embranchements (binôme initial : combat + gardien) ---
+	# --- Icônes de la carte à embranchements ---
 	_save(_gen_node_combat(), "node_combat")
 	_save(_gen_node_boss(), "node_boss")
+	_save(_gen_node_elite(), "node_elite")
+	_save(_gen_node_shop(), "node_shop")
+	_save(_gen_node_event(), "node_event")
+	_save(_gen_node_rest(), "node_rest")
 
 	# --- Terrain par biome (open world) ---
 	for b in Data.BIOMES:
@@ -673,6 +677,80 @@ func _gen_node_boss() -> Image:
 	_px(img, 12, 7, GOLD_L)
 	# Gemme centrale du bandeau.
 	_diamond(img, 12, 16, 1, EMBER); _px(img, 12, 16, GOLD_L)
+	return img
+
+# Nœud ÉLITE : crâne cornu aux orbites de braise (combat renforcé).
+func _gen_node_elite() -> Image:
+	var img := _new(false)
+	# Petites cornes.
+	_tri_up(img, 6, 7, 1, 4, BONE_D); _tri_up(img, 18, 7, 1, 4, BONE_D)
+	_px(img, 6, 3, BONE); _px(img, 18, 3, BONE)
+	# Crâne.
+	_disc_o(img, 12, 10, 6.0, BONE_D, INK)
+	_disc(img, 12, 9, 5.2, BONE)
+	_ellipse(img, 9, 6, 1.6, 1.3, Color(1, 1, 0.95))
+	# Orbites + lueur de braise.
+	_rect(img, 8, 8, 3, 3, INK); _rect(img, 14, 8, 3, 3, INK)
+	_px(img, 9, 9, EMBER); _px(img, 15, 9, EMBER)
+	_px(img, 9, 8, GOLD_L); _px(img, 15, 8, GOLD_L)
+	_px(img, 12, 12, INK)                              # nasale
+	# Mâchoire + dents.
+	_rect(img, 8, 15, 9, 3, BONE_D); _rect(img, 8, 15, 9, 1, BONE)
+	for tx in range(9, 17, 2):
+		_rect(img, tx, 15, 1, 3, INK)
+	return img
+
+# Nœud BOUTIQUE : bourse de cuir, ficelle dorée, pièce qui dépasse.
+func _gen_node_shop() -> Image:
+	var img := _new(false)
+	var leather := Color(0.45, 0.32, 0.22)
+	var leather_d := leather.darkened(0.35)
+	# Pièce d'or qui dépasse du col.
+	_disc_o(img, 12, 6, 2.3, GOLD, GOLD_D); _px(img, 11, 5, GOLD_L)
+	# Corps de la bourse.
+	_disc_o(img, 12, 15, 7.0, leather_d, INK)
+	_disc(img, 12, 15, 6.0, leather)
+	_ellipse(img, 9, 12, 2.3, 1.6, leather.lightened(0.22))
+	# Col plissé + ficelle.
+	_rect(img, 8, 8, 8, 2, leather_d)
+	_rect(img, 7, 10, 10, 1, GOLD_D); _rect(img, 7, 9, 10, 1, GOLD)
+	# Marque d'or sur la bourse.
+	_diamond(img, 12, 16, 2, GOLD); _px(img, 12, 16, GOLD_L)
+	return img
+
+# Nœud ÉVÉNEMENT : sigille arcanique avec point d'interrogation lumineux.
+func _gen_node_event() -> Image:
+	var img := _new(false)
+	_disc(img, 12, 12, 8.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.25))   # halo
+	_diamond(img, 12, 12, 7, ARCANE.darkened(0.35))
+	_diamond(img, 12, 12, 6, ARCANE)
+	_diamond(img, 12, 12, 4, ARCANE.darkened(0.45))
+	# Point d'interrogation (cyan).
+	_rect(img, 10, 8, 4, 1, CYAN_L)
+	_px(img, 13, 9, CYAN_L); _px(img, 13, 10, CYAN_L)
+	_px(img, 12, 11, CYAN_L); _px(img, 12, 12, CYAN_L)
+	_px(img, 12, 13, CYAN_L)
+	_px(img, 12, 15, Color(1, 1, 1))                  # point
+	return img
+
+# Nœud REPOS : feu de camp (bûches + flamme).
+func _gen_node_rest() -> Image:
+	var img := _new(false)
+	var wood := Color(0.45, 0.32, 0.21)
+	var wood_l := Color(0.55, 0.40, 0.27)
+	# Bûches croisées.
+	_line(img, 5, 19, 16, 15, INK); _line(img, 19, 19, 8, 15, INK)
+	_line(img, 5, 18, 16, 14, wood); _line(img, 6, 18, 17, 14, wood_l)
+	_line(img, 19, 18, 8, 14, wood); _line(img, 18, 18, 7, 14, wood_l)
+	_px(img, 5, 18, wood_l); _px(img, 19, 18, wood_l)
+	# Flamme.
+	_tri_up(img, 12, 15, 4, 10, EMBER.darkened(0.25))
+	_tri_up(img, 12, 15, 3, 8, EMBER)
+	_tri_up(img, 12, 14, 2, 6, GOLD)
+	_px(img, 12, 8, GOLD_L)
+	_px(img, 10, 13, EMBER.lightened(0.1)); _px(img, 14, 13, EMBER)   # langues de feu
+	# Braises au sol.
+	_px(img, 9, 18, EMBER); _px(img, 15, 18, GOLD)
 	return img
 
 # --- Terrain par biome --------------------------------------------------------
