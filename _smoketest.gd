@@ -266,5 +266,43 @@ func _ready() -> void:
 	assert(main.player.vision == v0 + 2, "le talent augmente le rayon de vision")
 	print("OK vision: base %d, talent +2 -> %d" % [v0, main.player.vision])
 
+	# --- Phase 1 : effets de statut (poison/brûlure, ralentissement, paralysie) ----
+	var te = Entity.new()
+	te.max_hp = 100; te.hp = 100; te.speed = 100
+	te.add_status("poison", 3, 5.0, 10)
+	te.add_status("poison", 3, 5.0, 10)
+	assert(te.status_stacks("poison") == 2, "poison cumule en stacks")
+	var dot = te.tick_statuses()
+	assert(dot == 10 and te.hp == 90, "DoT poison = value × stacks par tour")
+	te.add_status("slow", 2, 0.5)
+	assert(te.effective_speed() == 50, "ralentissement réduit la vitesse effective")
+	te.add_status("stun", 1)
+	assert(te.has_status("stun"), "paralysie active")
+	te.tick_statuses()
+	assert(not te.has_status("stun"), "la paralysie expire après sa durée")
+	print("OK statuts: poison cumulable, ralentissement, paralysie")
+
+	# --- Phase 1 : primitives de combat (AoE, rebond, dash, helpers de statut) -----
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])   # -> PLAYING (dungeon + ennemis)
+	var px = main.player.x; var py = main.player.y
+	main.enemies.clear()
+	var mk = func(dx, dy):
+		var e = Entity.new()
+		e.faction = Entity.Faction.ENEMY
+		e.display_name = "cible"; e.max_hp = 9999; e.hp = 9999
+		e.x = px + dx; e.y = py + dy; e.speed = 100
+		main.enemies.append(e)
+		return e
+	var e1 = mk.call(1, 0)
+	var _e2 = mk.call(2, 0)
+	var e3 = mk.call(0, 1)
+	assert(main.aoe_attack(main.player.pos(), 1, 5, "test") == 2, "AoE rayon 1 touche les ennemis adjacents")
+	assert(main.bounce_attack(_e2, 10, 2, "test") >= 2, "rebond touche plusieurs ennemis")
+	main.apply_poison(e1, 3, 4.0, 10)
+	main.apply_slow(e3, 2, 0.4)
+	assert(e1.has_status("poison") and e3.has_status("slow"), "les helpers appliquent les statuts")
+	print("OK primitives: AoE, rebond, dash dispo + helpers de statut")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

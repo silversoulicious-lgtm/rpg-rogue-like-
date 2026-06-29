@@ -45,6 +45,7 @@ var stat_labels: Dictionary = {}
 var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
 var synergy_box: VBoxContainer
+var status_box: VBoxContainer
 
 var map_layer: CanvasLayer
 var map_root: Control
@@ -117,6 +118,8 @@ func _build_sidebar() -> void:
 
 	v.add_child(_section("CAPACITÉ"))
 	sb_ability = Ui.label("", 14, Color.WHITE, false, true, SIDEBAR_W - 56); v.add_child(sb_ability)
+	v.add_child(_section("ÉTATS"))
+	status_box = Ui.vbox(3); v.add_child(status_box)
 	v.add_child(_section("ÉQUIPEMENT"))
 	equip_box = Ui.vbox(6); v.add_child(equip_box)
 	v.add_child(_section("ARTEFACTS"))
@@ -721,6 +724,7 @@ func refresh() -> void:
 	_rebuild_equip()
 	_rebuild_artifacts()
 	_rebuild_synergies()
+	_rebuild_statuses()
 	log_label.text = "\n".join(game.messages)
 
 func _rebuild_equip() -> void:
@@ -757,3 +761,27 @@ func _rebuild_synergies() -> void:
 	for s in syns:
 		synergy_box.add_child(Ui.label("⚡ " + str(s["name"]), 14, s.get("color", Color(1.0, 0.9, 0.5))))
 		synergy_box.add_child(Ui.label(str(s.get("desc", "")), 11, Color(0.7, 0.7, 0.78), false, true, SIDEBAR_W - 60))
+
+const STATUS_LABEL := {
+	"poison": ["☠ Poison", Color(0.62, 0.85, 0.4)],
+	"burn": ["🔥 Brûlure", Color(1.0, 0.55, 0.3)],
+	"slow": ["🐌 Ralenti", Color(0.6, 0.8, 1.0)],
+	"stun": ["💫 Paralysé", Color(0.8, 0.75, 1.0)],
+}
+
+func _rebuild_statuses() -> void:
+	for c in status_box.get_children():
+		c.queue_free()
+	var st: Array = game.player.statuses
+	if st.is_empty():
+		status_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
+		return
+	for s in st:
+		var id: String = str(s["id"])
+		var meta: Array = STATUS_LABEL.get(id, [id, Color.WHITE])
+		var txt: String = str(meta[0])
+		var stacks: int = int(s.get("stacks", 1))
+		if (id == "poison" or id == "burn") and stacks > 1:
+			txt += " ×%d" % stacks
+		txt += "  (%d t)" % int(s["turns"])
+		status_box.add_child(Ui.label(txt, 14, meta[1]))

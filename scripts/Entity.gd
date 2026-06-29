@@ -66,6 +66,12 @@ var ability_cd: int = 0
 # --- Système de vitesse ---
 var energy: int = 0
 
+# --- Effets de statut (transitoires, durée en TOURS) ---
+# Chaque entrée : { id, turns, value, stacks }. DoT : "poison" / "burn"
+# (dégâts = value × stacks par tour). "slow" : value = fraction de Vitesse en
+# moins. "stun" : saute son tour tant que turns > 0.
+var statuses: Array = []
+
 func pos() -> Vector2i:
 	return Vector2i(x, y)
 
@@ -91,6 +97,61 @@ func ability_ready() -> bool:
 func tick_cooldown() -> void:
 	if ability_cd > 0:
 		ability_cd -= 1
+
+# --- Effets de statut ---------------------------------------------------------
+## Applique/rafraîchit un statut. DoT (poison/burn) cumule jusqu'à max_stacks ;
+## les autres (slow/stun) rafraîchissent la durée et gardent la valeur la plus forte.
+func add_status(id: String, turns: int, value: float = 0.0, max_stacks: int = 1) -> void:
+	for s in statuses:
+		if s["id"] == id:
+			s["stacks"] = mini(max_stacks, int(s.get("stacks", 1)) + (1 if max_stacks > 1 else 0))
+			s["turns"] = maxi(int(s["turns"]), turns)
+			s["value"] = maxf(float(s["value"]), value)
+			return
+	statuses.append({ "id": id, "turns": turns, "value": value, "stacks": 1 })
+
+func has_status(id: String) -> bool:
+	for s in statuses:
+		if s["id"] == id and int(s["turns"]) > 0:
+			return true
+	return false
+
+func status_value(id: String) -> float:
+	for s in statuses:
+		if s["id"] == id:
+			return float(s["value"])
+	return 0.0
+
+func status_stacks(id: String) -> int:
+	for s in statuses:
+		if s["id"] == id:
+			return int(s.get("stacks", 1))
+	return 0
+
+func clear_statuses() -> void:
+	statuses.clear()
+
+## Avance les statuts d'un tour : applique les DoT (renvoie les dégâts subis) et
+## décrémente toutes les durées, retirant les statuts expirés.
+func tick_statuses() -> int:
+	var dot: int = 0
+	var keep: Array = []
+	for s in statuses:
+		var id: String = s["id"]
+		if id == "poison" or id == "burn":
+			dot += int(round(float(s["value"]) * int(s.get("stacks", 1))))
+		s["turns"] = int(s["turns"]) - 1
+		if int(s["turns"]) > 0:
+			keep.append(s)
+	statuses = keep
+	if dot > 0:
+		hp = max(0, hp - dot)
+	return dot
+
+## Vitesse effective, réduite par le ralentissement (statut "slow").
+func effective_speed() -> int:
+	var slow: float = status_value("slow") if has_status("slow") else 0.0
+	return maxi(10, int(round(float(speed) * (1.0 - clampf(slow, 0.0, 0.9)))))
 
 func has_artifact(id: String) -> bool:
 	for a in artifacts:

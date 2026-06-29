@@ -211,6 +211,7 @@ func _boss_alive() -> bool:
 # --- Génération d'un combat (combat / élite / boss) ---------------------------
 func generate_floor(node_type: String = "combat") -> void:
 	first_strike_used = false
+	player.clear_statuses()
 	var msize: Vector2i = Data.random_map_size(rng)
 	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_floor(floor_num))
 	player.x = dungeon.start.x
@@ -375,8 +376,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			open_inventory()
 
 # --- Actions du joueur --------------------------------------------------------
+## Si l'héroïne est paralysée, toute action lui fait perdre son tour.
+func _player_stunned() -> bool:
+	if player != null and player.has_status("stun"):
+		add_message("[color=#b3a8e0]Tu es paralysée — tour perdu ![/color]")
+		_player_acted()
+		return true
+	return false
+
 func try_move(dx: int, dy: int) -> void:
 	if state != State.PLAYING:
+		return
+	if _player_stunned():
 		return
 	var nx: int = player.x + dx
 	var ny: int = player.y + dy
@@ -403,10 +414,14 @@ func try_move(dx: int, dy: int) -> void:
 func pass_turn() -> void:
 	if state != State.PLAYING:
 		return
+	if _player_stunned():
+		return
 	_player_acted()
 
 func use_ability() -> void:
 	if state != State.PLAYING:
+		return
+	if _player_stunned():
 		return
 	if player.ability_id == "":
 		add_message("[color=#888888]Aucune arme équipée : pas de compétence.[/color]")
@@ -433,12 +448,7 @@ func use_ability() -> void:
 
 func _do_whirl() -> bool:
 	var base: int = player.atk + player.magic + player.ability_power
-	var hit := false
-	for e in enemies.duplicate():
-		if e.is_alive() and _chebyshev(player.pos(), e.pos()) == 1:
-			hit = true
-			_player_attack(e, base, "[color=#ffd24a]Tourbillon[/color] frappe")
-	return hit
+	return aoe_attack(player.pos(), 1, base, "[color=#ffd24a]Tourbillon[/color] frappe") > 0
 
 func _do_ranged(base: int, verb: String) -> bool:
 	var target: Entity = _nearest_enemy_in_range(player.ability_range)
@@ -458,6 +468,91 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 			best_d = d
 			best = e
 	return best
+
+# --- Primitives de combat (briques réutilisées par les compétences/pouvoirs) --
+## Zone : frappe tous les ennemis vivants dans le rayon (Chebyshev) du centre.
+func aoe_attack(center: Vector2i, radius: int, base: int, verb: String) -> int:
+	var hits := 0
+	for e in enemies.duplicate():
+		if e.is_alive() and _chebyshev(center, e.pos()) <= radius:
+			_player_attack(e, base, verb)
+			hits += 1
+	return hits
+
+## Transpercement : depuis `from`, avance selon `dir` et frappe tous les ennemis
+## alignés jusqu'à un obstacle/bord (ou max_range cases).
+func pierce_attack(from: Vector2i, dir: Vector2i, base: int, verb: String, max_range: int = 12) -> int:
+	var hits := 0
+	var p: Vector2i = from
+	for i in max_range:
+		p += dir
+		if not dungeon.is_walkable(p.x, p.y):
+			break
+		var e: Entity = enemy_at(p.x, p.y)
+		if e != null and e.is_alive():
+			_player_attack(e, base, verb)
+			hits += 1
+	return hits
+
+## Rebond / chaîne : frappe une 1re cible puis saute vers l'ennemi vivant le plus
+## proche non encore touché (jusqu'à `bounces` sauts), avec atténuation `falloff`.
+func bounce_attack(first: Entity, base: int, bounces: int, verb: String, falloff: float = 0.85, jump_range: int = 6) -> int:
+	if first == null or not first.is_alive():
+		return 0
+	var hit_ids := {}
+	var current: Entity = first
+	var dmg: int = base
+	var hits := 0
+	for i in bounces + 1:
+		if current == null or not current.is_alive():
+			break
+		_player_attack(current, dmg, verb)
+		hit_ids[current.get_instance_id()] = true
+		hits += 1
+		dmg = max(1, int(round(dmg * falloff)))
+		current = _nearest_enemy_excluding(current.pos(), jump_range, hit_ids)
+	return hits
+
+## Dash : déplace le joueur de `distance` cases dans `dir`, s'arrêtant avant un
+## obstacle ou un ennemi. Renvoie le nombre de cases parcourues.
+func dash(dir: Vector2i, distance: int) -> int:
+	var moved := 0
+	for i in distance:
+		var nx: int = player.x + dir.x
+		var ny: int = player.y + dir.y
+		if not dungeon.is_walkable(nx, ny) or enemy_at(nx, ny) != null or Vector2i(nx, ny) == dungeon.stairs:
+			break
+		player.x = nx
+		player.y = ny
+		moved += 1
+	if moved > 0:
+		_pickup_loot_at(player.pos())
+	return moved
+
+func _nearest_enemy_excluding(from: Vector2i, rng_tiles: int, exclude: Dictionary) -> Entity:
+	var best: Entity = null
+	var best_d: int = 999999
+	for e in enemies:
+		if not e.is_alive() or exclude.has(e.get_instance_id()):
+			continue
+		var d: int = _chebyshev(from, e.pos())
+		if d <= rng_tiles and d < best_d:
+			best_d = d
+			best = e
+	return best
+
+# --- Statuts : application (utilisés par compétences/pouvoirs) -----------------
+func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 10) -> void:
+	target.add_status("poison", turns, dmg_per_turn, max_stacks)
+
+func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
+	target.add_status("burn", turns, dmg_per_turn, max_stacks)
+
+func apply_slow(target: Entity, turns: int, pct: float) -> void:
+	target.add_status("slow", turns, pct)
+
+func apply_stun(target: Entity, turns: int) -> void:
+	target.add_status("stun", turns)
 
 # --- Combat -------------------------------------------------------------------
 ## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie,
@@ -648,7 +743,7 @@ func _acquire_artifact(def: Dictionary) -> void:
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:
 	player.energy -= Entity.ACTION_COST
-	_apply_regen(player)
+	_begin_turn(player)
 	player.tick_cooldown()
 	if not player.is_alive():
 		game_over()
@@ -673,24 +768,42 @@ func advance_world() -> void:
 			if e.is_alive() and e.energy >= Entity.ACTION_COST:
 				ready.append(e)
 		if ready.is_empty():
-			player.energy += player.speed
+			player.energy += player.effective_speed()
 			for e in enemies:
 				if e.is_alive():
-					e.energy += e.speed
+					e.energy += e.effective_speed()
 			continue
 		for e in ready:
 			if not e.is_alive():
 				continue
 			e.energy -= Entity.ACTION_COST
-			_apply_regen(e)
+			var stunned: bool = _begin_turn(e)
+			if not e.is_alive():        # un DoT (poison/brûlure) l'a achevé
+				on_enemy_killed(e)
+				continue
+			if stunned:
+				add_message("[color=#b3a8e0]%s est paralysé.[/color]" % e.display_name)
+				continue
 			_enemy_act(e)
 			if not player.is_alive():
 				game_over()
 				return
 
-func _apply_regen(e: Entity) -> void:
-	if e.hp_regen > 0 and e.is_alive():
+## Début de tour d'une entité : régénération + tic des statuts (DoT, durées).
+## Renvoie true si l'entité est PARALYSÉE ce tour (elle saute son action).
+func _begin_turn(e: Entity) -> bool:
+	if not e.is_alive():
+		return false
+	var stunned: bool = e.has_status("stun")
+	if e.hp_regen > 0:
 		e.heal(e.hp_regen)
+	var dot: int = e.tick_statuses()
+	if dot > 0:
+		if e.faction == Entity.Faction.PLAYER:
+			add_message("[color=#9fdf6a]Tu subis %d dégâts (poison/brûlure).[/color]" % dot)
+		else:
+			add_message("[color=#9fdf6a]%s subit %d (poison/brûlure).[/color]" % [e.display_name, dot])
+	return stunned
 
 func _enemy_act(e: Entity) -> void:
 	if e.is_boss and not e.enraged and e.hp <= e.max_hp * 0.5:
