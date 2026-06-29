@@ -446,7 +446,7 @@ func _weapon_card(wtype: String) -> Control:
 	v.add_child(Ui.stat_gauge("VIT", speed, 130, Color(0.6, 0.95, 0.6), 150))
 	v.add_child(HSeparator.new())
 
-	var sk: Dictionary = Data.WEAPON_SKILLS[wpn["active_skill"]]
+	var sk: Dictionary = Data.SKILLS[Data.WEAPON_TYPE_BASE_SKILL[wtype]]
 	v.add_child(Ui.label("✦ Active — " + sk["name"], 15, Ui.ACCENT_SOFT, true))
 	v.add_child(Ui.label("%s  (recharge %d tours)" % [sk["desc"], int(sk["cd"])], 12, Ui.MUTED, true, true, 300))
 	v.add_child(Ui.label("⚙ Passive", 14, Color(0.85, 0.7, 0.35), true))
@@ -617,6 +617,8 @@ func show_inventory() -> void:
 		if player.equipment.has(slot) and player.equipment[slot].get("desc", "") != "":
 			overlay_content.add_child(Ui.label("   ✦ " + player.equipment[slot]["desc"], 12, Color(0.85, 0.7, 0.35), false, true, 700))
 
+	_build_skill_panel(player)
+
 	_overlay_label("— Objets —", Color(0.6, 0.85, 1.0))
 	if game.inventory.is_empty():
 		_overlay_label("(sac vide)", Color(0.5, 0.5, 0.58))
@@ -648,6 +650,43 @@ func show_inventory() -> void:
 	var close := Ui.button("Fermer   [I / Échap]", 42)
 	close.pressed.connect(game.close_inventory)
 	overlay_content.add_child(close)
+
+## Panneau « Compétences » : compétence active sélectionnable (compatibles avec
+## l'arme équipée), + liste des compétences apprises pour d'autres types.
+func _build_skill_panel(player) -> void:
+	var wtype: String = String(player.equipment.get("arme", {}).get("weapon_type", ""))
+	var tname: String = Data.WEAPON_TYPE_NAME.get(wtype, "—")
+	_overlay_label("— Compétences (arme : %s) —" % tname, Color(0.6, 0.85, 1.0))
+	for id in game.selectable_skills():
+		var s: Dictionary = Data.SKILLS[id]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		var active: bool = id == player.active_skill_id
+		var col: Color = Color(0.7, 1.0, 0.7) if active else Data.skill_rarity_color(id)
+		var lbl := Ui.label("%s%s  —  %s  (cd %d, portée %d)" % ["★ " if active else "", s["name"], s["desc"], int(s["cd"]), int(s["range"])], 14, col)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(lbl)
+		if active:
+			row.add_child(Ui.label("active", 13, Color(0.6, 1.0, 0.6)))
+		else:
+			var b := Ui.button("Équiper")
+			b.pressed.connect(_inv_select_skill.bind(id))
+			row.add_child(b)
+		overlay_content.add_child(row)
+	# Compétences apprises mais incompatibles avec l'arme actuelle (info).
+	var other: Array = []
+	for id in game.known_skills:
+		if String(Data.SKILLS.get(id, {}).get("wtype", "")) != wtype:
+			other.append(id)
+	if not other.is_empty():
+		var names: Array = []
+		for id in other:
+			names.append("%s (%s)" % [Data.SKILLS[id]["name"], Data.WEAPON_TYPE_NAME[Data.SKILLS[id]["wtype"]]])
+		overlay_content.add_child(Ui.label("Apprises (autre arme requise) : " + ", ".join(names), 12, Color(0.55, 0.55, 0.62), false, true, 700))
+
+func _inv_select_skill(id: String) -> void:
+	game.select_skill(id)
+	show_inventory()
 
 func _inv_equip(item: Dictionary) -> void:
 	game.equip_item(item)
@@ -709,8 +748,8 @@ func refresh() -> void:
 
 	# Capacité active = compétence de l'arme équipée (cf. Entity.recompute_stats).
 	var skill_name: String = "—"
-	if player.ability_id != "" and Data.WEAPON_SKILLS.has(player.ability_id):
-		skill_name = Data.WEAPON_SKILLS[player.ability_id]["name"]
+	if player.ability_id != "" and Data.SKILLS.has(player.ability_id):
+		skill_name = Data.SKILLS[player.ability_id]["name"]
 	if player.ability_id == "":
 		sb_ability.text = "Aucune arme équipée"
 		sb_ability.add_theme_color_override("font_color", Color(0.6, 0.6, 0.68))

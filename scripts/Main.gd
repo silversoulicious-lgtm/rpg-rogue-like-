@@ -31,6 +31,11 @@ var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
 
+# Compétences (Phase 2)
+var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
+var last_dir: Vector2i = Vector2i(1, 0)   # dernière direction de déplacement (visée auto)
+const SKILL_DROP_CHANCE := 0.06       # chance qu'un monstre lâche une compétence
+
 # Statistiques du run en cours (pour le journal de fin de run)
 var run_kills: int = 0
 var run_best_hit: int = 0
@@ -97,11 +102,13 @@ func start_run(loadout_id: String = "melee") -> void:
 	player.base_vision = Data.BASE_VISION
 	player.ability_cd = 0
 	player.equipment = { "arme": Data.make_starter_weapon(loadout_id) }
+	player.active_skill_id = Data.WEAPON_TYPE_BASE_SKILL[loadout_id]
 	player.artifacts = []
 	player.talents = []
 	player.level = 1
 	player.xp = 0
 	player.revives_used = 0
+	known_skills.clear()
 	player.recompute_stats()
 	player.hp = player.max_hp
 
@@ -407,6 +414,7 @@ func try_move(dx: int, dy: int) -> void:
 			return
 		player.x = nx
 		player.y = ny
+		last_dir = Vector2i(dx, dy)
 		_pickup_loot_at(player.pos())
 		_player_acted()
 	# sinon : mur → aucun tour consommé
@@ -423,39 +431,121 @@ func use_ability() -> void:
 		return
 	if _player_stunned():
 		return
-	if player.ability_id == "":
-		add_message("[color=#888888]Aucune arme équipée : pas de compétence.[/color]")
+	if player.ability_id == "" or not Data.SKILLS.has(player.ability_id):
+		add_message("[color=#888888]Aucune compétence active.[/color]")
 		refresh()
 		return
 	if not player.ability_ready():
-		add_message("[color=#888888]Capacité en recharge (%d tour(s)).[/color]" % player.ability_cd)
+		add_message("[color=#888888]Compétence en recharge (%d tour(s)).[/color]" % player.ability_cd)
 		refresh()
 		return
-	var hit := false
-	match player.ability_id:
-		"whirl":
-			hit = _do_whirl()
-		"bolt":
-			hit = _do_ranged(player.magic * 2 + player.atk + player.ability_power, "[color=#7ab8ff]Éclair[/color] foudroie")
-		"volley":
-			hit = _do_ranged(int(player.atk * 1.5) + player.magic + player.ability_power, "[color=#7aff8a]Flèche[/color] transperce")
-	if not hit:
+	if not _cast_skill(Data.SKILLS[player.ability_id]):
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
 		return
 	player.ability_cd = player.ability_cd_max
 	_player_acted()
 
-func _do_whirl() -> bool:
-	var base: int = player.atk + player.magic + player.ability_power
-	return aoe_attack(player.pos(), 1, base, "[color=#ffd24a]Tourbillon[/color] frappe") > 0
+## Dégâts de base d'une compétence selon le type d'arme, × multiplicateur "power".
+func _skill_damage(skill: Dictionary) -> int:
+	var b: int
+	match String(skill.get("wtype", "melee")):
+		"ranged": b = int(round(player.atk * 1.3)) + player.ability_power
+		"magic":  b = player.magic * 2 + player.ability_power
+		_:        b = player.atk + player.ability_power
+	return maxi(1, int(round(float(b) * float(skill.get("power", 1.0)))))
 
-func _do_ranged(base: int, verb: String) -> bool:
-	var target: Entity = _nearest_enemy_in_range(player.ability_range)
-	if target == null:
-		return false
-	_player_attack(target, base, verb)
-	return true
+## Direction cardinale (axe dominant) du joueur vers une case (visée auto).
+func _cardinal_to(target: Vector2i) -> Vector2i:
+	var dx: int = target.x - player.x
+	var dy: int = target.y - player.y
+	if abs(dx) >= abs(dy):
+		return Vector2i(signi(dx), 0) if dx != 0 else last_dir
+	return Vector2i(0, signi(dy))
+
+## Exécute une compétence (data-driven). Renvoie false si aucune cible/effet.
+func _cast_skill(skill: Dictionary) -> bool:
+	var dmg: int = _skill_damage(skill)
+	var name: String = String(skill.get("name", "Compétence"))
+	var rng_tiles: int = int(skill.get("range", 1))
+	match String(skill.get("effect", "")):
+		"aoe":
+			return aoe_attack(player.pos(), int(skill.get("radius", 1)), dmg, "%s frappe" % name) > 0
+		"single":
+			var t: Entity = _nearest_enemy_in_range(rng_tiles)
+			if t == null: return false
+			_player_attack(t, dmg, "%s touche" % name)
+			return true
+		"melee_multi", "ranged_multi":
+			var tm: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tm == null: return false
+			for i in int(skill.get("hits", 2)):
+				if tm.is_alive():
+					_player_attack(tm, dmg, "%s touche" % name)
+			return true
+		"true_strike":
+			var ts: Entity = _nearest_enemy_in_range(rng_tiles)
+			if ts == null: return false
+			_player_attack(ts, dmg, "%s transperce" % name, true)
+			return true
+		"vampiric":
+			var tv: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tv == null: return false
+			var before: int = tv.hp
+			_player_attack(tv, dmg, "%s saigne" % name)
+			var dealt: int = before - tv.hp
+			var healed: int = int(ceil(float(dealt) * float(skill.get("heal_pct", 0.5))))
+			if healed > 0:
+				player.heal(healed)
+				add_message("[color=#ff7a8a]%s : +%d PV.[/color]" % [name, healed])
+			return true
+		"dash_strike":
+			var td: Entity = _nearest_enemy_in_range(99)
+			if td == null: return false
+			dash(_cardinal_to(td.pos()), int(skill.get("dash", 3)))
+			var adj: Entity = _nearest_enemy_in_range(1)
+			if adj != null:
+				_player_attack(adj, dmg, "%s fend" % name)
+			return true
+		"explosive":
+			var te: Entity = _nearest_enemy_in_range(rng_tiles)
+			if te == null: return false
+			var center: Vector2i = te.pos()
+			_player_attack(te, dmg, "%s touche" % name)
+			aoe_attack(center, int(skill.get("radius", 1)), int(round(dmg * 0.7)), "%s explose" % name)
+			return true
+		"pierce":
+			var tp: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tp == null: return false
+			return pierce_attack(player.pos(), _cardinal_to(tp.pos()), dmg, "%s transperce" % name, rng_tiles) > 0
+		"bounce", "chain":
+			var tb: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tb == null: return false
+			return bounce_attack(tb, dmg, int(skill.get("bounces", 3)), "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
+		"status_shot":
+			var tst: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tst == null: return false
+			_player_attack(tst, dmg, "%s touche" % name)
+			if tst.is_alive():
+				_apply_skill_status(tst, skill, dmg)
+			return true
+	return false
+
+func _apply_skill_status(target: Entity, skill: Dictionary, dmg: int) -> void:
+	var turns: int = int(skill.get("turns", 2))
+	match String(skill.get("status", "")):
+		"slow":
+			apply_slow(target, turns, float(skill.get("val", 0.4)))
+			add_message("[color=#9fdfff]%s est ralenti.[/color]" % target.display_name)
+		"stun":
+			apply_stun(target, turns)
+			add_message("[color=#cdb8ff]%s est paralysé.[/color]" % target.display_name)
+		"burn":
+			apply_burn(target, turns, maxf(1.0, round(float(dmg) * float(skill.get("val", 0.3)))))
+			add_message("[color=#ff9a5a]%s prend feu.[/color]" % target.display_name)
+		"poison":
+			apply_poison(target, turns, maxf(1.0, round(float(dmg) * float(skill.get("val", 0.3)))))
+			add_message("[color=#9fdf6a]%s est empoisonné.[/color]" % target.display_name)
 
 func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 	var best: Entity = null
@@ -557,7 +647,7 @@ func apply_stun(target: Entity, turns: int) -> void:
 # --- Combat -------------------------------------------------------------------
 ## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie,
 ## et les procs d'objets uniques (exécution, frénésie, premier coup, frappe double).
-func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
+func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: bool = false) -> void:
 	var raw: float = float(base_raw)
 	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
@@ -570,7 +660,8 @@ func _player_attack(target: Entity, base_raw: int, verb: String) -> void:
 	var crit: bool = force_crit or rng.randf() < player.crit_chance
 	if crit:
 		raw *= 2.0
-	var dealt: int = target.take_damage(max(1, int(round(raw)) - target.defense))
+	var def: int = 0 if ignore_def else target.defense
+	var dealt: int = target.take_damage(max(1, int(round(raw)) - def))
 	run_best_hit = max(run_best_hit, dealt)
 	var flair := ""
 	if force_crit:
@@ -633,24 +724,92 @@ func on_enemy_killed(e: Entity) -> void:
 		if heal_amt > 0:
 			player.heal(heal_amt)
 			add_message("[color=#7cfc9a]Soif de sang : +%d PV.[/color]" % heal_amt)
+	var death_pos: Vector2i = e.pos()
 	enemies.erase(e)
 	if e.is_boss:
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
 		_bag_add(reward)
+		_drop_skill(death_pos, true)        # le boss lâche aussi une compétence
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
+		if rng.randf() < SKILL_DROP_CHANCE:
+			_drop_skill(death_pos, false)
 
 # --- Butin & inventaire -------------------------------------------------------
 func _pickup_loot_at(p: Vector2i) -> void:
 	for item in loot.duplicate():
 		if item["pos"] == p:
 			loot.erase(item)
-			if item["kind"] == "artifact":
-				_acquire_artifact(item["data"])
-			else:
-				_bag_add(item["data"])
+			match item["kind"]:
+				"artifact":
+					_acquire_artifact(item["data"])
+				"skill":
+					_acquire_skill(String(item["data"]["id"]))
+				_:
+					_bag_add(item["data"])
+
+# --- Compétences (Phase 2) ----------------------------------------------------
+## Tire une compétence droppable (hors bases, non encore connue), pondérée par
+## rareté, et la dépose au sol à `pos`. `guaranteed` réservé aux boss.
+func _drop_skill(pos: Vector2i, _guaranteed: bool) -> void:
+	var id: String = _pick_droppable_skill()
+	if id == "":
+		return
+	loot.append({ "pos": pos, "kind": "skill", "glyph": "✦", "sprite": "artifact",
+		"color": Data.skill_rarity_color(id), "data": { "id": id } })
+	add_message("[color=#b8a0ff]✦ Une compétence scintille au sol…[/color]")
+
+func _pick_droppable_skill() -> String:
+	var pool: Array = []
+	var weights: Array = []
+	var total: float = 0.0
+	for id in Data.SKILLS:
+		var s: Dictionary = Data.SKILLS[id]
+		if String(s["rarity"]) == "base" or known_skills.has(id):
+			continue
+		var w: float = float(Data.SKILL_RARITIES[s["rarity"]]["weight"])
+		pool.append(id); weights.append(w); total += w
+	if pool.is_empty():
+		return ""
+	var roll: float = rng.randf() * total
+	for i in pool.size():
+		roll -= weights[i]
+		if roll <= 0.0:
+			return pool[i]
+	return pool[pool.size() - 1]
+
+func _acquire_skill(id: String) -> void:
+	if not Data.SKILLS.has(id):
+		return
+	if known_skills.has(id) or String(Data.SKILLS[id]["rarity"]) == "base":
+		run_shards += 8
+		add_message("Compétence déjà connue : %s (+8 Éclats)." % Data.SKILLS[id]["name"])
+		return
+	known_skills.append(id)
+	add_message("[color=#c8b0ff]✦ Compétence apprise : %s — %s[/color]" % [Data.SKILLS[id]["name"], Data.SKILLS[id]["desc"]])
+	refresh()
+
+## Liste des compétences sélectionnables avec l'arme équipée (base du type + apprises compatibles).
+func selectable_skills() -> Array:
+	var wtype: String = String(player.equipment.get("arme", {}).get("weapon_type", ""))
+	if wtype == "":
+		return []
+	var out: Array = [Data.WEAPON_TYPE_BASE_SKILL[wtype]]
+	for id in known_skills:
+		if String(Data.SKILLS.get(id, {}).get("wtype", "")) == wtype and not out.has(id):
+			out.append(id)
+	return out
+
+## Définit la compétence active (doit être compatible avec l'arme équipée).
+func select_skill(id: String) -> void:
+	if not selectable_skills().has(id):
+		return
+	player.active_skill_id = id
+	player.recompute_stats()
+	add_message("Compétence active : [color=#c8b0ff]%s[/color]." % Data.SKILLS[id]["name"])
+	refresh()
 
 func _bag_add(item: Dictionary) -> void:
 	_note_item(item)

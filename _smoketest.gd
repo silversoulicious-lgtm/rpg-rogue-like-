@@ -304,5 +304,61 @@ func _ready() -> void:
 	assert(e1.has_status("poison") and e3.has_status("slow"), "les helpers appliquent les statuts")
 	print("OK primitives: AoE, rebond, dash dispo + helpers de statut")
 
+	# --- Phase 2 : compétences d'armes -------------------------------------------
+	assert(Data.SKILLS.size() >= 18, "registre de compétences fourni (>=18)")
+	for wt in Data.WEAPON_TYPES:
+		var bid = Data.WEAPON_TYPE_BASE_SKILL[wt]
+		assert(Data.SKILLS.has(bid) and Data.SKILLS[bid]["rarity"] == "base" and Data.SKILLS[bid]["wtype"] == wt, "compétence de base définie pour %s" % wt)
+	main.start_run("magic")
+	assert(main.player.active_skill_id == "bolt" and main.player.ability_id == "bolt", "loadout magie -> base bolt")
+	# Repli de compatibilité quand la compétence active n'est pas du type de l'arme.
+	main.start_run("ranged")
+	main.player.active_skill_id = "fireball"   # magie, incompatible avec arme distance
+	main.player.recompute_stats()
+	assert(main.player.active_skill_id == "precise_shot", "repli sur la base du type si compétence incompatible")
+	print("OK compétences: registre + bases par type + repli de compatibilité")
+
+	# Effets de compétences sur des cibles contrôlées.
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	var px2 = main.player.x; var py2 = main.player.y
+	var mk2 = func(dx, dy, defv):
+		var e = Entity.new()
+		e.faction = Entity.Faction.ENEMY
+		e.display_name = "mob"; e.max_hp = 9999; e.hp = 9999; e.defense = defv
+		e.x = px2 + dx; e.y = py2 + dy; e.speed = 100
+		main.enemies.append(e)
+		return e
+	main.enemies.clear()
+	var a1 = mk2.call(1, 0, 0)
+	var a2 = mk2.call(0, 1, 0)
+	var hp_a1 = a1.hp; var hp_a2 = a2.hp
+	assert(main._cast_skill(Data.SKILLS["cleave"]), "cleave s'exécute")
+	assert(a1.hp < hp_a1 and a2.hp < hp_a2, "cleave (AoE) touche les adjacents")
+	assert(main._cast_skill(Data.SKILLS["ember"]), "ember s'exécute")
+	assert(a1.has_status("burn") or a2.has_status("burn"), "ember applique une brûlure")
+	# Brise-garde ignore la défense (cible blindée -> dégâts > 1).
+	main.enemies.clear()
+	var arm = mk2.call(1, 0, 1000)
+	var arm_hp = arm.hp
+	assert(main._cast_skill(Data.SKILLS["sunder"]), "sunder s'exécute")
+	assert(arm_hp - arm.hp > 1, "brise-garde ignore la défense")
+	print("OK effets de compétences: AoE, brûlure, perce-défense")
+
+	# Drops, apprentissage et sélection de compétences.
+	main.start_run("melee")
+	main.known_skills.clear(); main.loot.clear()
+	main._drop_skill(Vector2i(main.player.x, main.player.y), true)
+	assert(main.loot.size() == 1 and main.loot[0]["kind"] == "skill", "le boss/monstre dépose une compétence")
+	main.known_skills.clear()
+	main._acquire_skill("double_strike")        # mêlée -> compatible
+	assert(main.known_skills.has("double_strike"), "compétence apprise")
+	main.select_skill("double_strike")
+	assert(main.player.active_skill_id == "double_strike", "sélection d'une compétence compatible")
+	main._acquire_skill("fireball")             # magie -> incompatible avec arme mêlée
+	main.select_skill("fireball")
+	assert(main.player.active_skill_id == "double_strike", "sélection d'une compétence incompatible refusée")
+	print("OK compétences: drop, apprentissage, sélection + filtre de compatibilité")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

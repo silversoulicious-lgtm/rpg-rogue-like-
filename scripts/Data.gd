@@ -17,25 +17,61 @@ const HEROINE := {
 }
 
 # --- ARMES & COMPÉTENCES ------------------------------------------------------
-# Chaque arme a un TYPE (mêlée / distance / magie) et porte 2 compétences :
-#   • une compétence ACTIVE (touche ESPACE, sur recharge) définie par son type ;
+# Chaque arme a un TYPE (mêlée / distance / magie) qui détermine :
+#   • quelles COMPÉTENCES actives sont utilisables (cf. SKILLS, plus bas) ;
 #   • une compétence PASSIVE (un proc, cf. UNIQUE_BASES) appliquée en continu.
-# La capacité active de l'héroïne provient donc de l'arme équipée
-# (Entity.recompute_stats lit "active_skill"). Recharge exprimée en TOURS.
+# La compétence ACTIVE est possédée par l'héroïne (Entity.active_skill_id) : au
+# départ c'est la base du type ; les autres se droppent. Recharge en TOURS.
 const WEAPON_TYPES := ["melee", "ranged", "magic"]
 const WEAPON_TYPE_NAME := { "melee": "Mêlée", "ranged": "Distance", "magic": "Magie" }
 const WEAPON_TYPE_COLOR := {
 	"melee": Color(1.0, 0.6, 0.4), "ranged": Color(0.6, 0.95, 0.6), "magic": Color(0.55, 0.7, 1.0),
 }
-# Compétence active par défaut selon le type d'arme.
-const WEAPON_TYPE_SKILL := { "melee": "whirl", "ranged": "volley", "magic": "bolt" }
+# Compétence de BASE par type d'arme : possédée dès le loadout, améliorable plus
+# tard via l'arbre de Connaissances (Phase 5). Les AUTRES compétences se droppent.
+const WEAPON_TYPE_BASE_SKILL := { "melee": "cleave", "ranged": "precise_shot", "magic": "bolt" }
 
-# Registre des compétences ACTIVES (recharge en tours, portée en cases).
-const WEAPON_SKILLS := {
-	"whirl":  { "name": "Tourbillon d'acier",  "desc": "Frappe TOUS les ennemis adjacents.",            "cd": 3, "range": 1 },
-	"volley": { "name": "Tir précis",          "desc": "Décoche une flèche puissante à distance.",      "cd": 2, "range": 5 },
-	"bolt":   { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche (magie).",     "cd": 3, "range": 6 },
+# Raretés de COMPÉTENCES (indépendantes des raretés d'armes) : poids de drop + teinte.
+const SKILL_RARITIES := {
+	"base":    { "name": "Base",    "color": Color(0.80, 0.80, 0.88), "weight": 0.0 },
+	"commune": { "name": "Commune", "color": Color(0.78, 0.78, 0.82), "weight": 60.0 },
+	"rare":    { "name": "Rare",    "color": Color(0.45, 0.70, 1.00), "weight": 28.0 },
+	"epique":  { "name": "Épique",  "color": Color(0.78, 0.45, 1.00), "weight": 12.0 },
 }
+
+# Registre des COMPÉTENCES ACTIVES (data-driven). Chaque entrée :
+#   wtype  : type d'arme requis (la compétence n'est utilisable qu'avec ce type)
+#   rarity : rareté de compétence ("base" = de départ, non droppée)
+#   cd     : recharge en TOURS ; range : portée en cases
+#   effect : tag interprété par Main._cast_skill (réutilise les primitives Phase 1)
+#   power  : multiplicateur de dégâts ; champs additionnels selon l'effet.
+const SKILLS := {
+	# === MÊLÉE ===
+	"cleave":          { "name": "Tourbillon d'acier", "desc": "Frappe tous les ennemis adjacents.",            "wtype": "melee",  "rarity": "base",    "cd": 3, "range": 1, "effect": "aoe",         "radius": 1, "power": 1.0 },
+	"double_strike":   { "name": "Frappe double",       "desc": "Deux coups rapides sur l'ennemi adjacent.",     "wtype": "melee",  "rarity": "commune", "cd": 2, "range": 1, "effect": "melee_multi", "hits": 2,   "power": 0.65 },
+	"sunder":          { "name": "Brise-garde",         "desc": "Un coup qui ignore la défense.",                "wtype": "melee",  "rarity": "rare",    "cd": 3, "range": 1, "effect": "true_strike", "power": 1.4 },
+	"vampiric_strike": { "name": "Lame vampirique",     "desc": "Frappe et te soigne de 50% des dégâts infligés.","wtype": "melee", "rarity": "rare",    "cd": 3, "range": 1, "effect": "vampiric",    "power": 1.1, "heal_pct": 0.5 },
+	"cataclysm":       { "name": "Cataclysme",          "desc": "Énorme frappe de zone (rayon 2).",              "wtype": "melee",  "rarity": "epique",  "cd": 4, "range": 2, "effect": "aoe",         "radius": 2, "power": 1.3 },
+	"dash_strike":     { "name": "Charge fendante",     "desc": "Bondit vers l'ennemi le plus proche et le frappe.","wtype": "melee","rarity": "rare",   "cd": 3, "range": 1, "effect": "dash_strike", "power": 1.2, "dash": 3 },
+	# === DISTANCE ===
+	"precise_shot":    { "name": "Tir précis",          "desc": "Décoche une flèche puissante à distance.",      "wtype": "ranged", "rarity": "base",    "cd": 2, "range": 5, "effect": "single",      "power": 1.0 },
+	"double_shot":     { "name": "Tir double",          "desc": "Deux flèches sur la cible la plus proche.",     "wtype": "ranged", "rarity": "commune", "cd": 2, "range": 5, "effect": "ranged_multi","hits": 2,   "power": 0.65 },
+	"explosive_shot":  { "name": "Tir explosif",        "desc": "La flèche explose autour de la cible (rayon 1).","wtype": "ranged","rarity": "rare",    "cd": 3, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.0 },
+	"piercing_shot":   { "name": "Tir transperçant",    "desc": "Traverse tous les ennemis alignés.",            "wtype": "ranged", "rarity": "rare",    "cd": 3, "range": 8, "effect": "pierce",      "power": 1.1 },
+	"bouncing_shot":   { "name": "Tir rebondissant",    "desc": "Rebondit entre plusieurs ennemis.",             "wtype": "ranged", "rarity": "rare",    "cd": 3, "range": 6, "effect": "bounce",      "bounces": 3, "power": 0.9 },
+	"crippling_shot":  { "name": "Tir entravant",       "desc": "Touche et ralentit la cible (3 tours).",        "wtype": "ranged", "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "slow", "turns": 3, "val": 0.4, "power": 0.9 },
+	# === MAGIE ===
+	"bolt":            { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche.",             "wtype": "magic",  "rarity": "base",    "cd": 3, "range": 6, "effect": "single",      "power": 1.0 },
+	"arc_bolt":        { "name": "Double éclair",       "desc": "Deux éclairs sur la cible la plus proche.",     "wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "ranged_multi","hits": 2,   "power": 0.65 },
+	"fireball":        { "name": "Boule de feu",        "desc": "Explose autour de la cible (rayon 1).",         "wtype": "magic",  "rarity": "rare",    "cd": 4, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.2 },
+	"frost_nova":      { "name": "Éclat de givre",      "desc": "Touche et paralyse la cible (1 tour).",         "wtype": "magic",  "rarity": "epique",  "cd": 4, "range": 6, "effect": "status_shot", "status": "stun", "turns": 1, "power": 0.8 },
+	"chain_lightning": { "name": "Chaîne d'éclairs",    "desc": "Rebondit en chaîne entre les ennemis.",         "wtype": "magic",  "rarity": "rare",    "cd": 3, "range": 6, "effect": "chain",       "bounces": 3, "power": 0.9 },
+	"ember":           { "name": "Trait ardent",        "desc": "Touche et embrase la cible (brûlure, 3 tours).","wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "burn", "turns": 3, "val": 0.3, "power": 0.8 },
+}
+
+static func skill_rarity_color(id: String) -> Color:
+	var s: Dictionary = SKILLS.get(id, {})
+	return SKILL_RARITIES.get(s.get("rarity", "commune"), SKILL_RARITIES["commune"])["color"]
 
 # Armes de départ proposées au loadout (une par type). Items d'équipement
 # complets (slot "arme", rareté Commun) ; le proc en fait la passive de l'arme.
@@ -50,7 +86,7 @@ static func make_starter_weapon(wtype: String) -> Dictionary:
 	var d: Dictionary = STARTER_WEAPONS[wtype]
 	return {
 		"kind": "equip", "name": d["name"], "slot": "arme", "sprite": "arme",
-		"weapon_type": wtype, "active_skill": WEAPON_TYPE_SKILL[wtype],
+		"weapon_type": wtype,
 		"rarity": "commun", "rarity_name": "Commun", "rarity_color": RARITIES[0]["color"],
 		"bonus": d["bonus"].duplicate(true), "salvage": 3,
 		"proc": d["proc"], "proc_val": d["proc_val"], "desc": _proc_desc(d["proc"], d["proc_val"]),
@@ -376,7 +412,6 @@ static func _make_unique_item(slot: String, floor: int, rarity: Dictionary, uniq
 	}
 	if slot == "arme":
 		item["weapon_type"] = infer_weapon_type(uniq["name"], uniq["stat"])
-		item["active_skill"] = WEAPON_TYPE_SKILL[item["weapon_type"]]
 	return item
 
 static func rarity_by_id(id: String) -> Dictionary:
@@ -428,7 +463,6 @@ static func _generate_procedural_item(slot: String, floor: int, rarity: Dictiona
 	}
 	if slot == "arme":
 		item["weapon_type"] = String(base.get("wtype", "melee"))
-		item["active_skill"] = WEAPON_TYPE_SKILL[item["weapon_type"]]
 	return item
 
 static func _pick_rarity(floor: int, rng: RandomNumberGenerator) -> Dictionary:

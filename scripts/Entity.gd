@@ -59,6 +59,10 @@ var level: int = 1
 var xp: int = 0
 
 # --- Capacité active (héros) ---
+# active_skill_id : compétence choisie par l'héroïne (Phase 2). ability_id est la
+# compétence RÉELLEMENT utilisable (= active_skill_id si compatible avec l'arme,
+# sinon repli sur la compétence de base du type équipé). ability_range/cd en dérivent.
+var active_skill_id: String = ""
 var ability_id: String = ""
 var ability_range: int = 1
 var ability_cd: int = 0
@@ -184,16 +188,21 @@ func recompute_stats() -> void:
 	hp_regen = base_hp_regen
 	ability_power = base_ability_power
 	vision = base_vision
-	# Capacité active dérivée de l'ARME équipée (l'héroïne n'a pas de capacité innée).
+	# Compétence active = celle choisie, si compatible avec l'arme équipée ;
+	# sinon repli automatique sur la compétence de base du type d'arme.
 	ability_id = ""
 	ability_range = 1
 	var weapon_cd: int = 0
-	if equipment.has("arme"):
-		var sid: String = String(equipment["arme"].get("active_skill", ""))
-		if sid != "" and Data.WEAPON_SKILLS.has(sid):
+	var wtype: String = String(equipment.get("arme", {}).get("weapon_type", ""))
+	if wtype != "":
+		var sid: String = active_skill_id
+		if sid == "" or String(Data.SKILLS.get(sid, {}).get("wtype", "")) != wtype:
+			sid = String(Data.WEAPON_TYPE_BASE_SKILL.get(wtype, ""))
+		active_skill_id = sid
+		if sid != "" and Data.SKILLS.has(sid):
 			ability_id = sid
-			ability_range = int(Data.WEAPON_SKILLS[sid]["range"])
-			weapon_cd = int(Data.WEAPON_SKILLS[sid]["cd"])
+			ability_range = int(Data.SKILLS[sid]["range"])
+			weapon_cd = int(Data.SKILLS[sid]["cd"])
 	ability_cd_max = base_ability_cd + weapon_cd
 	crit_chance = 0.0
 	dodge_chance = 0.0
