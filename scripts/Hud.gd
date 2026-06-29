@@ -9,11 +9,11 @@ const SIDEBAR_W := 384
 const LOG_H := 150
 const VERSION := "v0.5 — accès anticipé"
 
-# Rôle court par héros, affiché sur sa fiche de sélection.
-const HERO_ROLE := {
-	"knight": "GARDIEN · Tank corps-à-corps",
-	"mage": "ARCANISTE · Dégâts magiques",
-	"ranger": "RÔDEUR · Polyvalent rapide",
+# Pitch court par type d'arme, affiché sur la fiche de loadout.
+const WEAPON_PITCH := {
+	"melee": "Corps-à-corps · zone & encaisse",
+	"ranged": "À distance · rapide & perçant",
+	"magic": "Magie · effets & portée",
 }
 
 const STAT_ROWS := [
@@ -377,7 +377,7 @@ func show_title() -> void:
 	col.add_child(_spacer(26))
 
 	var play := Ui.menu_button("▶   Nouvelle Ascension", 360.0)
-	play.pressed.connect(game.open_hero_select)
+	play.pressed.connect(game.open_loadout)
 	col.add_child(play)
 	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 360.0)
 	sanct.pressed.connect(game.open_meta)
@@ -394,61 +394,69 @@ func show_title() -> void:
 		col.add_child(Ui.label("Record d'ascension : Strate atteinte à l'Étage %d" % GameState.best_floor, 13, Ui.GOLD, true))
 	col.add_child(Ui.label("%s   ·   façon Aincrad" % VERSION, 12, Color(0.45, 0.45, 0.55), true))
 
-# --- Sélection du héros (fiches détaillées) -----------------------------------
-func show_hero_select() -> void:
+# --- Loadout : choix de l'arme de départ (fiches détaillées) ------------------
+func show_loadout() -> void:
 	_menu_show()
 	var col := _menu_column(1180.0, false)
-	col.add_child(Ui.label("CHOISIS TON CHAMPION", 30, Ui.ACCENT_SOFT, true))
-	col.add_child(Ui.label("Chaque héros aborde la Tour à sa manière.", 14, Ui.MUTED, true))
+	col.add_child(Ui.label("CHOISIS TON ARME", 30, Ui.ACCENT_SOFT, true))
+	col.add_child(Ui.label("%s aborde la Tour selon l'arme qu'elle empoigne. Tu en trouveras d'autres en chemin." % Data.HEROINE["name"], 14, Ui.MUTED, true))
 	col.add_child(_spacer(10))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 22)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	col.add_child(row)
-	for hero_id in Data.HERO_ORDER:
-		row.add_child(_hero_card(hero_id))
+	for wtype in Data.WEAPON_TYPES:
+		row.add_child(_weapon_card(wtype))
 	col.add_child(_spacer(14))
 	var back := Ui.menu_button("↩   Retour", 240.0, 16)
 	back.pressed.connect(game.return_to_title)
 	col.add_child(back)
 
-func _hero_card(hero_id: String) -> Control:
-	var h: Dictionary = Data.HEROES[hero_id]
-	var hero_col: Color = h["color"]
+func _weapon_card(wtype: String) -> Control:
+	var h: Dictionary = Data.HEROINE
+	var wpn: Dictionary = Data.make_starter_weapon(wtype)
+	var b: Dictionary = wpn["bonus"]
+	var col_w: Color = Data.WEAPON_TYPE_COLOR[wtype]
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", Ui.card_style(Color(0.12, 0.10, 0.17), hero_col.darkened(0.1)))
+	panel.add_theme_stylebox_override("panel", Ui.card_style(Color(0.12, 0.10, 0.17), col_w.darkened(0.1)))
 	var v := Ui.vbox(7)
 	v.custom_minimum_size = Vector2(336, 0)
 	panel.add_child(v)
 
-	var portrait := _hero_portrait(hero_id, hero_col)
+	var portrait := _sprite_portrait("arme", col_w)
 	if portrait != null:
 		v.add_child(portrait)
-	v.add_child(Ui.label(h["name"], 26, hero_col, true))
-	v.add_child(Ui.label(HERO_ROLE.get(hero_id, ""), 12, Ui.GOLD, true))
-	v.add_child(Ui.label(h["lore"], 13, Ui.MUTED, true, true, 300))
+	v.add_child(Ui.label(Data.WEAPON_TYPE_NAME[wtype], 26, col_w, true))
+	v.add_child(Ui.label(wpn["name"], 14, Ui.GOLD, true))
+	v.add_child(Ui.label(WEAPON_PITCH.get(wtype, ""), 12, Ui.MUTED, true))
 	v.add_child(HSeparator.new())
 
-	var hp: int = int(h["max_hp"]) + GameState.bonus_hp()
-	var atk: int = int(h["atk"]) + GameState.bonus_atk()
+	var hp: int = int(h["max_hp"]) + GameState.bonus_hp() + int(b.get("max_hp", 0))
+	var atk: int = int(h["atk"]) + GameState.bonus_atk() + int(b.get("atk", 0))
+	var magic: int = int(h["magic"]) + int(b.get("magic", 0))
+	var defense: int = int(h["defense"]) + int(b.get("defense", 0))
+	var speed: int = int(h["speed"]) + int(b.get("speed", 0))
 	v.add_child(Ui.stat_gauge("PV", hp, 60, Color(0.3, 0.8, 0.35), 150))
 	v.add_child(Ui.stat_gauge("ATK", atk, 14, Color(0.9, 0.55, 0.35), 150))
-	v.add_child(Ui.stat_gauge("MAG", int(h["magic"]), 12, Color(0.45, 0.7, 1.0), 150))
-	v.add_child(Ui.stat_gauge("DÉF", int(h["defense"]), 8, Color(0.7, 0.7, 0.78), 150))
-	v.add_child(Ui.stat_gauge("VIT", int(h["speed"]), 130, Color(0.6, 0.95, 0.6), 150))
+	v.add_child(Ui.stat_gauge("MAG", magic, 12, Color(0.45, 0.7, 1.0), 150))
+	v.add_child(Ui.stat_gauge("DÉF", defense, 8, Color(0.7, 0.7, 0.78), 150))
+	v.add_child(Ui.stat_gauge("VIT", speed, 130, Color(0.6, 0.95, 0.6), 150))
 	v.add_child(HSeparator.new())
 
-	v.add_child(Ui.label("✦ " + h["ability_name"], 15, Ui.ACCENT_SOFT, true))
-	v.add_child(Ui.label(h["ability_desc"], 12, Ui.MUTED, true, true, 300))
+	var sk: Dictionary = Data.WEAPON_SKILLS[wpn["active_skill"]]
+	v.add_child(Ui.label("✦ Active — " + sk["name"], 15, Ui.ACCENT_SOFT, true))
+	v.add_child(Ui.label("%s  (recharge %d tours)" % [sk["desc"], int(sk["cd"])], 12, Ui.MUTED, true, true, 300))
+	v.add_child(Ui.label("⚙ Passive", 14, Color(0.85, 0.7, 0.35), true))
+	v.add_child(Ui.label(wpn["desc"], 12, Ui.MUTED, true, true, 300))
 	v.add_child(_spacer(6))
 	var choose := Ui.menu_button("Choisir", 300.0, 17)
-	choose.pressed.connect(game.choose_hero.bind(hero_id))
+	choose.pressed.connect(game.choose_loadout.bind(wtype))
 	v.add_child(choose)
 	return panel
 
-## Portrait pixel-art du héros (sprite agrandi, filtre voisin le plus proche).
-func _hero_portrait(hero_id: String, tint: Color) -> Control:
-	var path := "res://assets/%s.png" % hero_id
+## Portrait pixel-art d'un sprite (agrandi, filtre voisin, teinté).
+func _sprite_portrait(sprite: String, tint: Color) -> Control:
+	var path := "res://assets/%s.png" % sprite
 	if not ResourceLoader.exists(path):
 		return null
 	var tex = load(path)
@@ -460,6 +468,7 @@ func _hero_portrait(hero_id: String, tint: Color) -> Control:
 	tr.custom_minimum_size = Vector2(72, 72)
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.modulate = tint
 	frame.add_child(tr)
 	holder.add_child(frame)
 	return holder
@@ -489,7 +498,7 @@ func show_meta() -> void:
 
 	col.add_child(HSeparator.new())
 	var play := Ui.menu_button("▶   Choisir un héros", 360.0)
-	play.pressed.connect(game.open_hero_select)
+	play.pressed.connect(game.open_loadout)
 	col.add_child(play)
 	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
 	back.pressed.connect(game.return_to_title)
@@ -516,7 +525,7 @@ func show_gameover(death_summary: String) -> void:
 	sanct.pressed.connect(game.open_meta)
 	col.add_child(sanct)
 	var again := Ui.menu_button("▶   Nouvelle Ascension", 360.0)
-	again.pressed.connect(game.open_hero_select)
+	again.pressed.connect(game.open_loadout)
 	col.add_child(again)
 	var title := Ui.menu_button("↩   Menu principal", 360.0, 16)
 	title.pressed.connect(game.return_to_title)
@@ -695,12 +704,18 @@ func refresh() -> void:
 	stat_labels["run_shards"].text = str(game.run_shards)
 	stat_labels["bank"].text = str(GameState.shards)
 
-	var h: Dictionary = Data.HEROES[GameState.last_hero]
-	if player.ability_ready():
-		sb_ability.text = "%s\n[ESPACE] — PRÊTE" % h["ability_name"]
+	# Capacité active = compétence de l'arme équipée (cf. Entity.recompute_stats).
+	var skill_name: String = "—"
+	if player.ability_id != "" and Data.WEAPON_SKILLS.has(player.ability_id):
+		skill_name = Data.WEAPON_SKILLS[player.ability_id]["name"]
+	if player.ability_id == "":
+		sb_ability.text = "Aucune arme équipée"
+		sb_ability.add_theme_color_override("font_color", Color(0.6, 0.6, 0.68))
+	elif player.ability_ready():
+		sb_ability.text = "%s\n[ESPACE] — PRÊTE" % skill_name
 		sb_ability.add_theme_color_override("font_color", Color(0.6, 1.0, 0.6))
 	else:
-		sb_ability.text = "%s\n[ESPACE] — recharge %d tour(s)" % [h["ability_name"], player.ability_cd]
+		sb_ability.text = "%s\n[ESPACE] — recharge %d tour(s)" % [skill_name, player.ability_cd]
 		sb_ability.add_theme_color_override("font_color", Color(0.85, 0.85, 0.5))
 
 	_rebuild_equip()

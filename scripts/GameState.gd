@@ -14,8 +14,8 @@ var best_floor: int = 1
 var best_kills: int = 0
 # Journal du dernier run (affiché au hub après la mort) — non vide après une mort.
 var last_run: Dictionary = {}
-# Dernier héros choisi
-var last_hero: String = "knight"
+# Dernier loadout (type d'arme de départ) choisi : "melee" / "ranged" / "magic"
+var last_loadout: String = "melee"
 
 func _ready() -> void:
 	for key in Data.UPGRADE_ORDER:
@@ -75,7 +75,7 @@ func save_game() -> void:
 		"upgrades": upgrades,
 		"best_floor": best_floor,
 		"best_kills": best_kills,
-		"last_hero": last_hero,
+		"last_loadout": last_loadout,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -95,7 +95,7 @@ func load_game() -> void:
 	shards = int(parsed.get("shards", 0))
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
-	last_hero = str(parsed.get("last_hero", "knight"))
+	last_loadout = str(parsed.get("last_loadout", "melee"))
 	var saved_up = parsed.get("upgrades", {})
 	for key in Data.UPGRADE_ORDER:
 		upgrades[key] = int(saved_up.get(key, 0))

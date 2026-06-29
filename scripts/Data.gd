@@ -3,40 +3,66 @@
 class_name Data
 extends RefCounted
 
-# --- HÉROS jouables -----------------------------------------------------------
+# --- HÉROÏNE (personnage unique) ----------------------------------------------
+# Le jeu suit UNE héroïne ; son identité de build provient de l'ARME équipée
+# (cf. ARMES / COMPÉTENCES ci-dessous), pas d'une classe.
 # Stats : max_hp, atk (physique), magic (booste capacités), defense (réduction),
 #         speed (100 = normal), hp_regen (PV/action).
-const HEROES := {
-	"knight": {
-		"name": "Chevalier",
-		"glyph": "@", "color": Color(0.95, 0.82, 0.35),
-		"max_hp": 34, "atk": 6, "magic": 1, "defense": 3, "speed": 95, "hp_regen": 1,
-		"ability_id": "whirl", "ability_name": "Tourbillon d'acier",
-		"ability_desc": "Frappe TOUS les ennemis adjacents.",
-		"ability_cd": 3, "ability_range": 1,
-		"lore": "Garde de la Ligne de Front. Robuste, défense élevée, corps-à-corps.",
-	},
-	"mage": {
-		"name": "Mage",
-		"glyph": "@", "color": Color(0.45, 0.7, 1.0),
-		"max_hp": 20, "atk": 4, "magic": 7, "defense": 1, "speed": 100, "hp_regen": 0,
-		"ability_id": "bolt", "ability_name": "Éclair foudroyant",
-		"ability_desc": "Foudroie l'ennemi le plus proche (dégâts magiques).",
-		"ability_cd": 3, "ability_range": 6,
-		"lore": "Fragile mais dévastateur. La magie démultiplie ses capacités.",
-	},
-	"ranger": {
-		"name": "Rôdeur",
-		"glyph": "@", "color": Color(0.5, 0.9, 0.5),
-		"max_hp": 26, "atk": 5, "magic": 3, "defense": 2, "speed": 110, "hp_regen": 0,
-		"ability_id": "volley", "ability_name": "Tir précis",
-		"ability_desc": "Décoche une flèche puissante à distance.",
-		"ability_cd": 2, "ability_range": 5,
-		"lore": "Rapide et polyvalent. Agit plus souvent grâce à sa vitesse.",
-	},
+const HEROINE := {
+	"name": "Aria",
+	"glyph": "@", "color": Color(0.92, 0.55, 0.85),
+	"sprite": "knight",   # placeholder : remplacé par l'art dédié en phase finition
+	"max_hp": 28, "atk": 5, "magic": 3, "defense": 2, "speed": 100, "hp_regen": 0,
+	"lore": "La seule à oser l'ascension. Son style dépend de l'arme qu'elle empoigne.",
 }
 
-const HERO_ORDER := ["knight", "mage", "ranger"]
+# --- ARMES & COMPÉTENCES ------------------------------------------------------
+# Chaque arme a un TYPE (mêlée / distance / magie) et porte 2 compétences :
+#   • une compétence ACTIVE (touche ESPACE, sur recharge) définie par son type ;
+#   • une compétence PASSIVE (un proc, cf. UNIQUE_BASES) appliquée en continu.
+# La capacité active de l'héroïne provient donc de l'arme équipée
+# (Entity.recompute_stats lit "active_skill"). Recharge exprimée en TOURS.
+const WEAPON_TYPES := ["melee", "ranged", "magic"]
+const WEAPON_TYPE_NAME := { "melee": "Mêlée", "ranged": "Distance", "magic": "Magie" }
+const WEAPON_TYPE_COLOR := {
+	"melee": Color(1.0, 0.6, 0.4), "ranged": Color(0.6, 0.95, 0.6), "magic": Color(0.55, 0.7, 1.0),
+}
+# Compétence active par défaut selon le type d'arme.
+const WEAPON_TYPE_SKILL := { "melee": "whirl", "ranged": "volley", "magic": "bolt" }
+
+# Registre des compétences ACTIVES (recharge en tours, portée en cases).
+const WEAPON_SKILLS := {
+	"whirl":  { "name": "Tourbillon d'acier",  "desc": "Frappe TOUS les ennemis adjacents.",            "cd": 3, "range": 1 },
+	"volley": { "name": "Tir précis",          "desc": "Décoche une flèche puissante à distance.",      "cd": 2, "range": 5 },
+	"bolt":   { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche (magie).",     "cd": 3, "range": 6 },
+}
+
+# Armes de départ proposées au loadout (une par type). Items d'équipement
+# complets (slot "arme", rareté Commun) ; le proc en fait la passive de l'arme.
+const STARTER_WEAPONS := {
+	"melee":  { "name": "Épée d'entraînement", "wtype": "melee",  "bonus": { "atk": 3 },             "proc": "frappe_double", "proc_val": 0.20 },
+	"ranged": { "name": "Arc de chasse",       "wtype": "ranged", "bonus": { "atk": 2, "speed": 10 },"proc": "premier_coup",  "proc_val": 1.0 },
+	"magic":  { "name": "Bâton d'apprenti",    "wtype": "magic",  "bonus": { "magic": 4 },           "proc": "frenesie",      "proc_val": 0.25 },
+}
+
+## Fabrique un objet-arme complet à partir d'une définition de STARTER_WEAPONS.
+static func make_starter_weapon(wtype: String) -> Dictionary:
+	var d: Dictionary = STARTER_WEAPONS[wtype]
+	return {
+		"kind": "equip", "name": d["name"], "slot": "arme", "sprite": "arme",
+		"weapon_type": wtype, "active_skill": WEAPON_TYPE_SKILL[wtype],
+		"rarity": "commun", "rarity_name": "Commun", "rarity_color": RARITIES[0]["color"],
+		"bonus": d["bonus"].duplicate(true), "salvage": 3,
+		"proc": d["proc"], "proc_val": d["proc_val"], "desc": _proc_desc(d["proc"], d["proc_val"]),
+	}
+
+## Déduit le type d'une arme (procédurale ou unique) à partir de son nom/stats.
+static func infer_weapon_type(item_name: String, stat: Dictionary) -> String:
+	if "Arc" in item_name or "Tir" in item_name:
+		return "ranged"
+	if stat.has("magic") and int(stat.get("atk", 0)) == 0:
+		return "magic"
+	return "melee"
 
 # --- VISION / BROUILLARD DE GUERRE --------------------------------------------
 # Rayon de vision initial du héros (en cases). Améliorable via les talents
@@ -149,10 +175,11 @@ const SLOT_COLOR := {
 # --- GÉNÉRATION PROCÉDURALE D'OBJETS ------------------------------------------
 # Bases d'objets : donnent une stat "primaire" garantie, puis des affixes s'ajoutent.
 const ITEM_BASES := [
-	{ "name": "Dague",    "slot": "arme",    "primary": { "atk": 1, "speed": 8 } },
-	{ "name": "Épée",     "slot": "arme",    "primary": { "atk": 3 } },
-	{ "name": "Hache",    "slot": "arme",    "primary": { "atk": 5, "speed": -5 } },
-	{ "name": "Bâton",    "slot": "arme",    "primary": { "magic": 4 } },
+	{ "name": "Dague",    "slot": "arme",    "primary": { "atk": 1, "speed": 8 }, "wtype": "melee" },
+	{ "name": "Épée",     "slot": "arme",    "primary": { "atk": 3 },            "wtype": "melee" },
+	{ "name": "Hache",    "slot": "arme",    "primary": { "atk": 5, "speed": -5 },"wtype": "melee" },
+	{ "name": "Arc",      "slot": "arme",    "primary": { "atk": 2, "speed": 6 }, "wtype": "ranged" },
+	{ "name": "Bâton",    "slot": "arme",    "primary": { "magic": 4 },          "wtype": "magic" },
 	{ "name": "Tunique",  "slot": "armure",  "primary": { "defense": 2 } },
 	{ "name": "Cotte",    "slot": "armure",  "primary": { "defense": 4, "max_hp": 4 } },
 	{ "name": "Plastron", "slot": "armure",  "primary": { "defense": 6, "speed": -5 } },
@@ -341,12 +368,16 @@ static func _make_unique_item(slot: String, floor: int, rarity: Dictionary, uniq
 	var ubonus: Dictionary = {}
 	for k in uniq["stat"]:
 		ubonus[k] = int(round(float(uniq["stat"][k]) * uscale))
-	return {
+	var item: Dictionary = {
 		"kind": "equip", "name": uniq["name"], "slot": slot, "unique": true,
 		"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
 		"bonus": ubonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
 		"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
 	}
+	if slot == "arme":
+		item["weapon_type"] = infer_weapon_type(uniq["name"], uniq["stat"])
+		item["active_skill"] = WEAPON_TYPE_SKILL[item["weapon_type"]]
+	return item
 
 static func rarity_by_id(id: String) -> Dictionary:
 	for r in RARITIES:
@@ -390,11 +421,15 @@ static func _generate_procedural_item(slot: String, floor: int, rarity: Dictiona
 	var name: String = base["name"]
 	if not affix_names.is_empty():
 		name += " " + affix_names[0]
-	return {
+	var item: Dictionary = {
 		"kind": "equip", "name": name, "slot": slot,
 		"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
 		"bonus": bonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
 	}
+	if slot == "arme":
+		item["weapon_type"] = String(base.get("wtype", "melee"))
+		item["active_skill"] = WEAPON_TYPE_SKILL[item["weapon_type"]]
+	return item
 
 static func _pick_rarity(floor: int, rng: RandomNumberGenerator) -> Dictionary:
 	var weights: Array = []

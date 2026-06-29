@@ -7,7 +7,7 @@ func _ready() -> void:
 	add_child(main)
 
 	# --- Parties complètes pour chaque héros (via la carte) ---
-	for hero in ["knight", "mage", "ranger"]:
+	for hero in ["melee", "ranged", "magic"]:
 		main.start_run(hero)
 		assert(main.state == main.State.MAP, "run démarre sur la carte")
 		var reach = main.reachable_indices()
@@ -51,7 +51,7 @@ func _ready() -> void:
 	print("OK carte: %d rangées, graphe connecté" % rm.nodes.size())
 
 	# --- Salles spéciales : boutique / événement / repos ---
-	main.start_run("knight")
+	main.start_run("melee")
 	main.run_shards = 9999
 	main.open_shop()
 	assert(main.state == main.State.CHOICE and main.shop_stock.size() > 0, "boutique ouverte")
@@ -112,8 +112,10 @@ func _ready() -> void:
 	print("OK objets uniques: %d dans le pool, procs actifs après équipement" % Data.UNIQUE_ITEMS.size())
 
 	# --- Inventaire + talents (en combat) ---
-	main.start_run("knight")
+	main.start_run("melee")
 	main.choose_map_node(main.reachable_indices()[0])     # -> PLAYING
+	main.unequip_item("arme")   # retire l'arme de loadout pour une base propre
+	main.inventory.clear()
 	var atk0 = main.player.atk
 	var sword = { "kind": "equip", "name": "Épée test", "slot": "arme", "salvage": 5, "bonus": { "atk": 5 } }
 	main._bag_add(sword)
@@ -149,7 +151,7 @@ func _ready() -> void:
 	print("OK boutique méta vitalite niv=%d" % GameState.upgrade_level("vitalite"))
 
 	# --- Synergies inter-procs ----------------------------------------------------
-	main.start_run("knight")
+	main.start_run("melee")
 	main.player.equipment = {
 		"arme": { "kind": "equip", "name": "Croc test", "slot": "arme", "salvage": 5, "bonus": {}, "proc": "soif_de_sang", "proc_val": 0.10 },
 		"armure": { "kind": "equip", "name": "Plastron test", "slot": "armure", "salvage": 5, "bonus": {}, "proc": "frenesie", "proc_val": 0.30 },
@@ -181,14 +183,14 @@ func _ready() -> void:
 	while not GameState.is_maxed("instinct"):
 		GameState.buy_upgrade("instinct")
 	assert(GameState.is_maxed("instinct") and not GameState.buy_upgrade("instinct"), "achat bloqué au plafond")
-	main.start_run("knight")
+	main.start_run("melee")
 	assert(main.player.artifacts.size() >= 1, "Héritage : artefact de départ accordé")
 	assert(main.player.talents.size() >= 1, "Instinct : talent de départ accordé")
 	assert(main.run_shards >= GameState.bonus_start_shards() and main.run_shards > 0, "Fortune : Éclats de départ")
 	print("OK méta élargie: bonus de départ appliqués, plafonds respectés")
 
 	# --- Nouveaux événements (autel maudit / sanctuaire) --------------------------
-	main.start_run("knight")
+	main.start_run("melee")
 	var hp_b = main.player.base_max_hp
 	var atk_b = main.player.base_atk
 	main._apply_event_effect({ "type": "cursed_altar" })
@@ -199,7 +201,7 @@ func _ready() -> void:
 	print("OK événements: autel maudit + sanctuaire")
 
 	# --- Journal de fin de run ----------------------------------------------------
-	main.start_run("knight")
+	main.start_run("melee")
 	main.run_kills = 5
 	main.run_best_hit = 42
 	main.run_shards = 13
@@ -256,7 +258,7 @@ func _ready() -> void:
 	# --- Vision améliorable par talent --------------------------------------------
 	GameState.upgrades["instinct"] = 0   # pas de talent de départ aléatoire
 	GameState.upgrades["heritage"] = 0
-	main.start_run("knight")
+	main.start_run("melee")
 	var v0 = main.player.vision
 	assert(v0 == Data.BASE_VISION, "vision de base = BASE_VISION")
 	main.player.talents.append({ "name": "Œil de Lynx", "mods": { "vision": 2 } })

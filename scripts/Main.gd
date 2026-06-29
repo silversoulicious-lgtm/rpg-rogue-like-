@@ -3,7 +3,7 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { TITLE, HERO_SELECT, META, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
+enum State { TITLE, LOADOUT, META, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
 
 const MAX_LOG := 8
 const INV_CAP := 16
@@ -57,10 +57,10 @@ func return_to_title() -> void:
 	state = State.TITLE
 	hud.show_title()
 
-## Écran de sélection du héros (fiches détaillées).
-func open_hero_select() -> void:
-	state = State.HERO_SELECT
-	hud.show_hero_select()
+## Écran de loadout : choix de l'arme de départ (fiches détaillées).
+func open_loadout() -> void:
+	state = State.LOADOUT
+	hud.show_loadout()
 
 ## Sanctuaire : méta-progression entre les runs.
 func open_meta() -> void:
@@ -70,17 +70,20 @@ func open_meta() -> void:
 func quit_game() -> void:
 	get_tree().quit()
 
-func choose_hero(hero_id: String) -> void:
-	GameState.last_hero = hero_id
+## Lance un run avec l'arme de départ choisie (loadout : "melee"/"ranged"/"magic").
+func choose_loadout(loadout_id: String) -> void:
+	GameState.last_loadout = loadout_id
 	GameState.save_game()
-	start_run(hero_id)
+	start_run(loadout_id)
 
-func start_run(hero_id: String) -> void:
-	var h: Dictionary = Data.HEROES[hero_id]
+func start_run(loadout_id: String = "melee") -> void:
+	if not Data.WEAPON_TYPES.has(loadout_id):
+		loadout_id = "melee"
+	var h: Dictionary = Data.HEROINE
 	player = Entity.new()
 	player.display_name = h["name"]
 	player.glyph = h["glyph"]
-	player.sprite = hero_id
+	player.sprite = h["sprite"]
 	player.color = h["color"]
 	player.faction = Entity.Faction.PLAYER
 	player.base_max_hp = int(h["max_hp"]) + GameState.bonus_hp()
@@ -90,12 +93,10 @@ func start_run(hero_id: String) -> void:
 	player.base_speed = int(h["speed"])
 	player.base_hp_regen = int(h["hp_regen"])
 	player.base_ability_power = GameState.bonus_ability_power()
-	player.base_ability_cd = int(h["ability_cd"])
+	player.base_ability_cd = 0          # la recharge vient de l'arme équipée
 	player.base_vision = Data.BASE_VISION
-	player.ability_id = h["ability_id"]
-	player.ability_range = int(h["ability_range"])
 	player.ability_cd = 0
-	player.equipment = {}
+	player.equipment = { "arme": Data.make_starter_weapon(loadout_id) }
 	player.artifacts = []
 	player.talents = []
 	player.level = 1
@@ -347,7 +348,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			close_inventory()
 		return
 	# Navigation clavier dans les écrans de menu (Échap = revenir en arrière).
-	if state == State.HERO_SELECT or state == State.META:
+	if state == State.LOADOUT or state == State.META:
 		if k == KEY_ESCAPE:
 			return_to_title()
 		return
@@ -406,6 +407,10 @@ func pass_turn() -> void:
 
 func use_ability() -> void:
 	if state != State.PLAYING:
+		return
+	if player.ability_id == "":
+		add_message("[color=#888888]Aucune arme équipée : pas de compétence.[/color]")
+		refresh()
 		return
 	if not player.ability_ready():
 		add_message("[color=#888888]Capacité en recharge (%d tour(s)).[/color]" % player.ability_cd)

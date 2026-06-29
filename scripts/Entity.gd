@@ -122,8 +122,18 @@ func recompute_stats() -> void:
 	speed = base_speed
 	hp_regen = base_hp_regen
 	ability_power = base_ability_power
-	ability_cd_max = base_ability_cd
 	vision = base_vision
+	# Capacité active dérivée de l'ARME équipée (l'héroïne n'a pas de capacité innée).
+	ability_id = ""
+	ability_range = 1
+	var weapon_cd: int = 0
+	if equipment.has("arme"):
+		var sid: String = String(equipment["arme"].get("active_skill", ""))
+		if sid != "" and Data.WEAPON_SKILLS.has(sid):
+			ability_id = sid
+			ability_range = int(Data.WEAPON_SKILLS[sid]["range"])
+			weapon_cd = int(Data.WEAPON_SKILLS[sid]["cd"])
+	ability_cd_max = base_ability_cd + weapon_cd
 	crit_chance = 0.0
 	dodge_chance = 0.0
 	lifesteal_pct = 0.0
