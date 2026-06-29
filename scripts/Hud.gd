@@ -395,7 +395,7 @@ func show_title() -> void:
 	col.add_child(_spacer(22))
 	if GameState.best_floor > 1:
 		col.add_child(Ui.label("Record d'ascension : Strate atteinte à l'Étage %d" % GameState.best_floor, 13, Ui.GOLD, true))
-	col.add_child(Ui.label("%s   ·   façon Aincrad" % VERSION, 12, Color(0.45, 0.45, 0.55), true))
+	col.add_child(Ui.label(VERSION, 12, Color(0.45, 0.45, 0.55), true))
 
 # --- Loadout : choix de l'arme de départ (fiches détaillées) ------------------
 func show_loadout() -> void:
