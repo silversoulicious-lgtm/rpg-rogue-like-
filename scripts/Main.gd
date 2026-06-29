@@ -42,6 +42,7 @@ var run_kills: int = 0
 var run_best_hit: int = 0
 var run_best_item: Dictionary = {}
 var run_bosses: int = 0          # Gardiens vaincus ce run (gain de Connaissances)
+var pending_rewards: Array = []  # récompenses de fin d'étage proposées (Phase 4)
 
 # Serments actifs pour le run en cours (ids de Data.OATHS, choisis au loadout)
 var active_oaths: Array = []
@@ -262,19 +263,78 @@ func _enter_node(node: Dictionary) -> void:
 			generate_floor(current_node_type)
 
 func _node_cleared() -> void:
-	var was_boss: bool = current_node_type == "boss"
-	var healed: int = 0 if has_oath("funeste") else int(round(player.max_hp * 0.2))
-	player.heal(healed)
-	if was_boss:
+	if current_node_type == "boss":
+		var healed: int = 0 if has_oath("funeste") else int(round(player.max_hp * 0.2))
+		player.heal(healed)
 		map_act += 1
 		add_message("[color=#9b8cff]★ Strate franchie ! Tu pénètres dans la strate %d.[/color]" % (map_act + 1))
 		_start_act()
-	elif healed > 0:
-		add_message("[color=#9b8cff]Voie dégagée (+%d PV). Choisis ta route.[/color]" % healed)
-		_back_to_map()
-	else:
-		add_message("[color=#9b8cff]Voie dégagée. Choisis ta route.[/color]")
-		_back_to_map()
+		return
+	# Combat / élite : récompense de fin d'étage au choix (Phase 4).
+	add_message("[color=#9b8cff]Voie dégagée. Choisis ta récompense.[/color]")
+	_open_floor_reward(current_node_type == "elite")
+
+# --- Récompense de fin d'étage (Phase 4) --------------------------------------
+func _open_floor_reward(is_elite: bool) -> void:
+	pending_rewards = _make_floor_rewards(is_elite)
+	state = State.CHOICE
+	hud.show_floor_reward(pending_rewards, is_elite)
+
+## Construit le butin de fin d'étage : soin, équipement, Éclats (+ bonus élite),
+## mis à l'échelle de l'étage. Le Serment Funeste retire l'option de soin.
+func _make_floor_rewards(is_elite: bool) -> Array:
+	var rewards: Array = []
+	var lvl: int = floor_num + (4 if is_elite else 0)
+	if not has_oath("funeste"):
+		var pct: float = 0.45 if is_elite else 0.30
+		rewards.append({ "type": "heal", "value": pct, "color": Color(0.4, 0.9, 0.45),
+			"label": "❤ Soin — +%d%% PV" % int(pct * 100),
+			"desc": "Récupère une partie de tes points de vie." })
+	var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
+	var item: Dictionary = Data.generate_item(slot, lvl, rng)
+	rewards.append({ "type": "equip", "data": item, "color": item.get("rarity_color", Color.WHITE),
+		"label": "%s %s" % [Data.SLOT_GLYPH[slot], item["name"]],
+		"desc": "%s — %s" % [item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])] })
+	var amt: int = (8 + floor_num * 3) * (2 if is_elite else 1)
+	rewards.append({ "type": "shards", "value": amt, "color": Color(1.0, 0.85, 0.35),
+		"label": "✦ %d Éclats" % amt,
+		"desc": "Monnaie pour la boutique et le Sanctuaire." })
+	# Bonus d'élite : un parchemin de compétence si possible, sinon un consommable.
+	if is_elite:
+		var sid: String = _pick_droppable_skill()
+		if sid != "":
+			rewards.append({ "type": "skill", "data": sid, "color": Data.skill_rarity_color(sid),
+				"label": "✦ Parchemin — %s" % Data.SKILLS[sid]["name"],
+				"desc": String(Data.SKILLS[sid]["desc"]) })
+		else:
+			rewards.append(_consumable_reward())
+	return rewards
+
+func _consumable_reward() -> Dictionary:
+	var c: Dictionary = Data.generate_consumable(floor_num, rng)
+	return { "type": "consumable", "data": c, "color": c.get("color", Color.WHITE),
+		"label": "! %s" % c["name"], "desc": "Objet à usage unique." }
+
+func resolve_floor_reward(idx: int) -> void:
+	if idx < 0 or idx >= pending_rewards.size():
+		return
+	var r: Dictionary = pending_rewards[idx]
+	match String(r["type"]):
+		"heal":
+			var amt: int = int(round(player.max_hp * float(r["value"])))
+			player.heal(amt)
+			add_message("[color=#7aff8a]Récompense : +%d PV.[/color]" % amt)
+		"shards":
+			run_shards += int(r["value"])
+			add_message("[color=#ffd24a]Récompense : +%d Éclats.[/color]" % int(r["value"]))
+		"equip":
+			_bag_add(r["data"])
+		"consumable":
+			_bag_add(r["data"])
+		"skill":
+			_acquire_skill(String(r["data"]))
+	pending_rewards = []
+	_back_to_map()
 
 func _back_to_map() -> void:
 	state = State.MAP

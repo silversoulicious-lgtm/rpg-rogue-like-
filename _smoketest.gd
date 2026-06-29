@@ -486,5 +486,36 @@ func _ready() -> void:
 	assert(loot_explored, "le butin est marqué exploré à travers le brouillard")
 	print("OK Phase 5 (2/2): Codex (découvertes +Connaissance), Forge, Œil du Devin")
 
+	# --- Phase 4 : récompense de fin d'étage --------------------------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	main.current_node_type = "combat"
+	main._open_floor_reward(false)
+	assert(main.state == main.State.CHOICE and main.pending_rewards.size() >= 2, "écran de récompense ouvert (>=2 choix)")
+	var pick = 0
+	for i in main.pending_rewards.size():
+		if main.pending_rewards[i]["type"] == "shards": pick = i
+	var sh0 = main.run_shards
+	main.resolve_floor_reward(pick)
+	assert(main.state == main.State.MAP, "récompense résolue -> retour carte")
+	assert(main.run_shards >= sh0, "la récompense d'Éclats crédite le run")
+	# Élite : davantage de choix (parchemin/consommable bonus).
+	main.current_node_type = "elite"
+	main._open_floor_reward(true)
+	assert(main.pending_rewards.size() >= 3, "butin d'élite : davantage de choix")
+	main.resolve_floor_reward(1)
+	assert(main.state == main.State.MAP, "butin d'élite résolu")
+	# Le Serment Funeste retire l'option de soin du butin.
+	main.active_oaths = ["funeste"]
+	main._open_floor_reward(false)
+	var has_heal = false
+	for r in main.pending_rewards:
+		if r["type"] == "heal":
+			has_heal = true
+	assert(not has_heal, "Serment Funeste retire l'option de soin du butin")
+	main.resolve_floor_reward(0)
+	print("OK Phase 4: butin de fin d'étage (choix, élite enrichi, interaction Funeste)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

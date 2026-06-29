@@ -349,6 +349,24 @@ func show_shop(stock: Array, shards: int) -> void:
 	leave.pressed.connect(game.leave_shop)
 	overlay_content.add_child(leave)
 
+## Récompense de fin d'étage (Phase 4) : choisir 1 butin parmi ceux proposés.
+func show_floor_reward(rewards: Array, is_elite: bool) -> void:
+	map_layer.visible = false
+	overlay_layer.visible = true
+	_overlay_clear()
+	var title: String = "☠ BUTIN D'ÉLITE — choisis ta récompense" if is_elite else "✦ BUTIN — choisis ta récompense"
+	_overlay_title(title, Color(1.0, 0.85, 0.4) if not is_elite else Color(1.0, 0.6, 0.4))
+	_overlay_label("Un seul de ces butins t'accompagnera. Choisis selon ta route.", Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	for i in rewards.size():
+		var r: Dictionary = rewards[i]
+		var btn := Ui.button(String(r["label"]), 48, 17)
+		btn.add_theme_color_override("font_color", r.get("color", Color.WHITE))
+		btn.pressed.connect(game.resolve_floor_reward.bind(i))
+		overlay_content.add_child(btn)
+		if r.get("desc", "") != "":
+			overlay_content.add_child(Ui.label("   " + String(r["desc"]), 12, Color(0.7, 0.7, 0.78), false, true, 700))
+
 func show_event(event: Dictionary) -> void:
 	map_layer.visible = false
 	overlay_layer.visible = true
