@@ -30,7 +30,7 @@ func _ready() -> void:
 			main.player.hp = 1
 			main.run_shards = 7
 			main.game_over()
-			assert(main.state == main.State.HUB, "retour au hub après la mort")
+			assert(main.state == main.State.GAMEOVER, "écran de fin de run après la mort")
 			assert(GameState.shards == before + 7, "éclats banqués à la mort")
 		print("OK hero=%s state=%d banque=%d" % [hero, main.state, GameState.shards])
 
@@ -63,7 +63,7 @@ func _ready() -> void:
 	main.open_event()
 	assert(main.state == main.State.CHOICE, "événement ouvert")
 	main.resolve_event(0)
-	assert(main.state == main.State.MAP or main.state == main.State.HUB, "événement résolu")
+	assert(main.state == main.State.MAP or main.state == main.State.GAMEOVER, "événement résolu")
 	main.open_rest()
 	var atk_r = main.player.atk
 	main.rest_choice("train")
@@ -205,7 +205,7 @@ func _ready() -> void:
 	main.run_shards = 13
 	main.player.hp = 1
 	main.game_over()
-	assert(main.state == main.State.HUB, "retour au hub après la mort")
+	assert(main.state == main.State.GAMEOVER, "écran de fin de run après la mort")
 	assert(not GameState.last_run.is_empty(), "journal de run enregistré")
 	assert(int(GameState.last_run.get("kills", 0)) == 5 and int(GameState.last_run.get("best_hit", 0)) == 42, "journal: stats correctes")
 	assert(GameState.best_kills >= 5, "record d'ennemis vaincus mis à jour")

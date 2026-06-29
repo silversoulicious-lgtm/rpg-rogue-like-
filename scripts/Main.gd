@@ -3,12 +3,12 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { HUB, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, DEAD }
+enum State { TITLE, HERO_SELECT, META, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
 
 const MAX_LOG := 8
 const INV_CAP := 16
 
-var state: int = State.HUB
+var state: int = State.TITLE
 var rng := RandomNumberGenerator.new()
 
 # Run en cours
@@ -49,12 +49,26 @@ func _ready() -> void:
 	add_child(hud)
 	hud.setup(self)
 	map_view.view_size = hud.play_area()
-	return_to_hub("")
+	return_to_title()
 
 # --- Flux d'écrans ------------------------------------------------------------
-func return_to_hub(summary: String) -> void:
-	state = State.HUB
-	hud.show_hub(summary)
+## Écran-titre (point d'entrée du jeu).
+func return_to_title() -> void:
+	state = State.TITLE
+	hud.show_title()
+
+## Écran de sélection du héros (fiches détaillées).
+func open_hero_select() -> void:
+	state = State.HERO_SELECT
+	hud.show_hero_select()
+
+## Sanctuaire : méta-progression entre les runs.
+func open_meta() -> void:
+	state = State.META
+	hud.show_meta()
+
+func quit_game() -> void:
+	get_tree().quit()
 
 func choose_hero(hero_id: String) -> void:
 	GameState.last_hero = hero_id
@@ -331,6 +345,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if state == State.INVENTORY:
 		if k == KEY_I or k == KEY_ESCAPE:
 			close_inventory()
+		return
+	# Navigation clavier dans les écrans de menu (Échap = revenir en arrière).
+	if state == State.HERO_SELECT or state == State.META:
+		if k == KEY_ESCAPE:
+			return_to_title()
+		return
+	if state == State.GAMEOVER:
+		if k == KEY_ESCAPE or k == KEY_ENTER or k == KEY_KP_ENTER:
+			return_to_title()
 		return
 	if state != State.PLAYING:
 		return
@@ -823,7 +846,8 @@ func game_over() -> void:
 	}
 	GameState.add_shards(run_shards)
 	GameState.record_run(stats)
-	return_to_hub("💀 Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level])
+	state = State.GAMEOVER
+	hud.show_gameover("Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level])
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:

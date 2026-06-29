@@ -7,6 +7,14 @@ extends Node
 const VIEW := Vector2(1280, 720)
 const SIDEBAR_W := 384
 const LOG_H := 150
+const VERSION := "v0.5 — accès anticipé"
+
+# Rôle court par héros, affiché sur sa fiche de sélection.
+const HERO_ROLE := {
+	"knight": "GARDIEN · Tank corps-à-corps",
+	"mage": "ARCANISTE · Dégâts magiques",
+	"ranger": "RÔDEUR · Polyvalent rapide",
+}
 
 const STAT_ROWS := [
 	["atk", "Attaque"], ["magic", "Magie"], ["defense", "Défense"],
@@ -20,7 +28,8 @@ var game                          # référence vers Main
 # Noeuds
 var hud_layer: CanvasLayer
 var menu_layer: CanvasLayer
-var menu_content: VBoxContainer
+var menu_bg: TextureRect
+var menu_root: Control
 var overlay_layer: CanvasLayer
 var overlay_content: VBoxContainer
 var log_label: RichTextLabel
@@ -138,16 +147,55 @@ func _build_menu() -> void:
 	menu_layer = CanvasLayer.new()
 	menu_layer.layer = 2
 	add_child(menu_layer)
-	var dim := ColorRect.new()
-	dim.color = Color(0.05, 0.04, 0.08, 0.96)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu_layer.add_child(dim)
-	var center := CenterContainer.new()
-	center.set_anchors_preset(Control.PRESET_FULL_RECT)
-	menu_layer.add_child(center)
-	menu_content = Ui.vbox(9)
-	menu_content.custom_minimum_size = Vector2(760, 0)
-	center.add_child(menu_content)
+	menu_bg = Ui.gradient_bg(Color(0.11, 0.08, 0.17), Color(0.02, 0.02, 0.05))
+	menu_layer.add_child(menu_bg)
+	menu_root = Control.new()
+	menu_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	menu_layer.add_child(menu_root)
+
+## Vide le contenu du calque menu (les écrans se reconstruisent à chaque appel).
+func _menu_clear() -> void:
+	for c in menu_root.get_children():
+		menu_root.remove_child(c)
+		c.queue_free()
+
+## Colonne centrée pour un écran de menu. `scroll` enveloppe dans un défilement
+## vertical (écrans longs : sanctuaire, fin de run) ; sinon centrage parfait.
+func _menu_column(width: float = 720.0, scroll: bool = true) -> VBoxContainer:
+	_menu_clear()
+	var col := Ui.vbox(10)
+	col.custom_minimum_size = Vector2(width, 0)
+	if scroll:
+		var sc := ScrollContainer.new()
+		sc.set_anchors_preset(Control.PRESET_FULL_RECT)
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		menu_root.add_child(sc)
+		var m := MarginContainer.new()
+		m.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var side: int = int(max(40.0, (VIEW.x - width) / 2.0))
+		m.add_theme_constant_override("margin_left", side)
+		m.add_theme_constant_override("margin_right", side)
+		m.add_theme_constant_override("margin_top", 36)
+		m.add_theme_constant_override("margin_bottom", 36)
+		sc.add_child(m)
+		m.add_child(col)
+	else:
+		var cc := CenterContainer.new()
+		cc.set_anchors_preset(Control.PRESET_FULL_RECT)
+		menu_root.add_child(cc)
+		cc.add_child(col)
+	return col
+
+func _spacer(h: float) -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(0, h)
+	return c
+
+func _menu_show() -> void:
+	menu_layer.visible = true
+	hud_layer.visible = false
+	overlay_layer.visible = false
+	map_layer.visible = false
 
 func _build_overlay() -> void:
 	overlay_layer = CanvasLayer.new()
@@ -318,67 +366,204 @@ func show_rest() -> void:
 	b2.pressed.connect(game.rest_choice.bind("train"))
 	overlay_content.add_child(b2)
 
-# --- Écran HUB ----------------------------------------------------------------
-func show_hub(death_summary: String) -> void:
-	menu_layer.visible = true
-	hud_layer.visible = false
-	for c in menu_content.get_children():
-		c.queue_free()
+# --- Écran-titre --------------------------------------------------------------
+func show_title() -> void:
+	_menu_show()
+	var col := _menu_column(560.0, false)
+	col.add_theme_constant_override("separation", 6)
+	col.add_child(Ui.label("⛫", 72, Ui.ACCENT_SOFT, true))
+	col.add_child(Ui.label("L E S   S T R A T E S", 46, Ui.ACCENT_SOFT, true))
+	col.add_child(Ui.label("Roguelike d'ascension — grimpe la tour, strate par strate.", 15, Ui.MUTED, true))
+	col.add_child(_spacer(26))
 
-	menu_content.add_child(Ui.label("⛫  LES STRATES", 34, Color(0.7, 0.6, 1.0), true))
-	menu_content.add_child(Ui.label("Roguelike — grimpe la tour, étage par étage (façon Aincrad).", 15, Color(0.7, 0.7, 0.8), true))
-	menu_content.add_child(HSeparator.new())
-	if death_summary != "":
-		menu_content.add_child(Ui.label(death_summary, 18, Color(1.0, 0.55, 0.45), true, true))
-		_build_run_journal()
-		menu_content.add_child(HSeparator.new())
+	var play := Ui.menu_button("▶   Nouvelle Ascension", 360.0)
+	play.pressed.connect(game.open_hero_select)
+	col.add_child(play)
+	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 360.0)
+	sanct.pressed.connect(game.open_meta)
+	col.add_child(sanct)
+	var opt := Ui.menu_button("⚙   Options", 360.0)
+	opt.pressed.connect(show_options)
+	col.add_child(opt)
+	var quit := Ui.menu_button("✕   Quitter", 360.0)
+	quit.pressed.connect(game.quit_game)
+	col.add_child(quit)
 
-	menu_content.add_child(Ui.label("Éclats en banque : %d        Record : Étage %d" % [GameState.shards, GameState.best_floor], 18, Color(1.0, 0.85, 0.35), true))
-	menu_content.add_child(Ui.label("— Améliorations permanentes (dépense tes Éclats) —", 16, Color(0.6, 0.85, 1.0), true))
+	col.add_child(_spacer(22))
+	if GameState.best_floor > 1:
+		col.add_child(Ui.label("Record d'ascension : Strate atteinte à l'Étage %d" % GameState.best_floor, 13, Ui.GOLD, true))
+	col.add_child(Ui.label("%s   ·   façon Aincrad" % VERSION, 12, Color(0.45, 0.45, 0.55), true))
+
+# --- Sélection du héros (fiches détaillées) -----------------------------------
+func show_hero_select() -> void:
+	_menu_show()
+	var col := _menu_column(1180.0, false)
+	col.add_child(Ui.label("CHOISIS TON CHAMPION", 30, Ui.ACCENT_SOFT, true))
+	col.add_child(Ui.label("Chaque héros aborde la Tour à sa manière.", 14, Ui.MUTED, true))
+	col.add_child(_spacer(10))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 22)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	col.add_child(row)
+	for hero_id in Data.HERO_ORDER:
+		row.add_child(_hero_card(hero_id))
+	col.add_child(_spacer(14))
+	var back := Ui.menu_button("↩   Retour", 240.0, 16)
+	back.pressed.connect(game.return_to_title)
+	col.add_child(back)
+
+func _hero_card(hero_id: String) -> Control:
+	var h: Dictionary = Data.HEROES[hero_id]
+	var hero_col: Color = h["color"]
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Ui.card_style(Color(0.12, 0.10, 0.17), hero_col.darkened(0.1)))
+	var v := Ui.vbox(7)
+	v.custom_minimum_size = Vector2(336, 0)
+	panel.add_child(v)
+
+	var portrait := _hero_portrait(hero_id, hero_col)
+	if portrait != null:
+		v.add_child(portrait)
+	v.add_child(Ui.label(h["name"], 26, hero_col, true))
+	v.add_child(Ui.label(HERO_ROLE.get(hero_id, ""), 12, Ui.GOLD, true))
+	v.add_child(Ui.label(h["lore"], 13, Ui.MUTED, true, true, 300))
+	v.add_child(HSeparator.new())
+
+	var hp: int = int(h["max_hp"]) + GameState.bonus_hp()
+	var atk: int = int(h["atk"]) + GameState.bonus_atk()
+	v.add_child(Ui.stat_gauge("PV", hp, 60, Color(0.3, 0.8, 0.35), 150))
+	v.add_child(Ui.stat_gauge("ATK", atk, 14, Color(0.9, 0.55, 0.35), 150))
+	v.add_child(Ui.stat_gauge("MAG", int(h["magic"]), 12, Color(0.45, 0.7, 1.0), 150))
+	v.add_child(Ui.stat_gauge("DÉF", int(h["defense"]), 8, Color(0.7, 0.7, 0.78), 150))
+	v.add_child(Ui.stat_gauge("VIT", int(h["speed"]), 130, Color(0.6, 0.95, 0.6), 150))
+	v.add_child(HSeparator.new())
+
+	v.add_child(Ui.label("✦ " + h["ability_name"], 15, Ui.ACCENT_SOFT, true))
+	v.add_child(Ui.label(h["ability_desc"], 12, Ui.MUTED, true, true, 300))
+	v.add_child(_spacer(6))
+	var choose := Ui.menu_button("Choisir", 300.0, 17)
+	choose.pressed.connect(game.choose_hero.bind(hero_id))
+	v.add_child(choose)
+	return panel
+
+## Portrait pixel-art du héros (sprite agrandi, filtre voisin le plus proche).
+func _hero_portrait(hero_id: String, tint: Color) -> Control:
+	var path := "res://assets/%s.png" % hero_id
+	if not ResourceLoader.exists(path):
+		return null
+	var tex = load(path)
+	var holder := CenterContainer.new()
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", Ui.card_style(Color(0.08, 0.07, 0.11), tint.darkened(0.3), 8))
+	var tr := TextureRect.new()
+	tr.texture = tex
+	tr.custom_minimum_size = Vector2(72, 72)
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	frame.add_child(tr)
+	holder.add_child(frame)
+	return holder
+
+# --- Sanctuaire (méta-progression entre les runs) -----------------------------
+func show_meta() -> void:
+	_menu_show()
+	var col := _menu_column(680.0, true)
+	col.add_child(Ui.label("✦  SANCTUAIRE", 32, Ui.ACCENT_SOFT, true))
+	col.add_child(Ui.label("Au pied de la Tour, dépense tes Éclats en bénédictions permanentes.", 14, Ui.MUTED, true))
+	col.add_child(_spacer(6))
+	col.add_child(Ui.label("Éclats en banque : %d        Record : Étage %d" % [GameState.shards, GameState.best_floor], 18, Ui.GOLD, true))
+	col.add_child(HSeparator.new())
+
 	for key in Data.UPGRADE_ORDER:
 		var lvl: int = GameState.upgrade_level(key)
 		var info: Dictionary = Data.UPGRADES[key]
 		var label_txt: String
 		if GameState.is_maxed(key):
-			label_txt = "%s (niv. %d) — %s   [MAX]" % [info["name"], lvl, info["desc"]]
+			label_txt = "%s  (niv. %d)  —  %s     ★ MAX" % [info["name"], lvl, info["desc"]]
 		else:
-			label_txt = "%s (niv. %d) — %s   [%d Éclats]" % [info["name"], lvl, info["desc"], Data.upgrade_cost(key, lvl)]
-		var btn := Ui.button(label_txt)
+			label_txt = "%s  (niv. %d)  —  %s     [%d Éclats]" % [info["name"], lvl, info["desc"], Data.upgrade_cost(key, lvl)]
+		var btn := Ui.button(label_txt, 46, 15)
 		btn.disabled = not GameState.can_afford(key)
 		btn.pressed.connect(_on_buy.bind(key))
-		menu_content.add_child(btn)
+		col.add_child(btn)
 
-	menu_content.add_child(HSeparator.new())
-	menu_content.add_child(Ui.label("— Choisis ton héros —", 16, Color(0.6, 0.85, 1.0), true))
-	for hero_id in Data.HERO_ORDER:
-		var h: Dictionary = Data.HEROES[hero_id]
-		var btn := Ui.button("%s — PV %d | ATK %d | MAG %d | DEF %d | VIT %d | %s" % [
-			h["name"], h["max_hp"] + GameState.bonus_hp(), h["atk"] + GameState.bonus_atk(),
-			h["magic"], h["defense"], h["speed"], h["ability_name"]])
-		btn.tooltip_text = h["lore"] + "\n" + h["ability_desc"]
-		btn.pressed.connect(game.choose_hero.bind(hero_id))
-		menu_content.add_child(btn)
-
-	menu_content.add_child(HSeparator.new())
-	menu_content.add_child(Ui.label("Déplacer : WASD / flèches / HJKL   •   Capacité : ESPACE   •   Attendre : .   •   Inventaire : I", 13, Color(0.6, 0.6, 0.7), true))
-
-## Journal récapitulatif du dernier run (affiché au hub après une mort).
-func _build_run_journal() -> void:
-	var r: Dictionary = GameState.last_run
-	if r.is_empty():
-		return
-	menu_content.add_child(Ui.label("— Journal du run —", 16, Color(0.6, 0.85, 1.0), true))
-	menu_content.add_child(Ui.label("Étage atteint : %d        Niveau : %d" % [int(r.get("floor", 1)), int(r.get("level", 1))], 15, Color(0.85, 0.85, 0.92), true))
-	menu_content.add_child(Ui.label("Ennemis vaincus : %d        Meilleur coup : %d" % [int(r.get("kills", 0)), int(r.get("best_hit", 0))], 15, Color(0.85, 0.85, 0.92), true))
-	menu_content.add_child(Ui.label("Éclats du run : %d   (ajoutés à la banque : %d)" % [int(r.get("shards", 0)), GameState.shards], 15, Color(1.0, 0.85, 0.35), true))
-	var item_name: String = str(r.get("item", ""))
-	if item_name != "":
-		menu_content.add_child(Ui.label("Objet le plus marquant : %s" % item_name, 15, Color.html(str(r.get("item_color", "d2d2e0"))), true))
-	menu_content.add_child(Ui.label("Records — Étage %d · %d ennemis vaincus" % [GameState.best_floor, GameState.best_kills], 14, Color(0.7, 0.95, 0.7), true))
+	col.add_child(HSeparator.new())
+	var play := Ui.menu_button("▶   Choisir un héros", 360.0)
+	play.pressed.connect(game.open_hero_select)
+	col.add_child(play)
+	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
+	back.pressed.connect(game.return_to_title)
+	col.add_child(back)
 
 func _on_buy(key: String) -> void:
 	if GameState.buy_upgrade(key):
-		show_hub("")
+		show_meta()
+
+# --- Écran de fin de run (mort) -----------------------------------------------
+func show_gameover(death_summary: String) -> void:
+	_menu_show()
+	var col := _menu_column(680.0, true)
+	col.add_child(Ui.label("💀  FIN DE L'ASCENSION", 30, Color(1.0, 0.5, 0.45), true))
+	if death_summary != "":
+		col.add_child(Ui.label(death_summary, 17, Color(1.0, 0.7, 0.6), true, true))
+	col.add_child(_spacer(6))
+	_build_run_journal(col)
+	col.add_child(HSeparator.new())
+	col.add_child(Ui.label("Tes Éclats ont rejoint la banque du Sanctuaire.", 14, Ui.GOLD, true))
+	col.add_child(_spacer(6))
+
+	var sanct := Ui.menu_button("✦   Améliorer au Sanctuaire", 360.0)
+	sanct.pressed.connect(game.open_meta)
+	col.add_child(sanct)
+	var again := Ui.menu_button("▶   Nouvelle Ascension", 360.0)
+	again.pressed.connect(game.open_hero_select)
+	col.add_child(again)
+	var title := Ui.menu_button("↩   Menu principal", 360.0, 16)
+	title.pressed.connect(game.return_to_title)
+	col.add_child(title)
+
+## Journal récapitulatif du dernier run, ajouté à la colonne `col` fournie.
+func _build_run_journal(col: VBoxContainer) -> void:
+	var r: Dictionary = GameState.last_run
+	if r.is_empty():
+		return
+	col.add_child(Ui.label("— Journal du run —", 16, Color(0.6, 0.85, 1.0), true))
+	col.add_child(Ui.label("Étage atteint : %d        Niveau : %d" % [int(r.get("floor", 1)), int(r.get("level", 1))], 15, Color(0.85, 0.85, 0.92), true))
+	col.add_child(Ui.label("Ennemis vaincus : %d        Meilleur coup : %d" % [int(r.get("kills", 0)), int(r.get("best_hit", 0))], 15, Color(0.85, 0.85, 0.92), true))
+	col.add_child(Ui.label("Éclats du run : %d   (banque : %d)" % [int(r.get("shards", 0)), GameState.shards], 15, Color(1.0, 0.85, 0.35), true))
+	var item_name: String = str(r.get("item", ""))
+	if item_name != "":
+		col.add_child(Ui.label("Objet le plus marquant : %s" % item_name, 15, Color.html(str(r.get("item_color", "d2d2e0"))), true))
+	col.add_child(Ui.label("Records — Étage %d · %d ennemis vaincus" % [GameState.best_floor, GameState.best_kills], 14, Color(0.7, 0.95, 0.7), true))
+
+# --- Options (overlay au-dessus du menu) --------------------------------------
+func show_options() -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("⚙  OPTIONS", Ui.ACCENT_SOFT)
+	var fs := Ui.button(_fullscreen_label(), 46, 17)
+	fs.pressed.connect(_toggle_fullscreen)
+	overlay_content.add_child(fs)
+	overlay_content.add_child(Ui.label("Volume musique / effets — à venir dans une prochaine mise à jour.", 13, Ui.MUTED))
+	overlay_content.add_child(HSeparator.new())
+	overlay_content.add_child(Ui.label("Commandes", 16, Color(0.6, 0.85, 1.0)))
+	overlay_content.add_child(Ui.label("Déplacer : WASD / flèches / HJKL    Capacité : ESPACE", 13, Ui.MUTED))
+	overlay_content.add_child(Ui.label("Attendre : .    Inventaire : I    Retour menu : Échap", 13, Ui.MUTED))
+	overlay_content.add_child(HSeparator.new())
+	var back := Ui.button("Retour", 44, 16)
+	back.pressed.connect(hide_overlay)
+	overlay_content.add_child(back)
+
+func _fullscreen_label() -> String:
+	var mode := DisplayServer.window_get_mode()
+	var on: bool = mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	return "Plein écran : %s" % ("ACTIVÉ" if on else "désactivé")
+
+func _toggle_fullscreen() -> void:
+	var mode := DisplayServer.window_get_mode()
+	var on: bool = mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
+	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if on else DisplayServer.WINDOW_MODE_FULLSCREEN)
+	show_options()
 
 # --- Overlay : montée de niveau ----------------------------------------------
 func show_levelup(level: int) -> void:
