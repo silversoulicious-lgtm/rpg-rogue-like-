@@ -374,6 +374,10 @@ func show_rest() -> void:
 	var b2 := Ui.button("S'entraîner   (+3 ATK ce run)", 46, 17)
 	b2.pressed.connect(game.rest_choice.bind("train"))
 	overlay_content.add_child(b2)
+	if GameState.forge_unlocked():
+		var b3 := Ui.button("Forger   (renforce une pièce d'équipement)", 46, 17)
+		b3.pressed.connect(game.rest_choice.bind("forge"))
+		overlay_content.add_child(b3)
 
 # --- Écran-titre --------------------------------------------------------------
 func show_title() -> void:
@@ -557,6 +561,10 @@ func show_knowledge() -> void:
 		col.add_child(_spacer(6))
 
 	col.add_child(HSeparator.new())
+	if GameState.codex_unlocked():
+		var codex := Ui.menu_button("📖   Consulter le Codex", 360.0, 16)
+		codex.pressed.connect(game.open_codex)
+		col.add_child(codex)
 	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
 	back.pressed.connect(game.return_to_title)
 	col.add_child(back)
@@ -582,6 +590,53 @@ func _knowledge_row(nid: String, node: Dictionary) -> Control:
 func _on_buy_knowledge(nid: String) -> void:
 	if GameState.buy_knowledge_node(nid):
 		show_knowledge()
+
+# --- Codex (catalogue des découvertes) ----------------------------------------
+func show_codex() -> void:
+	_menu_show()
+	var col := _menu_column(820.0, true)
+	col.add_child(Ui.label("📖  CODEX", 30, Color(0.7, 0.85, 1.0), true))
+	col.add_child(Ui.label("Tout ce que tu as rencontré dans la Tour. Chaque première rencontre t'a appris quelque chose.", 14, Ui.MUTED, true, true, 760))
+	col.add_child(HSeparator.new())
+
+	var skill_ids: Array = []
+	for sid in Data.SKILLS:
+		if String(Data.SKILLS[sid]["rarity"]) != "base":
+			skill_ids.append(sid)
+	_codex_section(col, "⚔ Compétences", "skill", skill_ids,
+		func(id): return String(Data.SKILLS[id]["name"]))
+	var power_ids: Array = []
+	for p in Data.POWERS:
+		power_ids.append(p["id"])
+	_codex_section(col, "Ω Pouvoirs", "power", power_ids, func(id): return _power_name(id))
+	var uniq_names: Array = []
+	for u in Data.UNIQUE_ITEMS:
+		if not uniq_names.has(u["name"]):
+			uniq_names.append(u["name"])
+	_codex_section(col, "✦ Objets uniques", "unique", uniq_names, func(n): return String(n))
+
+	col.add_child(HSeparator.new())
+	var back := Ui.menu_button("↩   Retour à l'Arbre", 360.0, 16)
+	back.pressed.connect(game.open_knowledge)
+	col.add_child(back)
+
+func _power_name(id: String) -> String:
+	for p in Data.POWERS:
+		if p["id"] == id:
+			return String(p["name"])
+	return id
+
+## Affiche une section du Codex : titre + compteur + liste (découverts en clair,
+## inconnus masqués en « ??? »).
+func _codex_section(col: VBoxContainer, title: String, category: String, ids: Array, namer: Callable) -> void:
+	col.add_child(Ui.label("%s   (%d / %d)" % [title, GameState.discovered_count(category), ids.size()], 18, Color(0.8, 0.85, 0.95), true))
+	var bucket: Dictionary = GameState.discovered.get(category, {})
+	for id in ids:
+		if bucket.has(id):
+			col.add_child(Ui.label("  ✓ " + str(namer.call(id)), 14, Color(0.85, 0.9, 0.8)))
+		else:
+			col.add_child(Ui.label("  ??? — non découvert", 14, Color(0.45, 0.45, 0.52)))
+	col.add_child(_spacer(8))
 
 # --- Écran de fin de run (mort) -----------------------------------------------
 func show_gameover(death_summary: String) -> void:

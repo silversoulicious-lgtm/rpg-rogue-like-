@@ -191,6 +191,12 @@ func reveal(center: Vector2i, radius: int) -> void:
 				explored[y][x] = true
 				_vis_cells.append(Vector2i(x, y))
 
+## Marque une case comme explorée (mémoire) sans toucher au champ de vision actuel.
+## Utilisé par l'Œil du Devin pour révéler le butin à travers le brouillard.
+func mark_explored(pos: Vector2i) -> void:
+	if _in_bounds(pos.x, pos.y):
+		explored[pos.y][pos.x] = true
+
 func is_visible(x: int, y: int) -> bool:
 	return _in_bounds(x, y) and visible[y][x]
 

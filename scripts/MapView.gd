@@ -12,6 +12,7 @@ const COLOR_MEMORY := Color(0.02, 0.02, 0.03, 0.55) # exploré mais hors vision
 var dungeon: Dungeon = null
 var entities: Array = []
 var loot: Array = []
+var reveal_loot: bool = false      # Œil du Devin : montre le butin à travers le brouillard
 var tex: Dictionary = {}
 var view_size: Vector2 = Vector2(896, 570)        # zone de jeu visible (réglée par Main)
 var _font: Font
@@ -72,9 +73,13 @@ func _draw() -> void:
 	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:
 		var p: Vector2i = item["pos"]
-		if dungeon.is_visible(p.x, p.y):
+		var seen: bool = dungeon.is_visible(p.x, p.y)
+		# Œil du Devin : le butin déjà exploré reste affiché (assombri) à travers le brouillard.
+		if seen or (reveal_loot and dungeon.is_explored(p.x, p.y)):
 			if not _blit(item.get("sprite", ""), p.x, p.y):
 				_draw_glyph(p.x, p.y, item["glyph"], item["color"])
+			if not seen:
+				draw_rect(_cell_rect(p.x, p.y), COLOR_MEMORY, true)
 	for e in entities:
 		if e.is_alive() and dungeon.is_visible(e.x, e.y):
 			if not _blit(e.sprite, e.x, e.y):

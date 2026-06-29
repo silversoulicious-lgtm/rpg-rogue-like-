@@ -82,6 +82,16 @@ func open_knowledge() -> void:
 	state = State.META
 	hud.show_knowledge()
 
+## Codex consultable (catalogue des découvertes).
+func open_codex() -> void:
+	state = State.META
+	hud.show_codex()
+
+## Enregistre une découverte ; +1 Connaissance si c'est une première (Codex débloqué).
+func _discover(category: String, key: String, label: String) -> void:
+	if GameState.note_discovery(category, key):
+		add_message("[color=#9fd4ff]✶ Découverte inédite : %s (+1 Connaissance).[/color]" % label)
+
 func quit_game() -> void:
 	get_tree().quit()
 
@@ -331,6 +341,12 @@ func generate_floor(node_type: String = "combat") -> void:
 	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
 		occupied.append(p)
 		_spawn_loot(p, is_elite)
+
+	# Œil du Devin : dévoile l'emplacement du butin à travers le brouillard.
+	map_view.reveal_loot = GameState.reveals_loot()
+	if map_view.reveal_loot:
+		for item in loot:
+			dungeon.mark_explored(item["pos"])
 
 	refresh()        # règle map_view.dungeon, le brouillard et la caméra
 
@@ -894,6 +910,7 @@ func _acquire_skill(id: String) -> void:
 		return
 	known_skills.append(id)
 	add_message("[color=#c8b0ff]✦ Compétence apprise : %s — %s[/color]" % [Data.SKILLS[id]["name"], Data.SKILLS[id]["desc"]])
+	_discover("skill", id, String(Data.SKILLS[id]["name"]))
 	refresh()
 
 ## Liste des compétences sélectionnables avec l'arme équipée (base du type + apprises compatibles).
@@ -918,6 +935,8 @@ func select_skill(id: String) -> void:
 
 func _bag_add(item: Dictionary) -> void:
 	_note_item(item)
+	if item.get("unique", false):
+		_discover("unique", String(item.get("name", "")), String(item.get("name", "")))
 	if inventory.size() >= INV_CAP:
 		var s: int = int(item.get("salvage", 3))
 		run_shards += s
@@ -1046,6 +1065,7 @@ func _acquire_power(def: Dictionary) -> void:
 	player.powers.append(def)
 	player.recompute_stats()
 	add_message("[color=#ffb84a]Ω Pouvoir : %s — %s[/color]" % [def["name"], def["desc"]])
+	_discover("power", String(def["id"]), String(def["name"]))
 	refresh()
 
 ## Déclenche les pouvoirs à activation automatique (drone/tourelle), après l'action du joueur.
@@ -1281,15 +1301,43 @@ func open_rest() -> void:
 	hud.show_rest()
 
 func rest_choice(kind: String) -> void:
-	if kind == "heal":
-		var amt: int = int(player.max_hp * 0.4)
-		player.heal(amt)
-		add_message("Repos : +%d PV." % amt)
-	else:
-		player.base_atk += 3
-		player.recompute_stats()
-		add_message("Entraînement : +3 ATK (ce run).")
+	match kind:
+		"heal":
+			var amt: int = int(player.max_hp * 0.4)
+			player.heal(amt)
+			add_message("Repos : +%d PV." % amt)
+		"forge":
+			_forge_equipment()
+		_:
+			player.base_atk += 3
+			player.recompute_stats()
+			add_message("Entraînement : +3 ATK (ce run).")
 	_back_to_map()
+
+## Forge Itinérante : renforce de ~30% les bonus d'une pièce d'équipement portée.
+func _forge_equipment() -> void:
+	var slots: Array = player.equipment.keys()
+	if slots.is_empty():
+		add_message("La forge reste froide : aucune pièce à renforcer.")
+		return
+	var slot: String = slots[rng.randi_range(0, slots.size() - 1)]
+	var it: Dictionary = player.equipment[slot]
+	var bonus: Dictionary = it.get("bonus", {})
+	var boosted := false
+	for stat in bonus.keys():
+		var v = bonus[stat]
+		if typeof(v) == TYPE_INT and int(v) != 0:
+			bonus[stat] = int(v) + maxi(1, int(round(abs(int(v)) * 0.3))) * signi(int(v))
+			boosted = true
+		elif typeof(v) == TYPE_FLOAT and float(v) != 0.0:
+			bonus[stat] = float(v) * 1.3
+			boosted = true
+	if not boosted:
+		bonus["atk"] = int(bonus.get("atk", 0)) + 2
+	it["bonus"] = bonus
+	player.equipment[slot] = it
+	player.recompute_stats()
+	add_message("[color=#ffd24a]Forge : %s renforcé ![/color]" % it.get("name", "ton équipement"))
 
 func game_over() -> void:
 	var stats := {

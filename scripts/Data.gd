@@ -627,6 +627,7 @@ static func upgrade_max(key: String) -> int:
 const KNOWLEDGE_BRANCHES := {
 	"arsenal": { "name": "Voie de l'Arsenal", "color": Color(0.95, 0.6, 0.35) },
 	"serment": { "name": "Voie du Serment",   "color": Color(0.85, 0.4, 0.45) },
+	"savoir":  { "name": "Voie du Savoir",    "color": Color(0.55, 0.8, 1.0) },
 }
 const KNOWLEDGE_NODES := {
 	# Voie de l'Arsenal — élargit le build et la variété de drops.
@@ -643,8 +644,16 @@ const KNOWLEDGE_NODES := {
 		"desc": "Débloque des Serments plus durs et bien plus rémunérateurs." },
 	"chasseur": { "name": "Chasseur de Légendes", "branch": "serment", "cost": 5, "requires": ["serments"],
 		"desc": "Les monstres légendaires (porteurs de pouvoirs) apparaissent bien plus souvent." },
+	# Voie du Savoir — exploration, collection et économie de Connaissances.
+	"codex": { "name": "Codex", "branch": "savoir", "cost": 3, "requires": [],
+		"desc": "Débloque le Codex consultable. Chaque découverte inédite (compétence, pouvoir, objet unique) rapporte +1 Connaissance." },
+	"oeil_du_devin": { "name": "Œil du Devin", "branch": "savoir", "cost": 5, "requires": ["codex"],
+		"desc": "Au début de chaque étage, le butin est révélé à travers le brouillard de guerre." },
+	"forge": { "name": "Forge Itinérante", "branch": "savoir", "cost": 6, "requires": ["codex"],
+		"desc": "Les nœuds Repos gagnent un 3ᵉ choix : forger une pièce d'équipement (bonus renforcé)." },
 }
-const KNOWLEDGE_ORDER := ["pacte_pouvoir", "affinite", "arsenal", "serments", "serment_majeur", "chasseur"]
+const KNOWLEDGE_ORDER := ["pacte_pouvoir", "affinite", "arsenal", "serments", "serment_majeur", "chasseur",
+	"codex", "oeil_du_devin", "forge"]
 
 # --- SERMENTS (modificateurs de difficulté optionnels, débloqués par l'arbre) --
 # reward = bonus additif aux Éclats du run ; knowledge = Connaissances en plus.

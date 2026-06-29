@@ -10,6 +10,8 @@ var shards: int = 0
 var knowledge: int = 0
 # Nœuds de l'Arbre de Connaissances déjà débloqués (ids de Data.KNOWLEDGE_NODES)
 var knowledge_nodes: Array = []
+# Codex : éléments déjà rencontrés, par catégorie -> { id/nom: true }
+var discovered: Dictionary = { "skill": {}, "power": {}, "unique": {} }
 # Niveaux d'amélioration achetés : { "vitalite": int, "force": int, "maitrise": int }
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
@@ -99,6 +101,26 @@ func shop_always_power() -> bool:    return has_knowledge_node("arsenal")
 func oaths_unlocked() -> bool:       return has_knowledge_node("serments")
 func major_oaths_unlocked() -> bool: return has_knowledge_node("serment_majeur")
 func legendary_boost() -> bool:      return has_knowledge_node("chasseur")
+func codex_unlocked() -> bool:       return has_knowledge_node("codex")
+func reveals_loot() -> bool:         return has_knowledge_node("oeil_du_devin")
+func forge_unlocked() -> bool:       return has_knowledge_node("forge")
+
+## Enregistre une rencontre dans le Codex. Renvoie true si c'est une PREMIÈRE
+## (le Codex doit être débloqué pour que la collection se remplisse et rapporte).
+func note_discovery(category: String, key: String) -> bool:
+	if not codex_unlocked() or key == "":
+		return false
+	var bucket: Dictionary = discovered.get(category, {})
+	if bucket.has(key):
+		return false
+	bucket[key] = true
+	discovered[category] = bucket
+	knowledge += 1
+	save_game()
+	return true
+
+func discovered_count(category: String) -> int:
+	return int(discovered.get(category, {}).size())
 
 # Enregistre le bilan d'un run terminé (met à jour les records, persiste).
 func record_run(stats: Dictionary) -> void:
@@ -113,6 +135,7 @@ func save_game() -> void:
 		"shards": shards,
 		"knowledge": knowledge,
 		"knowledge_nodes": knowledge_nodes,
+		"discovered": discovered,
 		"upgrades": upgrades,
 		"best_floor": best_floor,
 		"best_kills": best_kills,
@@ -139,6 +162,10 @@ func load_game() -> void:
 	for nid in parsed.get("knowledge_nodes", []):
 		if Data.KNOWLEDGE_NODES.has(nid):
 			knowledge_nodes.append(str(nid))
+	var disc = parsed.get("discovered", {})
+	if typeof(disc) == TYPE_DICTIONARY:
+		for cat in ["skill", "power", "unique"]:
+			discovered[cat] = disc.get(cat, {})
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
 	last_loadout = str(parsed.get("last_loadout", "melee"))

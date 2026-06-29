@@ -458,5 +458,33 @@ func _ready() -> void:
 	assert(GameState.knowledge >= 5 + 4, "Connaissances gagnées = étages au-delà du record + 2/Gardien")
 	print("OK Phase 5: arbre (prérequis/achat/persistance), Pacte de Pouvoir, Serments (toggle/gate/effet/récompense), gain de Connaissances")
 
+	# --- Phase 5 (2/2) : Codex, découvertes, Forge, Œil du Devin -------------------
+	GameState.knowledge = 100
+	GameState.discovered = { "skill": {}, "power": {}, "unique": {} }
+	assert(not GameState.note_discovery("power", "drone"), "sans Codex, aucune découverte enregistrée")
+	assert(GameState.buy_knowledge_node("codex"), "achat du nœud Codex")
+	var k0 = GameState.knowledge
+	assert(GameState.note_discovery("power", "drone"), "1ʳᵉ découverte enregistrée")
+	assert(GameState.knowledge == k0 + 1, "une découverte inédite rapporte +1 Connaissance")
+	assert(not GameState.note_discovery("power", "drone"), "doublon de découverte ignoré")
+	# Forge : renforce le bonus d'une pièce équipée.
+	assert(GameState.buy_knowledge_node("forge"), "achat du nœud Forge")
+	main.start_run("melee")
+	main.player.equipment = { "armure": { "kind": "equip", "name": "Plastron", "slot": "armure", "salvage": 5, "bonus": { "defense": 4 } } }
+	main._forge_equipment()
+	assert(int(main.player.equipment["armure"]["bonus"]["defense"]) > 4, "Forge renforce le bonus d'une pièce")
+	# Œil du Devin : révèle le butin au début d'étage.
+	assert(GameState.buy_knowledge_node("oeil_du_devin"), "achat du nœud Œil du Devin")
+	main.active_oaths = []
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	assert(main.map_view.reveal_loot, "Œil du Devin actif sur la vue de carte")
+	var loot_explored = main.loot.is_empty()
+	for it in main.loot:
+		if main.dungeon.is_explored(it["pos"].x, it["pos"].y):
+			loot_explored = true
+	assert(loot_explored, "le butin est marqué exploré à travers le brouillard")
+	print("OK Phase 5 (2/2): Codex (découvertes +Connaissance), Forge, Œil du Devin")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
