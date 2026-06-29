@@ -757,18 +757,25 @@ func _gen_node_rest() -> Image:
 func _gen_ground(a: Color, b: Color) -> Image:
 	var img := _new(true)
 	img.fill(a)
+	# Grain peu bruité : touches claires éparses + micro-taches sombres.
 	for y in TILE:
 		for x in TILE:
 			var r := rng.randf()
-			if r < 0.13:
-				_px(img, x, y, a.darkened(0.16))
-			elif r > 0.86:
+			if r > 0.90:
 				_px(img, x, y, b)
-	# Liseré sombre discret (délimite la case sans bruit).
+			elif r < 0.06:
+				_px(img, x, y, a.darkened(0.18))
+			elif (x * 5 + y * 3) % 17 == 0:
+				_px(img, x, y, a.lightened(0.05))
+	# Profondeur : coin haut-gauche éclairé, assombrissement vers le bas-droite.
+	for i in range(7):
+		_px(img, i, 0, a.lightened(0.08)); _px(img, 0, i, a.lightened(0.06))
+	for c in [Vector2i(TILE - 1, TILE - 2), Vector2i(TILE - 2, TILE - 1), Vector2i(TILE - 1, TILE - 3)]:
+		_px(img, c.x, c.y, a.darkened(0.22))
+	# Liseré d'ombre froide (délimite la case sans casser l'ambiance).
 	for i in TILE:
-		_px(img, i, TILE - 1, a.darkened(0.28))
-		_px(img, TILE - 1, i, a.darkened(0.28))
-		_px(img, i, 0, a.lightened(0.04))
+		_px(img, i, TILE - 1, a.darkened(0.32).lerp(INK_SOFT, 0.4))
+		_px(img, TILE - 1, i, a.darkened(0.32).lerp(INK_SOFT, 0.4))
 	return img
 
 func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
@@ -817,17 +824,23 @@ func _gen_rock(c: Color) -> Image:
 
 func _gen_water(c: Color) -> Image:
 	var img := _new(true)
-	img.fill(c.darkened(0.18))
-	var hi := c.lightened(0.32)
-	var mid := c.lightened(0.08)
-	for y in range(1, TILE, 3):
+	var base := c.darkened(0.28)
+	img.fill(base)
+	var mid := c.lightened(0.04)
+	var hi := c.lightened(0.30)
+	# Vagues horizontales stylisées (décalées d'une rangée à l'autre).
+	for y in range(2, TILE, 4):
+		var off := (y / 4) % 3
 		for x in TILE:
-			var yy := y + ((x / 3) % 2)
+			var yy := y + ((x + off) / 3) % 2
 			if yy < TILE:
-				if (x + y) % 6 < 2:
-					_px(img, x, yy, hi)
-				elif (x + y) % 6 < 4:
-					_px(img, x, yy, mid)
+				_px(img, x, yy, mid)
+				if (x + off) % 6 == 0:
+					_px(img, x, yy, hi)              # crête éclairée
+	# Liseré d'ombre (cohérent avec le sol).
+	for i in TILE:
+		_px(img, i, TILE - 1, base.darkened(0.35))
+		_px(img, TILE - 1, i, base.darkened(0.35))
 	return img
 
 func _gen_decor(c: Color, style: String) -> Image:
