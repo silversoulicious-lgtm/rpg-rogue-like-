@@ -24,7 +24,7 @@ func _ready() -> void:
 	_load_textures()
 
 func _load_textures() -> void:
-	var names := ["stairs", "knight", "mage", "ranger",
+	var names := ["stairs", "aria", "knight", "mage", "ranger",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
 		"arme", "armure", "relique", "artifact", "potion", "road"]
 	for b in Data.BIOMES:

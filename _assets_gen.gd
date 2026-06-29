@@ -42,7 +42,8 @@ func _init() -> void:
 	_save(_gen_wall(), "wall")
 	_save(_gen_stairs(), "stairs")
 
-	# --- Héroïne & classes (sprite "knight" = Aria) ---
+	# --- Héroïne (sprite dédié) + classes legacy ---
+	_save(_gen_creature("aria"), "aria")
 	_save(_gen_creature("knight"), "knight")
 	_save(_gen_creature("mage"), "mage")
 	_save(_gen_creature("ranger"), "ranger")
@@ -231,6 +232,7 @@ func _gen_stairs() -> Image:
 func _gen_creature(kind: String) -> Image:
 	var img := _new(false)
 	match kind:
+		"aria":    _fig_aria(img)
 		"knight":  _fig_knight(img)
 		"mage":    _fig_mage(img)
 		"ranger":  _fig_ranger(img)
@@ -250,7 +252,52 @@ func _glow_eyes(img: Image, cx: int, ey: int, c: Color, spread: int = 3) -> void
 	_px(img, cx - spread, ey, c.lightened(0.4))
 	_px(img, cx + spread, ey, c.lightened(0.4))
 
-# Héroïne Aria : silhouette élancée, armure d'acier, écharpe rouge, visière cyan.
+# Héroïne ARIA : sprite signature. Longue chevelure rose, cape arcanique évasée,
+# armure légère à liseré cyan, lame luisante, diadème à gemme. Doit ressortir
+# nettement face aux ennemis (héroïne = pièce maîtresse de la lisibilité).
+const ROSE   := Color(0.92, 0.55, 0.85)
+const ROSE_D := Color(0.62, 0.30, 0.56)
+const ROSE_L := Color(1.0, 0.74, 0.95)
+func _fig_aria(img: Image) -> void:
+	_ground_shadow(img)
+	# Cape arcanique évasée, décalée derrière (silhouette héroïque).
+	_trapezoid_o(img, 13, 8, 22, 2.5, 8.5, ARCANE.darkened(0.5))
+	_trapezoid(img, 13, 9, 22, 1.8, 7.0, ARCANE.darkened(0.2))
+	_rect(img, 16, 12, 1, 9, ARCANE_L.darkened(0.1))     # pli éclairé de la cape
+	_px(img, 9, 21, ARCANE.darkened(0.3)); _px(img, 18, 21, ARCANE.darkened(0.3))
+	# Chevelure rose qui descend derrière l'épaule gauche.
+	_trapezoid(img, 8, 8, 18, 1.5, 2.8, ROSE_D)
+	_trapezoid(img, 8, 8, 17, 1.0, 2.0, ROSE)
+	# Corps : armure légère claire à liseré cyan.
+	_trapezoid_o(img, 11, 11, 21, 2.2, 4.2, STEEL_D)
+	_trapezoid(img, 11, 12, 20, 1.5, 3.2, STEEL_L)
+	_rect(img, 9, 13, 5, 1, CYAN)                          # liseré de cuirasse
+	_diamond(img, 11, 15, 2, CYAN)                          # emblème de poitrine
+	_px(img, 11, 15, Color(1, 1, 1))
+	_rect(img, 8, 12, 2, 2, STEEL); _rect(img, 14, 12, 2, 2, STEEL)   # spallières
+	_px(img, 8, 12, CYAN_L); _px(img, 15, 12, CYAN_L)
+	# Jupe d'armure suggérée.
+	_rect(img, 9, 19, 6, 2, STEEL_D)
+	# Tête + visage (héroïne à visage découvert).
+	_disc_o(img, 11, 7, 3.6, ROSE_D, INK)                  # masse de cheveux (contour)
+	_disc(img, 11, 7, 3.0, ROSE)                            # chevelure
+	_ellipse(img, 11, 8, 2.3, 2.4, Color(0.93, 0.80, 0.70))   # visage
+	_px(img, 9, 8, CYAN_L); _px(img, 12, 8, CYAN_L)        # yeux luisants
+	_px(img, 10, 10, ROSE_D)                                # sourire/menton
+	# Mèche frontale + reflet.
+	_rect(img, 8, 5, 6, 1, ROSE)
+	_px(img, 9, 5, ROSE_L)
+	# Diadème doré à gemme.
+	_rect(img, 9, 6, 5, 1, GOLD)
+	_px(img, 11, 6, CYAN_L)
+	# Lame luisante levée (main droite).
+	_rect(img, 17, 2, 1, 12, INK)
+	_rect(img, 18, 2, 1, 12, CYAN_L)                        # tranchant lumineux
+	_rect(img, 18, 2, 1, 4, Color(1, 1, 1))                # éclat de pointe
+	_rect(img, 16, 13, 4, 1, GOLD)                          # garde
+	_px(img, 18, 15, GOLD_D)                               # poignée
+
+# Classe « chevalier » (legacy) : armure d'acier, écharpe rouge, visière cyan.
 func _fig_knight(img: Image) -> void:
 	_ground_shadow(img)
 	# Cape / corps en acier sombre.
@@ -335,22 +382,26 @@ func _fig_gobelin(img: Image) -> void:
 
 func _fig_wolf(img: Image) -> void:
 	_ground_shadow(img)
-	var fur := Color(0.42, 0.43, 0.50)
-	# Corps quadrupède bas.
-	_ellipse(img, 13, 15, 7.5, 4.2, fur.darkened(0.4))
-	_ellipse(img, 13, 15, 6.5, 3.4, fur)
-	_rect(img, 8, 18, 2, 3, fur.darkened(0.25))               # pattes
-	_rect(img, 15, 18, 2, 3, fur.darkened(0.25))
-	# Queue.
-	_ellipse(img, 20, 13, 2.6, 1.5, fur.darkened(0.15))
-	# Tête abaissée à gauche.
-	_disc_o(img, 7, 12, 3.6, fur.darkened(0.35), INK)
-	_disc(img, 7, 12, 2.9, fur)
-	_tri_up(img, 5, 9, 1, 3, fur.darkened(0.2))               # oreilles
-	_tri_up(img, 9, 9, 1, 3, fur.darkened(0.2))
-	_rect(img, 2, 12, 3, 2, fur.lightened(0.12))              # museau
-	_px(img, 2, 13, INK)                                      # truffe
-	_rect(img, 6, 11, 2, 1, CYAN_L)                           # œil luisant
+	var fur := Color(0.40, 0.42, 0.50)
+	var fur_d := fur.darkened(0.40)
+	var fur_l := fur.lightened(0.18)
+	# Corps + arrière-train surélevé (posture de prédateur).
+	_ellipse(img, 14, 15, 7.5, 4.4, fur_d)
+	_ellipse(img, 14, 15, 6.5, 3.6, fur)
+	_ellipse(img, 17, 13, 3.4, 3.0, fur)                      # croupe haute
+	_ellipse(img, 16, 12, 2.0, 1.4, fur_l)                    # reflet dorsal
+	_rect(img, 9, 18, 2, 3, fur_d)                            # pattes
+	_rect(img, 16, 18, 2, 3, fur_d)
+	_ellipse(img, 21, 12, 2.6, 1.4, fur_d)                    # queue dressée
+	# Tête basse à gauche.
+	_disc_o(img, 6, 13, 3.6, fur_d, INK)
+	_disc(img, 6, 13, 2.9, fur)
+	_tri_up(img, 4, 10, 1, 3, fur_d)                          # oreilles
+	_tri_up(img, 8, 10, 1, 3, fur_d)
+	_rect(img, 1, 13, 4, 2, fur_l)                            # museau allongé
+	_px(img, 1, 14, INK)                                      # truffe
+	_rect(img, 5, 12, 2, 1, CYAN_L)                           # œil luisant
+	_px(img, 4, 15, BONE)                                     # croc
 
 func _fig_skeleton(img: Image) -> void:
 	_ground_shadow(img)
@@ -373,23 +424,28 @@ func _fig_skeleton(img: Image) -> void:
 
 func _fig_orc(img: Image) -> void:
 	_ground_shadow(img)
-	var skin := Color(0.36, 0.52, 0.34)
-	# Corps massif.
-	_trapezoid_o(img, 12, 10, 21, 4.5, 7.0, skin.darkened(0.4))
-	_trapezoid(img, 12, 11, 20, 3.6, 5.6, skin)
-	_rect(img, 8, 12, 8, 2, Color(0.40, 0.28, 0.20))          # baudrier de cuir
-	_rect(img, 9, 14, 6, 4, skin.lightened(0.10))             # pectoraux
-	# Tête lourde.
-	_disc_o(img, 12, 7, 4.4, skin.darkened(0.35), INK)
-	_disc(img, 12, 7, 3.6, skin)
-	_ellipse(img, 10, 5, 1.5, 1.2, skin.lightened(0.22))
-	_rect(img, 8, 6, 9, 1, INK)                               # sourcil lourd
-	_glow_eyes(img, 12, 7, BLOOD, 3)
-	_tri_up(img, 10, 12, 1, 3, BONE)                          # défenses
-	_tri_up(img, 14, 12, 1, 3, BONE)
-	# Hache.
-	_rect(img, 18, 6, 1, 13, Color(0.40, 0.28, 0.20))
-	_tri_up(img, 19, 9, 3, 4, STEEL_L)
+	var skin := Color(0.30, 0.44, 0.30)        # olive sombre, distinct du gobelin vif
+	var skin_l := skin.lightened(0.18)
+	# Corps massif et large (la brute).
+	_trapezoid_o(img, 11, 10, 21, 5.0, 7.5, skin.darkened(0.45))
+	_trapezoid(img, 11, 11, 20, 4.0, 6.0, skin)
+	_rect(img, 6, 12, 10, 2, Color(0.36, 0.25, 0.18))         # baudrier de cuir
+	_rect(img, 8, 15, 6, 3, skin_l)                           # pectoraux éclairés
+	# Tête lourde et carrée.
+	_disc_o(img, 11, 7, 4.6, skin.darkened(0.4), INK)
+	_disc(img, 11, 7, 3.8, skin)
+	_ellipse(img, 9, 5, 1.6, 1.3, skin_l)
+	_rect(img, 7, 6, 9, 1, INK)                               # arcade lourde
+	_glow_eyes(img, 11, 7, BLOOD, 3)
+	_tri_up(img, 9, 13, 1, 4, BONE)                           # grandes défenses
+	_tri_up(img, 13, 13, 1, 4, BONE)
+	_rect(img, 9, 11, 5, 1, INK)                              # bouche
+	# Hache à lame nette (manche + tête trapue).
+	_rect(img, 18, 5, 1, 15, Color(0.36, 0.25, 0.18))         # manche
+	_rect(img, 14, 5, 5, 5, STEEL_D)                          # tête (contour)
+	_rect(img, 15, 6, 3, 3, STEEL)
+	_rect(img, 15, 6, 3, 1, STEEL_L)                          # tranchant éclairé
+	_px(img, 14, 7, STEEL_L); _px(img, 14, 8, STEEL_L)        # biseau du fil
 
 func _fig_spectre(img: Image) -> void:
 	# Spectre : haut net, bas vaporeux et ondulé, semi-transparence.

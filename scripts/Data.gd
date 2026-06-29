@@ -11,7 +11,7 @@ extends RefCounted
 const HEROINE := {
 	"name": "Aria",
 	"glyph": "@", "color": Color(0.92, 0.55, 0.85),
-	"sprite": "knight",   # placeholder : remplacé par l'art dédié en phase finition
+	"sprite": "aria",   # sprite dédié de l'héroïne
 	"max_hp": 28, "atk": 5, "magic": 3, "defense": 2, "speed": 100, "hp_regen": 0,
 	"lore": "La seule à oser l'ascension. Son style dépend de l'arme qu'elle empoigne.",
 }
