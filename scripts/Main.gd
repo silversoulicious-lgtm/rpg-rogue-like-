@@ -548,6 +548,8 @@ func try_move(dx: int, dy: int) -> void:
 		return
 	if _player_stunned():
 		return
+	if dx != 0 or dy != 0:
+		player.facing = Vector2i(dx, dy)        # oriente le sprite (attaque ou déplacement)
 	var nx: int = player.x + dx
 	var ny: int = player.y + dy
 	var target: Entity = enemy_at(nx, ny)

@@ -42,8 +42,10 @@ func _init() -> void:
 	_save(_gen_wall(), "wall")
 	_save(_gen_stairs(), "stairs")
 
-	# --- Héroïne (sprite dédié) + classes legacy ---
-	_save(_gen_creature("aria"), "aria")
+	# --- Héroïne (sprite dédié, 3 vues directionnelles) + classes legacy ---
+	_save(_gen_creature("aria"), "aria")            # face (bas)
+	_save(_gen_creature("aria_back"), "aria_back")  # dos (haut)
+	_save(_gen_creature("aria_side"), "aria_side")  # profil droite (miroir à gauche)
 	_save(_gen_creature("knight"), "knight")
 	_save(_gen_creature("mage"), "mage")
 	_save(_gen_creature("ranger"), "ranger")
@@ -232,7 +234,9 @@ func _gen_stairs() -> Image:
 func _gen_creature(kind: String) -> Image:
 	var img := _new(false)
 	match kind:
-		"aria":    _fig_aria(img)
+		"aria":      _fig_aria(img)
+		"aria_back": _fig_aria_back(img)
+		"aria_side": _fig_aria_side(img)
 		"knight":  _fig_knight(img)
 		"mage":    _fig_mage(img)
 		"ranger":  _fig_ranger(img)
@@ -258,44 +262,103 @@ func _glow_eyes(img: Image, cx: int, ey: int, c: Color, spread: int = 3) -> void
 const ROSE   := Color(0.92, 0.55, 0.85)
 const ROSE_D := Color(0.62, 0.30, 0.56)
 const ROSE_L := Color(1.0, 0.74, 0.95)
+const SKIN   := Color(0.94, 0.82, 0.72)
+const SKIN_D := Color(0.78, 0.62, 0.54)
+
+# Proportions communes aux 3 vues (paper-doll cohérent) : tête y3-10, buste
+# y10-18, jambes y18-22, axe central x=12.
+
+# --- Vue de FACE (déplacement vers le bas / par défaut) ---
 func _fig_aria(img: Image) -> void:
 	_ground_shadow(img)
-	# Cape arcanique évasée, décalée derrière (silhouette héroïque).
-	_trapezoid_o(img, 13, 8, 22, 2.5, 8.5, ARCANE.darkened(0.5))
-	_trapezoid(img, 13, 9, 22, 1.8, 7.0, ARCANE.darkened(0.2))
-	_rect(img, 16, 12, 1, 9, ARCANE_L.darkened(0.1))     # pli éclairé de la cape
-	_px(img, 9, 21, ARCANE.darkened(0.3)); _px(img, 18, 21, ARCANE.darkened(0.3))
-	# Chevelure rose qui descend derrière l'épaule gauche.
-	_trapezoid(img, 8, 8, 18, 1.5, 2.8, ROSE_D)
-	_trapezoid(img, 8, 8, 17, 1.0, 2.0, ROSE)
-	# Corps : armure légère claire à liseré cyan.
-	_trapezoid_o(img, 11, 11, 21, 2.2, 4.2, STEEL_D)
-	_trapezoid(img, 11, 12, 20, 1.5, 3.2, STEEL_L)
-	_rect(img, 9, 13, 5, 1, CYAN)                          # liseré de cuirasse
-	_diamond(img, 11, 15, 2, CYAN)                          # emblème de poitrine
-	_px(img, 11, 15, Color(1, 1, 1))
-	_rect(img, 8, 12, 2, 2, STEEL); _rect(img, 14, 12, 2, 2, STEEL)   # spallières
-	_px(img, 8, 12, CYAN_L); _px(img, 15, 12, CYAN_L)
-	# Jupe d'armure suggérée.
-	_rect(img, 9, 19, 6, 2, STEEL_D)
-	# Tête + visage (héroïne à visage découvert).
-	_disc_o(img, 11, 7, 3.6, ROSE_D, INK)                  # masse de cheveux (contour)
-	_disc(img, 11, 7, 3.0, ROSE)                            # chevelure
-	_ellipse(img, 11, 8, 2.3, 2.4, Color(0.93, 0.80, 0.70))   # visage
-	_px(img, 9, 8, CYAN_L); _px(img, 12, 8, CYAN_L)        # yeux luisants
-	_px(img, 10, 10, ROSE_D)                                # sourire/menton
-	# Mèche frontale + reflet.
-	_rect(img, 8, 5, 6, 1, ROSE)
-	_px(img, 9, 5, ROSE_L)
-	# Diadème doré à gemme.
-	_rect(img, 9, 6, 5, 1, GOLD)
-	_px(img, 11, 6, CYAN_L)
-	# Lame luisante levée (main droite).
-	_rect(img, 17, 2, 1, 12, INK)
-	_rect(img, 18, 2, 1, 12, CYAN_L)                        # tranchant lumineux
-	_rect(img, 18, 2, 1, 4, Color(1, 1, 1))                # éclat de pointe
-	_rect(img, 16, 13, 4, 1, GOLD)                          # garde
-	_px(img, 18, 15, GOLD_D)                               # poignée
+	# Cape arcanique, juste visible derrière les épaules.
+	_trapezoid(img, 12, 11, 21, 3.6, 6.0, ARCANE.darkened(0.4))
+	# Jambes / bottes.
+	_rect(img, 9, 18, 3, 4, STEEL_D); _rect(img, 9, 18, 3, 1, STEEL)
+	_rect(img, 13, 18, 3, 4, STEEL_D); _rect(img, 13, 18, 3, 1, STEEL)
+	# Tunique arcanique sous la cuirasse.
+	_trapezoid_o(img, 12, 15, 20, 2.6, 4.0, ARCANE.darkened(0.25))
+	_rect(img, 12, 16, 1, 4, ARCANE_L.darkened(0.1))       # pli central
+	# Cuirasse claire à liseré cyan.
+	_trapezoid_o(img, 12, 10, 16, 3.2, 3.6, STEEL_D)
+	_trapezoid(img, 12, 11, 15, 2.4, 2.8, STEEL_L)
+	_rect(img, 10, 11, 5, 1, CYAN)                          # encolure cyan
+	_diamond(img, 12, 13, 2, CYAN); _px(img, 12, 13, Color(1, 1, 1))  # emblème
+	# Spallières + bras.
+	_disc_o(img, 8, 11, 1.7, STEEL, STEEL_D); _disc_o(img, 16, 11, 1.7, STEEL, STEEL_D)
+	_rect(img, 7, 12, 2, 4, ARCANE.darkened(0.1))          # bras G
+	_rect(img, 15, 12, 2, 4, ARCANE.darkened(0.1))         # bras D
+	_px(img, 7, 15, SKIN); _px(img, 16, 15, SKIN)          # mains
+	# Tête : chevelure encadrant un visage net.
+	_disc_o(img, 12, 7, 3.7, ROSE_D, INK)                  # masse de cheveux
+	_ellipse(img, 12, 8, 2.5, 2.7, SKIN)                   # visage
+	_rect(img, 9, 7, 2, 4, ROSE); _rect(img, 14, 7, 2, 4, ROSE)   # mèches latérales
+	_px(img, 9, 7, ROSE_L)
+	_rect(img, 9, 5, 7, 2, ROSE); _px(img, 10, 5, ROSE_L) # frange
+	_rect(img, 10, 7, 5, 1, ROSE_D)                        # ligne de frange
+	_px(img, 11, 9, INK); _px(img, 14, 9, INK)             # yeux (nets)
+	_px(img, 11, 8, SKIN_D); _px(img, 14, 8, SKIN_D)
+	_px(img, 12, 11, SKIN_D)                               # bouche
+	# Diadème à gemme.
+	_rect(img, 10, 6, 5, 1, GOLD); _px(img, 12, 6, CYAN_L)
+
+# --- Vue de DOS (déplacement vers le haut) ---
+func _fig_aria_back(img: Image) -> void:
+	_ground_shadow(img)
+	# Bottes.
+	_rect(img, 9, 18, 3, 4, STEEL_D); _rect(img, 13, 18, 3, 4, STEEL_D)
+	# Cape arcanique pleine (le dos montre la cape entière).
+	_trapezoid_o(img, 12, 9, 22, 3.6, 7.5, ARCANE.darkened(0.45))
+	_trapezoid(img, 12, 10, 21, 2.8, 6.0, ARCANE)
+	_rect(img, 12, 10, 1, 11, ARCANE_L.darkened(0.12))     # couture centrale
+	_px(img, 9, 13, ARCANE_L.darkened(0.2)); _px(img, 15, 16, ARCANE_L.darkened(0.2))
+	# Spallières visibles en haut.
+	_disc_o(img, 8, 11, 1.7, STEEL, STEEL_D); _disc_o(img, 16, 11, 1.7, STEEL, STEEL_D)
+	_rect(img, 9, 10, 6, 1, CYAN)                           # liseré de col (dos)
+	# Tête (arrière de la chevelure) + tresse.
+	_disc_o(img, 12, 7, 3.7, ROSE_D, INK)
+	_disc(img, 12, 7, 3.1, ROSE)
+	_ellipse(img, 10, 5, 1.4, 1.2, ROSE_L)                 # reflet
+	_rect(img, 11, 9, 2, 8, ROSE_D); _rect(img, 11, 9, 2, 7, ROSE)   # tresse dans le dos
+	_px(img, 11, 12, ROSE_L); _px(img, 12, 15, ROSE_D)
+	_rect(img, 9, 6, 6, 1, GOLD)                            # diadème (vu de dos)
+
+# --- Vue de PROFIL (déplacement latéral ; orientée vers la DROITE, miroir à gauche) ---
+func _fig_aria_side(img: Image) -> void:
+	_ground_shadow(img)
+	# Cape qui traîne en arrière (à gauche).
+	_trapezoid(img, 9, 11, 21, 2.2, 5.0, ARCANE.darkened(0.45))
+	_trapezoid(img, 9, 12, 20, 1.6, 3.8, ARCANE.darkened(0.2))
+	_px(img, 5, 20, ARCANE.darkened(0.3))
+	# Jambes décalées (pas en avant).
+	_rect(img, 11, 18, 3, 4, STEEL_D); _rect(img, 11, 18, 3, 1, STEEL)
+	_rect(img, 13, 19, 3, 3, STEEL_D.darkened(0.08))
+	# Buste de profil (légèrement plus étroit), tourné vers la droite.
+	_trapezoid_o(img, 12, 10, 17, 2.4, 3.0, STEEL_D)
+	_trapezoid(img, 12, 11, 16, 1.7, 2.2, STEEL_L)
+	_rect(img, 13, 12, 3, 1, CYAN)                          # liseré vers l'avant
+	_disc_o(img, 12, 11, 1.7, STEEL, STEEL_D)              # épaule
+	_rect(img, 14, 12, 2, 4, ARCANE.darkened(0.1))         # bras avant
+	_px(img, 15, 15, SKIN)
+	# Tête de profil (visage vers la droite).
+	_disc_o(img, 12, 7, 3.6, ROSE_D, INK)                  # masse de cheveux
+	_ellipse(img, 14, 8, 2.2, 2.5, SKIN)                   # visage avancé à droite
+	_px(img, 16, 8, SKIN_D)                                # nez
+	_px(img, 15, 9, INK)                                   # œil
+	_px(img, 15, 11, SKIN_D)                               # menton
+	# Chevelure qui flotte en arrière (gauche).
+	_rect(img, 9, 5, 6, 2, ROSE); _px(img, 9, 5, ROSE_L)
+	_trapezoid(img, 10, 7, 15, 1.6, 2.6, ROSE_D)
+	_trapezoid(img, 10, 7, 14, 1.0, 1.8, ROSE)
+	_px(img, 9, 12, ROSE_L)
+	# Diadème.
+	_px(img, 13, 6, GOLD); _px(img, 14, 6, GOLD); _px(img, 15, 7, CYAN_L)
+	# Lame portée en avant (droite), levée.
+	_rect(img, 17, 3, 1, 12, INK)
+	_rect(img, 18, 3, 1, 12, CYAN_L)
+	_rect(img, 18, 3, 1, 3, Color(1, 1, 1))                # éclat de pointe
+	_rect(img, 16, 13, 3, 1, GOLD)                          # garde
+	_px(img, 17, 15, GOLD_D)
 
 # Classe « chevalier » (legacy) : armure d'acier, écharpe rouge, visière cyan.
 func _fig_knight(img: Image) -> void:

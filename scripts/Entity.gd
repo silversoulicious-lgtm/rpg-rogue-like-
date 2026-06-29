@@ -15,6 +15,7 @@ var y: int = 0
 var faction: int = Faction.ENEMY
 var is_boss: bool = false
 var is_legendary: bool = false    # spawn rare : stats boostées, lâche un pouvoir
+var facing: Vector2i = Vector2i(0, 1)   # orientation (sprites directionnels) : bas par défaut
 var enraged: bool = false        # boss : passe en rage sous 50% PV (dégâts accrus)
 var shard_value: int = 0
 

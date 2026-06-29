@@ -24,7 +24,7 @@ func _ready() -> void:
 	_load_textures()
 
 func _load_textures() -> void:
-	var names := ["stairs", "aria", "knight", "mage", "ranger",
+	var names := ["stairs", "aria", "aria_back", "aria_side", "knight", "mage", "ranger",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
 		"arme", "armure", "relique", "artifact", "potion", "road"]
 	for b in Data.BIOMES:
@@ -82,7 +82,8 @@ func _draw() -> void:
 				draw_rect(_cell_rect(p.x, p.y), COLOR_MEMORY, true)
 	for e in entities:
 		if e.is_alive() and dungeon.is_visible(e.x, e.y):
-			if not _blit(e.sprite, e.x, e.y):
+			var dv: Dictionary = _directional_sprite(e)
+			if not _blit_ex(dv["name"], e.x, e.y, dv["flip"]):
 				_draw_glyph(e.x, e.y, e.glyph, e.color)
 			_draw_hp_pip(e)
 
@@ -123,6 +124,31 @@ func _blit(name: String, gx: int, gy: int) -> bool:
 		return false
 	draw_texture_rect(tex[name], _cell_rect(gx, gy), false)
 	return true
+
+## Variante de _blit avec miroir horizontal optionnel (sprites directionnels).
+func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
+	if name == "" or not tex.has(name):
+		return false
+	var r: Rect2 = _cell_rect(gx, gy)
+	if flip:
+		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)   # largeur négative = miroir
+	draw_texture_rect(tex[name], r, false)
+	return true
+
+## Choisit la vue d'une entité selon son orientation. Seule Aria possède des
+## vues directionnelles (face/dos/profil) ; les autres gardent leur sprite unique.
+func _directional_sprite(e) -> Dictionary:
+	var name: String = e.sprite
+	var flip := false
+	if name == "aria":
+		var f: Vector2i = e.facing
+		if f.y < 0:
+			name = "aria_back"            # vers le haut : dos
+		elif f.x != 0:
+			name = "aria_side"            # latéral : profil (miroir si gauche)
+			flip = f.x < 0
+		# vers le bas (ou par défaut) : "aria" (face), inchangé
+	return { "name": name, "flip": flip }
 
 func _draw_glyph(gx: int, gy: int, ch: String, col: Color) -> void:
 	if _font == null:

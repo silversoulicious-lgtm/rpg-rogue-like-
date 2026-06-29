@@ -517,5 +517,27 @@ func _ready() -> void:
 	main.resolve_floor_reward(0)
 	print("OK Phase 4: butin de fin d'étage (choix, élite enrichi, interaction Funeste)")
 
+	# --- Sprites directionnels d'Aria ---------------------------------------------
+	var mv = main.map_view
+	var fake = Entity.new(); fake.sprite = "aria"
+	fake.facing = Vector2i(0, 1)
+	assert(mv._directional_sprite(fake)["name"] == "aria" and not mv._directional_sprite(fake)["flip"], "face vers le bas")
+	fake.facing = Vector2i(0, -1)
+	assert(mv._directional_sprite(fake)["name"] == "aria_back", "dos vers le haut")
+	fake.facing = Vector2i(1, 0)
+	var rr = mv._directional_sprite(fake)
+	assert(rr["name"] == "aria_side" and not rr["flip"], "profil droite")
+	fake.facing = Vector2i(-1, 0)
+	var ll = mv._directional_sprite(fake)
+	assert(ll["name"] == "aria_side" and ll["flip"], "profil gauche (miroir)")
+	var gob = Entity.new(); gob.sprite = "gobelin"; gob.facing = Vector2i(0, -1)
+	assert(mv._directional_sprite(gob)["name"] == "gobelin", "les autres entités gardent leur sprite unique")
+	# Une action oriente bien l'héroïne.
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	main.try_move(0, -1)
+	assert(main.player.facing == Vector2i(0, -1), "une action oriente le sprite de l'héroïne")
+	print("OK sprites directionnels: face/dos/profil + miroir, orientation par l'action")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
