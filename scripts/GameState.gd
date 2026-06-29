@@ -69,18 +69,18 @@ func add_shards(amount: int) -> void:
 func add_knowledge(amount: int) -> void:
 	knowledge += amount
 
-func has_node(id: String) -> bool:
+func has_knowledge_node(id: String) -> bool:
 	return knowledge_nodes.has(id)
 
 ## Tous les prérequis d'un nœud sont-ils débloqués ?
 func node_prereqs_met(id: String) -> bool:
 	for req in Data.KNOWLEDGE_NODES.get(id, {}).get("requires", []):
-		if not has_node(req):
+		if not has_knowledge_node(req):
 			return false
 	return true
 
 func can_unlock_node(id: String) -> bool:
-	if has_node(id) or not Data.KNOWLEDGE_NODES.has(id):
+	if has_knowledge_node(id) or not Data.KNOWLEDGE_NODES.has(id):
 		return false
 	return node_prereqs_met(id) and knowledge >= int(Data.KNOWLEDGE_NODES[id]["cost"])
 
@@ -93,12 +93,12 @@ func buy_knowledge_node(id: String) -> bool:
 	return true
 
 # Raccourcis de lecture des déblocages (utilisés par la logique de run).
-func starts_with_power() -> bool:    return has_node("pacte_pouvoir")
-func better_drop_pool() -> bool:     return has_node("affinite")
-func shop_always_power() -> bool:    return has_node("arsenal")
-func oaths_unlocked() -> bool:       return has_node("serments")
-func major_oaths_unlocked() -> bool: return has_node("serment_majeur")
-func legendary_boost() -> bool:      return has_node("chasseur")
+func starts_with_power() -> bool:    return has_knowledge_node("pacte_pouvoir")
+func better_drop_pool() -> bool:     return has_knowledge_node("affinite")
+func shop_always_power() -> bool:    return has_knowledge_node("arsenal")
+func oaths_unlocked() -> bool:       return has_knowledge_node("serments")
+func major_oaths_unlocked() -> bool: return has_knowledge_node("serment_majeur")
+func legendary_boost() -> bool:      return has_knowledge_node("chasseur")
 
 # Enregistre le bilan d'un run terminé (met à jour les records, persiste).
 func record_run(stats: Dictionary) -> void:

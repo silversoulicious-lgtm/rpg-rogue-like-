@@ -417,7 +417,7 @@ func _ready() -> void:
 	GameState.knowledge = 100
 	assert(GameState.can_unlock_node("pacte_pouvoir"), "nœud racine déblocable avec assez de Connaissances")
 	assert(GameState.buy_knowledge_node("pacte_pouvoir"), "achat d'un nœud de l'arbre")
-	assert(GameState.has_node("pacte_pouvoir") and GameState.starts_with_power(), "nœud débloqué + raccourci de lecture")
+	assert(GameState.has_knowledge_node("pacte_pouvoir") and GameState.starts_with_power(), "nœud débloqué + raccourci de lecture")
 	assert(GameState.can_unlock_node("affinite"), "prérequis désormais satisfait")
 	# Pacte de Pouvoir : le run démarre avec un pouvoir.
 	main.active_oaths = []

@@ -562,7 +562,7 @@ func show_knowledge() -> void:
 	col.add_child(back)
 
 func _knowledge_row(nid: String, node: Dictionary) -> Control:
-	var owned: bool = GameState.has_node(nid)
+	var owned: bool = GameState.has_knowledge_node(nid)
 	var prereq_ok: bool = GameState.node_prereqs_met(nid)
 	var label_txt: String
 	if owned:
