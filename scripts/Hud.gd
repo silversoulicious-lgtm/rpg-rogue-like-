@@ -60,6 +60,19 @@ const NODE_COLORS := {
 	"shop": Color(0.5, 1.0, 0.8), "event": Color(0.7, 0.8, 1.0),
 	"rest": Color(0.5, 0.95, 0.5), "boss": Color(1.0, 0.35, 0.35),
 }
+# Libellés sans emoji, utilisés quand une icône pixel-art existe pour le nœud.
+const NODE_PLAIN := {
+	"combat": "Combat", "elite": "Élite", "shop": "Boutique",
+	"event": "Événement", "rest": "Repos", "boss": "GARDIEN",
+}
+var _node_icons: Dictionary = {}   # cache type -> Texture2D (ou null)
+
+## Icône de nœud de carte (chargée à la demande ; null si pas encore dessinée).
+func _node_icon(t: String) -> Texture2D:
+	if not _node_icons.has(t):
+		var path := "res://assets/node_%s.png" % t
+		_node_icons[t] = load(path) if ResourceLoader.exists(path) else null
+	return _node_icons[t]
 
 func setup(game_ref) -> void:
 	game = game_ref
@@ -301,6 +314,13 @@ func show_map(run_map, pos: Vector2i) -> void:
 			btn.size = Vector2(130, 40)
 			btn.position = positions[r][ni] - Vector2(65, 20)
 			btn.add_theme_color_override("font_color", NODE_COLORS.get(node["type"], Color.WHITE))
+			# Icône pixel-art si disponible (sinon on garde le libellé emoji).
+			var ic: Texture2D = _node_icon(node["type"])
+			if ic != null:
+				btn.icon = ic
+				btn.expand_icon = true
+				btn.add_theme_constant_override("icon_max_width", 22)
+				btn.text = "  " + String(NODE_PLAIN.get(node["type"], ""))
 			var is_reachable: bool = (r == next_row and reach.has(ni))
 			btn.disabled = not is_reachable
 			if r == pos.x and ni == pos.y:

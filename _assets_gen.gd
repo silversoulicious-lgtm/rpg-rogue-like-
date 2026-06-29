@@ -65,6 +65,10 @@ func _init() -> void:
 	_save(_gen_artifact(), "artifact")
 	_save(_gen_potion(), "potion")
 
+	# --- Icônes de la carte à embranchements (binôme initial : combat + gardien) ---
+	_save(_gen_node_combat(), "node_combat")
+	_save(_gen_node_boss(), "node_boss")
+
 	# --- Terrain par biome (open world) ---
 	for b in Data.BIOMES:
 		var id: String = b["id"]
@@ -131,6 +135,27 @@ func _trapezoid(img: Image, cx: int, top_y: int, bot_y: int, top_hw: float, bot_
 func _trapezoid_o(img: Image, cx: int, top_y: int, bot_y: int, top_hw: float, bot_hw: float, c: Color, oc: Color = INK) -> void:
 	_trapezoid(img, cx, top_y - 1, bot_y + 1, top_hw + 1.0, bot_hw + 1.0, oc)
 	_trapezoid(img, cx, top_y, bot_y, top_hw, bot_hw, c)
+
+# Segment 1px (Bresenham) — utilisé pour les lames diagonales des icônes.
+func _line(img: Image, x0: int, y0: int, x1: int, y1: int, c: Color) -> void:
+	var dx: int = absi(x1 - x0)
+	var dy: int = -absi(y1 - y0)
+	var sx: int = 1 if x0 < x1 else -1
+	var sy: int = 1 if y0 < y1 else -1
+	var err: int = dx + dy
+	var x: int = x0
+	var y: int = y0
+	while true:
+		_px(img, x, y, c)
+		if x == x1 and y == y1:
+			break
+		var e2: int = 2 * err
+		if e2 >= dy:
+			err += dy
+			x += sx
+		if e2 <= dx:
+			err += dx
+			y += sy
 
 # Triangle plein, pointe vers le haut, base en bas.
 func _tri_up(img: Image, cx: int, base_y: int, half_w: int, height: int, c: Color) -> void:
@@ -605,6 +630,49 @@ func _gen_artifact() -> Image:
 		_rect(img, 12 + i, 12 - w, 1, w * 2 + 1, ARCANE)       # droite
 	_disc(img, 12, 12, 2.4, ARCANE_L)                          # cœur
 	_disc(img, 12, 12, 1.1, Color(1, 1, 1))
+	return img
+
+# --- Icônes de nœud de carte (palette "Les Strates", fond transparent) ---------
+# Nœud COMBAT : deux épées croisées.
+func _gen_node_combat() -> Image:
+	var img := _new(false)
+	# Lame A : poignée bas-gauche -> pointe haut-droite.
+	_line(img, 5, 19, 18, 5, INK); _line(img, 6, 19, 19, 5, INK)
+	_line(img, 5, 18, 17, 5, STEEL); _line(img, 6, 18, 18, 5, STEEL_L)
+	_px(img, 19, 4, STEEL_L)                          # éclat de pointe
+	# Lame B : poignée bas-droite -> pointe haut-gauche.
+	_line(img, 19, 19, 6, 5, INK); _line(img, 18, 19, 5, 5, INK)
+	_line(img, 19, 18, 7, 5, STEEL); _line(img, 18, 18, 6, 5, STEEL_L)
+	_px(img, 4, 4, STEEL_L)
+	# Gardes dorées + pommeaux (en bas, près des poignées).
+	_line(img, 3, 17, 8, 20, GOLD); _line(img, 21, 17, 16, 20, GOLD)
+	_disc_o(img, 5, 20, 1.4, GOLD, GOLD_D)
+	_disc_o(img, 19, 20, 1.4, GOLD, GOLD_D)
+	# Étincelle de choc au croisement.
+	_px(img, 12, 12, Color(1, 1, 1)); _px(img, 12, 11, CYAN_L); _px(img, 13, 12, CYAN_L)
+	return img
+
+# Nœud GARDIEN (boss) : couronne cornue à gemme de braise.
+func _gen_node_boss() -> Image:
+	var img := _new(false)
+	# Cornes d'os recourbées de part et d'autre.
+	_line(img, 5, 14, 3, 7, BONE_D); _line(img, 6, 14, 4, 7, BONE)
+	_px(img, 3, 6, BONE); _px(img, 4, 5, BONE)
+	_line(img, 19, 14, 21, 7, BONE_D); _line(img, 18, 14, 20, 7, BONE)
+	_px(img, 21, 6, BONE); _px(img, 20, 5, BONE)
+	# Bandeau de couronne.
+	_rect(img, 6, 14, 13, 5, GOLD_D)
+	_rect(img, 6, 14, 13, 1, GOLD_L)
+	_rect(img, 7, 15, 11, 3, GOLD)
+	# Trois pointes de couronne.
+	_tri_up(img, 8, 14, 2, 4, GOLD); _tri_up(img, 12, 14, 2, 6, GOLD); _tri_up(img, 16, 14, 2, 4, GOLD)
+	_px(img, 8, 10, GOLD_L); _px(img, 16, 10, GOLD_L)
+	# Gemme de braise au front + reflet.
+	_diamond(img, 12, 8, 2, EMBER.darkened(0.2))
+	_diamond(img, 12, 8, 1, EMBER)
+	_px(img, 12, 7, GOLD_L)
+	# Gemme centrale du bandeau.
+	_diamond(img, 12, 16, 1, EMBER); _px(img, 12, 16, GOLD_L)
 	return img
 
 # --- Terrain par biome --------------------------------------------------------
