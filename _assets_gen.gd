@@ -327,38 +327,35 @@ func _fig_aria_back(img: Image) -> void:
 func _fig_aria_side(img: Image) -> void:
 	_ground_shadow(img)
 	# Cape qui traîne en arrière (à gauche).
-	_trapezoid(img, 9, 11, 21, 2.2, 5.0, ARCANE.darkened(0.45))
-	_trapezoid(img, 9, 12, 20, 1.6, 3.8, ARCANE.darkened(0.2))
+	_trapezoid(img, 9, 11, 21, 2.4, 5.2, ARCANE.darkened(0.45))
+	_trapezoid(img, 9, 12, 20, 1.7, 4.0, ARCANE.darkened(0.2))
 	_px(img, 5, 20, ARCANE.darkened(0.3))
 	# Jambes décalées (pas en avant).
 	_rect(img, 11, 18, 3, 4, STEEL_D); _rect(img, 11, 18, 3, 1, STEEL)
 	_rect(img, 13, 19, 3, 3, STEEL_D.darkened(0.08))
-	# Buste de profil (légèrement plus étroit), tourné vers la droite.
+	# Buste de profil, tourné vers la droite.
 	_trapezoid_o(img, 12, 10, 17, 2.4, 3.0, STEEL_D)
 	_trapezoid(img, 12, 11, 16, 1.7, 2.2, STEEL_L)
 	_rect(img, 13, 12, 3, 1, CYAN)                          # liseré vers l'avant
-	_disc_o(img, 12, 11, 1.7, STEEL, STEEL_D)              # épaule
+	_disc_o(img, 11, 11, 1.7, STEEL, STEEL_D)              # épaule (arrière)
 	_rect(img, 14, 12, 2, 4, ARCANE.darkened(0.1))         # bras avant
-	_px(img, 15, 15, SKIN)
-	# Tête de profil (visage vers la droite).
-	_disc_o(img, 12, 7, 3.6, ROSE_D, INK)                  # masse de cheveux
-	_ellipse(img, 14, 8, 2.2, 2.5, SKIN)                   # visage avancé à droite
+	_px(img, 15, 15, SKIN)                                 # main
+	# Tresse fine dans le dos (gauche), tracée AVANT la tête (dégage l'armure).
+	_trapezoid_o(img, 9, 9, 19, 1.2, 1.8, ROSE_D)
+	_trapezoid(img, 9, 9, 18, 0.7, 1.2, ROSE)
+	_px(img, 9, 13, ROSE_L); _px(img, 9, 17, ROSE_D)
+	# Tête : la chevelure couvre le crâne et l'arrière ; le visage occupe l'avant
+	# (joue/mâchoire vers la droite) — plus d'effet « chauve ».
+	_disc_o(img, 12, 7, 3.6, ROSE_D, INK)                  # calotte de cheveux
+	_disc(img, 11, 6, 3.0, ROSE)
+	_ellipse(img, 10, 5, 1.2, 1.0, ROSE_L)                 # reflet
+	_ellipse(img, 14, 8, 2.1, 2.3, SKIN)                   # visage (avant)
 	_px(img, 16, 8, SKIN_D)                                # nez
-	_px(img, 15, 9, INK)                                   # œil
+	_rect(img, 14, 8, 1, 2, INK)                           # œil
 	_px(img, 15, 11, SKIN_D)                               # menton
-	# Chevelure qui flotte en arrière (gauche).
-	_rect(img, 9, 5, 6, 2, ROSE); _px(img, 9, 5, ROSE_L)
-	_trapezoid(img, 10, 7, 15, 1.6, 2.6, ROSE_D)
-	_trapezoid(img, 10, 7, 14, 1.0, 1.8, ROSE)
-	_px(img, 9, 12, ROSE_L)
-	# Diadème.
-	_px(img, 13, 6, GOLD); _px(img, 14, 6, GOLD); _px(img, 15, 7, CYAN_L)
-	# Lame portée en avant (droite), levée.
-	_rect(img, 17, 3, 1, 12, INK)
-	_rect(img, 18, 3, 1, 12, CYAN_L)
-	_rect(img, 18, 3, 1, 3, Color(1, 1, 1))                # éclat de pointe
-	_rect(img, 16, 13, 3, 1, GOLD)                          # garde
-	_px(img, 17, 15, GOLD_D)
+	_px(img, 13, 5, ROSE); _px(img, 14, 6, ROSE)          # mèche frontale
+	# Diadème (de profil).
+	_px(img, 12, 5, GOLD); _px(img, 13, 6, GOLD); _px(img, 14, 7, CYAN_L)
 
 # Classe « chevalier » (legacy) : armure d'acier, écharpe rouge, visière cyan.
 func _fig_knight(img: Image) -> void:
