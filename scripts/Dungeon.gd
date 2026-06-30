@@ -167,8 +167,10 @@ func _scatter_decor(rng: RandomNumberGenerator) -> void:
 ## à la place du rocher du biome — apporte de la variété au terrain bloquant,
 ## utilisé avec modération (faible probabilité par case).
 func _scatter_obstacle_variants(rng: RandomNumberGenerator) -> void:
-	for y in height:
-		for x in width:
+	# Exclut le cadre extérieur (bordure infranchissable) : il doit rester un
+	# mur de rocher uniforme plutôt qu'un mélange de troncs/colonnes en bord de carte.
+	for y in range(1, height - 1):
+		for x in range(1, width - 1):
 			if tiles[y][x] == ROCK and rng.randf() < Data.OBSTACLE_VARIANT_CHANCE:
 				obstacle[y][x] = Data.weighted_pick(Data.OBSTACLE_VARIANTS, rng)
 
