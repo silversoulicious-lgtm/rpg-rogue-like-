@@ -6,7 +6,7 @@ extends Node
 
 const VIEW := Vector2(1280, 720)
 const SIDEBAR_W := 384
-const LOG_H := 150
+const LOG_H := 88
 const VERSION := "v0.5 — accès anticipé"
 
 # Pitch court par type d'arme, affiché sur la fiche de loadout.
@@ -16,11 +16,19 @@ const WEAPON_PITCH := {
 	"magic": "Magie · effets & portée",
 }
 
-const STAT_ROWS := [
-	["atk", "Attaque"], ["magic", "Magie"], ["defense", "Défense"],
-	["speed", "Vitesse"], ["hp_regen", "Régén PV/tour"], ["vision", "Vision"],
-	["crit", "Critique"], ["dodge", "Esquive"], ["lifesteal", "Vol de vie"],
-	["run_shards", "Éclats (run)"], ["bank", "Banque"],
+# [id, glyph, color, tooltip]
+const STAT_ICONS := [
+	["atk",        "⚔",  Color(0.90, 0.35, 0.35), "Attaque"],
+	["magic",      "✦",  Color(0.65, 0.40, 1.00), "Magie"],
+	["defense",    "◈",  Color(0.55, 0.70, 1.00), "Défense"],
+	["speed",      "⚡", Color(1.00, 0.88, 0.30), "Vitesse"],
+	["hp_regen",   "♥",  Color(0.35, 0.90, 0.45), "Régén PV/tour"],
+	["vision",     "◎",  Color(0.40, 0.85, 1.00), "Vision"],
+	["crit",       "✸",  Color(1.00, 0.65, 0.20), "Critique"],
+	["dodge",      "◌",  Color(0.45, 0.85, 0.75), "Esquive"],
+	["lifesteal",  "♦",  Color(0.85, 0.25, 0.45), "Vol de vie"],
+	["run_shards", "◆",  Color(0.95, 0.78, 0.35), "Éclats (run)"],
+	["bank",       "⊛",  Color(0.70, 0.70, 0.82), "Banque"],
 ]
 
 var game                          # référence vers Main
@@ -108,48 +116,100 @@ func _build_sidebar() -> void:
 	v.custom_minimum_size = Vector2(SIDEBAR_W - 56, 0)
 	scroll.add_child(v)
 
-	v.add_child(Ui.label("⛫ LES STRATES", 20, Color(0.72, 0.62, 1.0)))
-	sb_floor = Ui.label("", 16, Color(1.0, 0.85, 0.35)); v.add_child(sb_floor)
-	sb_hero = Ui.label("", 18); v.add_child(sb_hero)
-	hp_text = Ui.label("", 14); v.add_child(hp_text)
-	hp_bar = Ui.progress_bar(18, Color(0.3, 0.8, 0.35), Color(0.25, 0.07, 0.07)); v.add_child(hp_bar)
-	sb_level = Ui.label("", 14, Color(0.7, 0.95, 0.7)); v.add_child(sb_level)
-	xp_bar = Ui.progress_bar(8, Color(0.55, 0.85, 0.4), Color(0.12, 0.15, 0.1), 3); v.add_child(xp_bar)
+	# Titre avec liseré décoratif
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 6)
+	title_row.add_child(Ui.label("⛫", 16, Color(0.72, 0.62, 1.0)))
+	title_row.add_child(Ui.label("LES STRATES", 16, Color(0.72, 0.62, 1.0)))
+	v.add_child(title_row)
+	v.add_child(_hdivider_full())
 
-	v.add_child(_section("STATISTIQUES"))
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 16)
-	grid.add_theme_constant_override("v_separation", 4)
-	v.add_child(grid)
-	for pair in STAT_ROWS:
-		grid.add_child(Ui.label(pair[1], 14, Color(0.7, 0.7, 0.78)))
-		var val := Ui.label("", 14)
-		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		grid.add_child(val)
-		stat_labels[pair[0]] = val
+	sb_floor = Ui.label("", 14, Color(1.0, 0.85, 0.35)); v.add_child(sb_floor)
+	sb_hero = Ui.label("", 16, Color(0.92, 0.88, 1.0)); v.add_child(sb_hero)
+
+	# HP : texte et barre sur la même ligne
+	var hp_row := HBoxContainer.new()
+	hp_row.add_theme_constant_override("separation", 6)
+	hp_text = Ui.label("", 13); hp_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL; hp_row.add_child(hp_text)
+	v.add_child(hp_row)
+	hp_bar = Ui.progress_bar(12, Color(0.3, 0.8, 0.35), Color(0.25, 0.07, 0.07)); v.add_child(hp_bar)
+
+	# XP
+	var xp_row := HBoxContainer.new()
+	xp_row.add_theme_constant_override("separation", 6)
+	sb_level = Ui.label("", 12, Color(0.7, 0.95, 0.7)); sb_level.size_flags_horizontal = Control.SIZE_EXPAND_FILL; xp_row.add_child(sb_level)
+	v.add_child(xp_row)
+	xp_bar = Ui.progress_bar(5, Color(0.55, 0.85, 0.4), Color(0.12, 0.15, 0.1), 3); v.add_child(xp_bar)
+
+	# Stats : grille 4 colonnes avec icônes
+	v.add_child(_section("STATS"))
+	var stat_grid := GridContainer.new()
+	stat_grid.columns = 4
+	stat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	stat_grid.add_theme_constant_override("h_separation", 4)
+	stat_grid.add_theme_constant_override("v_separation", 4)
+	v.add_child(stat_grid)
+	for s in STAT_ICONS:
+		stat_grid.add_child(_stat_cell(s[0], s[1], s[2], s[3]))
 
 	v.add_child(_section("CAPACITÉ"))
-	sb_ability = Ui.label("", 14, Color.WHITE, false, true, SIDEBAR_W - 56); v.add_child(sb_ability)
+	sb_ability = Ui.label("", 13, Color.WHITE, false, true, SIDEBAR_W - 56); v.add_child(sb_ability)
 	v.add_child(_section("ÉTATS"))
 	status_box = Ui.vbox(3); v.add_child(status_box)
 	v.add_child(_section("ÉQUIPEMENT"))
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
-	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 155)
+	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
+	equip_box = Ui.vbox(0)   # conservé pour compatibilité _rebuild_equip
 	v.add_child(equip_panel)
-	equip_box = Ui.vbox(6); v.add_child(equip_box)
 	v.add_child(_section("ARTEFACTS"))
-	artifact_box = Ui.vbox(6); v.add_child(artifact_box)
+	artifact_box = Ui.vbox(5); v.add_child(artifact_box)
 	v.add_child(_section("POUVOIRS"))
-	power_box = Ui.vbox(6); v.add_child(power_box)
+	power_box = Ui.vbox(5); v.add_child(power_box)
 	v.add_child(_section("SYNERGIES"))
 	synergy_box = Ui.vbox(4); v.add_child(synergy_box)
-	v.add_child(Ui.label("[I] Inventaire", 13, Color(0.6, 0.85, 1.0)))
+	v.add_child(Ui.label("[I] Inventaire", 11, Color(0.45, 0.65, 0.88)))
 
-func _section(txt: String) -> Label:
-	return Ui.label("— %s —" % txt, 13, Color(0.55, 0.8, 1.0))
+func _section(txt: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+	var l := _hdivider_full(); row.add_child(l)
+	row.add_child(Ui.label("✦ %s ✦" % txt, 10, Color(0.45, 0.65, 0.88)))
+	var r := _hdivider_full(); row.add_child(r)
+	return row
+
+func _hdivider_full() -> Control:
+	var c := ColorRect.new()
+	c.color = Color(0.28, 0.38, 0.58, 0.65)
+	c.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	c.custom_minimum_size = Vector2(10, 1)
+	return c
+
+func _stat_cell(sid: String, glyph: String, col: Color, tip: String) -> Control:
+	var cell := VBoxContainer.new()
+	cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cell.tooltip_text = tip
+	cell.mouse_filter = Control.MOUSE_FILTER_STOP
+	cell.add_theme_constant_override("separation", 2)
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(col.r * 0.14, col.g * 0.14, col.b * 0.18)
+	sb.set_corner_radius_all(3)
+	sb.set_border_width_all(1)
+	sb.border_color = col.darkened(0.25)
+	sb.content_margin_left = 2; sb.content_margin_right = 2
+	sb.content_margin_top = 2; sb.content_margin_bottom = 2
+	panel.add_theme_stylebox_override("panel", sb)
+	var gl := Ui.label(glyph, 14, col.lightened(0.2), true)
+	gl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(gl)
+	cell.add_child(panel)
+	var val := Ui.label("—", 11, Color(0.88, 0.88, 0.95), true)
+	val.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cell.add_child(val)
+	stat_labels[sid] = val
+	return cell
 
 func _build_log() -> void:
 	var play_w := VIEW.x - SIDEBAR_W
