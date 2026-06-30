@@ -571,10 +571,10 @@ func _ready() -> void:
 	main.player.hp = 200
 	main.apply_bleed(main.player, 3, 5.0)
 	main.apply_disease(main.player, 3, 4.0)
-	var hp_before_dot := main.player.hp
+	var hp_before_dot: int = main.player.hp
 	main.player.tick_statuses()
 	assert(main.player.hp < hp_before_dot, "saignement + maladie infligent des dégâts par tour")
-	var base_def := main.player.defense
+	var base_def: int = main.player.defense
 	main.apply_weaken(main.player, 3, 4.0)
 	assert(main._player_def() <= maxi(0, base_def - 4), "weaken réduit la défense effective")
 	main.apply_confuse(main.player, 3)

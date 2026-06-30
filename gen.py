@@ -1,0 +1,1317 @@
+#!/usr/bin/env python3
+"""Offline renderer for "Les Strates" pixel-art assets.
+
+Faithful port of the GDScript drawing primitives in _assets_gen.gd, extended
+with a Moonring-inspired pass: restricted neon palettes, Bayer dithering,
+soft neon glow (bloom), and consistent top-left rim light. Produces the
+32x32 PNGs the game loads at runtime, plus scaled preview montages.
+"""
+import math, os, sys
+from PIL import Image
+
+TILE = 32
+
+# --- Godot-Color semantics ----------------------------------------------------
+class C:
+    __slots__ = ("r", "g", "b", "a")
+    def __init__(self, r, g, b, a=1.0):
+        self.r, self.g, self.b, self.a = r, g, b, a
+    def darkened(self, amt):
+        return C(self.r*(1-amt), self.g*(1-amt), self.b*(1-amt), self.a)
+    def lightened(self, amt):
+        return C(self.r+(1-self.r)*amt, self.g+(1-self.g)*amt, self.b+(1-self.b)*amt, self.a)
+    def lerp(self, to, t):
+        return C(self.r+(to.r-self.r)*t, self.g+(to.g-self.g)*t,
+                 self.b+(to.b-self.b)*t, self.a+(to.a-self.a)*t)
+    def with_a(self, a):
+        return C(self.r, self.g, self.b, a)
+
+# --- Palette d'identité (mirror _assets_gen.gd) -------------------------------
+INK      = C(0.055, 0.050, 0.090)   # contour quasi-noir (plus sombre = Moonring)
+INK_SOFT = C(0.105, 0.098, 0.160)
+STONE    = C(0.227, 0.212, 0.306)
+STONE_D  = C(0.149, 0.137, 0.212)
+STONE_L  = C(0.34, 0.32, 0.46)
+FLOOR_A  = C(0.090, 0.084, 0.135)
+FLOOR_B  = C(0.140, 0.130, 0.200)
+STEEL    = C(0.588, 0.627, 0.725)
+STEEL_D  = C(0.361, 0.392, 0.490)
+STEEL_L  = C(0.82, 0.86, 0.95)
+BONE     = C(0.880, 0.866, 0.780)
+BONE_D   = C(0.60, 0.58, 0.49)
+GOLD     = C(0.953, 0.749, 0.286)
+GOLD_D   = C(0.588, 0.431, 0.137)
+GOLD_L   = C(1.0, 0.92, 0.55)
+BLOOD    = C(0.812, 0.231, 0.251)
+BLOOD_D  = C(0.49, 0.13, 0.16)
+ARCANE   = C(0.643, 0.404, 0.918)
+ARCANE_L = C(0.835, 0.643, 1.0)
+CYAN     = C(0.392, 0.882, 0.925)
+CYAN_L   = C(0.69, 0.99, 1.0)
+POISON   = C(0.510, 0.851, 0.376)
+EMBER    = C(1.0, 0.580, 0.220)
+EMBER_L  = C(1.0, 0.80, 0.42)
+
+ROSE   = C(0.95, 0.57, 0.87)
+ROSE_D = C(0.62, 0.30, 0.56)
+ROSE_L = C(1.0, 0.78, 0.97)
+SKIN   = C(0.95, 0.83, 0.73)
+SKIN_D = C(0.78, 0.62, 0.54)
+
+# Bayer 4x4 (valeurs 0..15) pour le dithering rétro façon CGA.
+BAYER4 = [
+    [0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [3, 11, 1, 9],
+    [15, 7, 13, 5],
+]
+
+# --- BIOMES (mirror Data.gd) — palettes néon med-fantasy ----------------------
+BIOMES = [
+    {"id": "plaine",
+     "ground_a": C(0.090, 0.135, 0.100), "ground_b": C(0.130, 0.190, 0.135),
+     "trunk": C(0.30, 0.21, 0.13), "leaf": C(0.36, 0.72, 0.40), "tree_style": "round",
+     "rock": C(0.36, 0.40, 0.50), "water": C(0.18, 0.55, 0.66),
+     "decor": C(1.0, 0.83, 0.34), "decor_style": "flower"},
+    {"id": "foret",
+     "ground_a": C(0.060, 0.120, 0.100), "ground_b": C(0.095, 0.175, 0.135),
+     "trunk": C(0.26, 0.17, 0.11), "leaf": C(0.24, 0.66, 0.42), "tree_style": "pine",
+     "rock": C(0.28, 0.37, 0.39), "water": C(0.13, 0.46, 0.52),
+     "decor": C(0.94, 0.27, 0.36), "decor_style": "mushroom"},
+    {"id": "desert",
+     "ground_a": C(0.205, 0.150, 0.085), "ground_b": C(0.290, 0.215, 0.120),
+     "trunk": C(0.32, 0.42, 0.24), "leaf": C(0.42, 0.70, 0.34), "tree_style": "cactus",
+     "rock": C(0.50, 0.40, 0.26), "water": C(0.20, 0.64, 0.66),
+     "decor": C(0.92, 0.88, 0.74), "decor_style": "bones"},
+    {"id": "toundra",
+     "ground_a": C(0.105, 0.140, 0.215), "ground_b": C(0.150, 0.205, 0.300),
+     "trunk": C(0.30, 0.26, 0.24), "leaf": C(0.54, 0.78, 0.82), "tree_style": "pine",
+     "rock": C(0.42, 0.50, 0.60), "water": C(0.36, 0.74, 0.90),
+     "decor": C(0.62, 0.90, 1.0), "decor_style": "crystal"},
+    {"id": "marais",
+     "ground_a": C(0.100, 0.130, 0.090), "ground_b": C(0.140, 0.180, 0.110),
+     "trunk": C(0.20, 0.18, 0.13), "leaf": C(0.36, 0.50, 0.24), "tree_style": "dead",
+     "rock": C(0.28, 0.33, 0.29), "water": C(0.22, 0.42, 0.27),
+     "decor": C(0.64, 0.86, 0.32), "decor_style": "reed"},
+    {"id": "volcan",
+     "ground_a": C(0.105, 0.072, 0.090), "ground_b": C(0.165, 0.100, 0.110),
+     "trunk": C(0.16, 0.12, 0.12), "leaf": C(0.24, 0.17, 0.17), "tree_style": "dead",
+     "rock": C(0.28, 0.21, 0.23), "water": C(1.0, 0.46, 0.16),
+     "decor": C(1.0, 0.58, 0.20), "decor_style": "ember"},
+]
+
+# --- RNG déterministe (LCG) pour un grain reproductible -----------------------
+class RNG:
+    def __init__(self, seed=1337):
+        self.s = seed & 0xFFFFFFFF
+    def randf(self):
+        self.s = (1103515245 * self.s + 12345) & 0x7FFFFFFF
+        return self.s / float(0x7FFFFFFF)
+    def randi_range(self, a, b):
+        return a + int(self.randf() * (b - a + 1))
+
+rng = RNG(1337)
+
+# --- Image / primitives -------------------------------------------------------
+class Img:
+    def __init__(self, opaque=False):
+        self.px = [[ [0.0,0.0,0.0,1.0] if opaque else [0.0,0.0,0.0,0.0]
+                     for _ in range(TILE)] for _ in range(TILE)]
+    def fill(self, c):
+        for y in range(TILE):
+            for x in range(TILE):
+                self.px[y][x] = [c.r, c.g, c.b, c.a]
+    def get(self, x, y):
+        p = self.px[y][x]
+        return C(p[0], p[1], p[2], p[3])
+    def set(self, x, y, c):
+        self.px[y][x] = [c.r, c.g, c.b, c.a]
+
+def _px(img, x, y, c):
+    x = int(x); y = int(y)
+    if 0 <= x < TILE and 0 <= y < TILE:
+        if c.a >= 1.0:
+            img.set(x, y, c)
+        elif c.a > 0.0:
+            img.set(x, y, img.get(x, y).lerp(c, c.a))
+
+def _rect(img, x, y, w, h, c):
+    for yy in range(int(y), int(y+h)):
+        for xx in range(int(x), int(x+w)):
+            _px(img, xx, yy, c)
+
+def _ellipse(img, cx, cy, rx, ry, c):
+    for yy in range(int(cy-ry), int(cy+ry)+1):
+        for xx in range(int(cx-rx), int(cx+rx)+1):
+            dx = (xx-cx)/rx; dy = (yy-cy)/ry
+            if dx*dx+dy*dy <= 1.0:
+                _px(img, xx, yy, c)
+
+def _disc(img, cx, cy, r, c):
+    _ellipse(img, cx, cy, r, r, c)
+
+def _disc_o(img, cx, cy, r, c, oc=None):
+    if oc is None: oc = INK
+    _disc(img, cx, cy, r+1.0, oc)
+    _disc(img, cx, cy, r, c)
+
+def _trapezoid(img, cx, top_y, bot_y, top_hw, bot_hw, c):
+    span = max(1, bot_y-top_y)
+    for i in range(span+1):
+        t = i/float(span)
+        hw = int(round(top_hw+(bot_hw-top_hw)*t))
+        y = top_y+i
+        for x in range(cx-hw, cx+hw+1):
+            _px(img, x, y, c)
+
+def _trapezoid_o(img, cx, top_y, bot_y, top_hw, bot_hw, c, oc=None):
+    if oc is None: oc = INK
+    _trapezoid(img, cx, top_y-1, bot_y+1, top_hw+1.0, bot_hw+1.0, oc)
+    _trapezoid(img, cx, top_y, bot_y, top_hw, bot_hw, c)
+
+def _line(img, x0, y0, x1, y1, c):
+    dx = abs(x1-x0); dy = -abs(y1-y0)
+    sx = 1 if x0 < x1 else -1
+    sy = 1 if y0 < y1 else -1
+    err = dx+dy; x = x0; y = y0
+    while True:
+        _px(img, x, y, c)
+        if x == x1 and y == y1: break
+        e2 = 2*err
+        if e2 >= dy: err += dy; x += sx
+        if e2 <= dx: err += dx; y += sy
+
+def _tri_up(img, cx, base_y, half_w, height, c):
+    for i in range(height):
+        w = int(round(half_w*(1.0-i/float(height))))
+        yy = base_y-i
+        for xx in range(cx-w, cx+w+1):
+            _px(img, xx, yy, c)
+
+def _diamond(img, cx, cy, r, c):
+    for dy in range(-r, r+1):
+        w = r-abs(dy)
+        for dx in range(-w, w+1):
+            _px(img, cx+dx, cy+dy, c)
+
+def _ground_shadow(img):
+    _ellipse(img, 16, 28, 8.7, 2.4, C(INK.r, INK.g, INK.b, 0.34))
+
+def _fade(img, a):
+    for y in range(TILE):
+        for x in range(TILE):
+            p = img.px[y][x]
+            if p[3] > 0.0:
+                p[3] *= a
+
+# --- ENHANCEMENTS -------------------------------------------------------------
+def _glow(img, cx, cy, r, c, strength=0.85):
+    """Halo néon additif (bloom). Éclaircit le fond et lui donne un peu d'alpha."""
+    for yy in range(int(cy-r), int(cy+r)+1):
+        for xx in range(int(cx-r), int(cx+r)+1):
+            if not (0 <= xx < TILE and 0 <= yy < TILE): continue
+            d = math.hypot(xx-cx, yy-cy)/r
+            if d >= 1.0: continue
+            fa = (1.0-d)*(1.0-d)*strength
+            p = img.px[yy][xx]
+            p[0] = min(1.0, p[0]+c.r*fa)
+            p[1] = min(1.0, p[1]+c.g*fa)
+            p[2] = min(1.0, p[2]+c.b*fa)
+            p[3] = min(1.0, p[3]+(1.0-p[3])*fa*c.a)
+
+def _dither(img, x, y, w, h, c_lo, c_hi, t):
+    """Remplit un rect en tramant entre c_lo et c_hi selon le ratio t (0..1)."""
+    for yy in range(int(y), int(y+h)):
+        for xx in range(int(x), int(x+w)):
+            thr = (BAYER4[yy & 3][xx & 3]+0.5)/16.0
+            _px(img, xx, yy, c_hi if t > thr else c_lo)
+
+def _rim(img, cx, cy, r, c):
+    """Liseré de lumière en haut-gauche sur un disque (rim light)."""
+    _ellipse(img, cx-r*0.34, cy-r*0.34, r*0.42, r*0.34, c)
+
+# --- IO -----------------------------------------------------------------------
+ASSETS = None
+def _save(img, name):
+    out = Image.new("RGBA", (TILE, TILE))
+    data = []
+    for y in range(TILE):
+        for x in range(TILE):
+            p = img.px[y][x]
+            data.append((int(round(max(0,min(1,p[0]))*255)),
+                         int(round(max(0,min(1,p[1]))*255)),
+                         int(round(max(0,min(1,p[2]))*255)),
+                         int(round(max(0,min(1,p[3]))*255))))
+    out.putdata(data)
+    out.save(os.path.join(ASSETS, name+".png"))
+
+def _new(opaque=False):
+    return Img(opaque)
+
+# --- Textures du monde --------------------------------------------------------
+def _gen_floor():
+    img = _new(True); img.fill(FLOOR_A)
+    for y in range(TILE):
+        for x in range(TILE):
+            r = rng.randf()
+            if r < 0.10: _px(img, x, y, FLOOR_A.darkened(0.25))
+            elif r > 0.92: _px(img, x, y, FLOOR_B)
+    for i in range(TILE):
+        _px(img, i, 0, INK); _px(img, 0, i, INK)
+        _px(img, i, 16, INK_SOFT.darkened(0.1)); _px(img, 16, i, INK_SOFT.darkened(0.1))
+    _px(img, 3, 3, FLOOR_B.lightened(0.12)); _px(img, 19, 3, FLOOR_B.lightened(0.12))
+    return img
+
+def _gen_wall():
+    img = _new(True); img.fill(STONE)
+    brick_h = 8; brick_w = 11; row = 0
+    for by in range(0, TILE, brick_h):
+        for x in range(TILE):
+            _px(img, x, by, INK)
+            _px(img, x, by+1, INK.lerp(STONE_D, 0.4))
+            if by+2 < TILE: _px(img, x, by+2, STONE_L)
+        off = (brick_w//2) if (row % 2 == 1) else 0
+        bx = -off
+        while bx <= TILE:
+            for yy in range(by+2, by+brick_h):
+                _px(img, bx, yy, INK); _px(img, bx+1, yy, INK.lerp(STONE_D, 0.4))
+            face = STONE_L if (row % 2 == 0) else STONE
+            for yy in range(by+3, by+brick_h-1):
+                for xx in range(bx+2, bx+brick_w-1):
+                    if 0 <= xx < TILE and 0 <= yy < TILE: _px(img, xx, yy, face)
+            for yy in range(by+2, by+brick_h):
+                _px(img, bx+brick_w-1, yy, STONE_D)
+            bx += brick_w
+        row += 1
+    for i in range(18):
+        _px(img, rng.randi_range(0, TILE-1), rng.randi_range(0, TILE-1), STONE_D)
+    for cp in [(5,4),(17,10),(3,16),(19,3)]:
+        _glow(img, cp[0], cp[1], 3.2, ARCANE, 0.55)
+        _px(img, cp[0], cp[1], ARCANE); _px(img, cp[0], cp[1]-1, ARCANE_L)
+        _px(img, cp[0]-1, cp[1], ARCANE.darkened(0.3))
+    return img
+
+def _gen_stairs():
+    img = _new(False)
+    _disc_o(img, 16, 17, 12.0, INK_SOFT, INK)
+    _glow(img, 16.0, 18.7, 12.0, ARCANE, 0.55)
+    _ellipse(img, 16, 19, 8.7, 10.0, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.55))
+    _ellipse(img, 16, 20, 6.0, 7.3, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
+    for s in range(3):
+        y = 19-s*3; w = 5-s
+        _rect(img, 12-w, y, w*2, 1, C(CYAN_L.r, CYAN_L.g, CYAN_L.b, 0.75))
+    _glow(img, 16.0, 13.3, 5.3, GOLD_L, 0.7)
+    _tri_up(img, 16, 12, 5, 5, GOLD_L); _tri_up(img, 16, 15, 5, 4, GOLD)
+    return img
+
+# --- Créatures ----------------------------------------------------------------
+def _glow_eyes(img, cx, ey, c, spread=3):
+    _glow(img, cx-spread+0.5, ey+0.5, 2.7, c, 0.7)
+    _glow(img, cx+spread-0.5, ey+0.5, 2.7, c, 0.7)
+    _rect(img, cx-spread, ey, 3, 3, c); _rect(img, cx+spread-1, ey, 3, 3, c)
+    _px(img, cx-spread, ey, c.lightened(0.45)); _px(img, cx+spread, ey, c.lightened(0.45))
+
+def _fig_aria(img):
+    _ground_shadow(img)
+    _trapezoid(img, 16, 15, 28, 4.8, 8.0, ARCANE.darkened(0.4))
+    _rect(img, 12, 24, 4, 5, STEEL_D); _rect(img, 12, 24, 4, 1, STEEL)
+    _rect(img, 17, 24, 4, 5, STEEL_D); _rect(img, 17, 24, 4, 1, STEEL)
+    _trapezoid_o(img, 16, 20, 27, 3.5, 5.3, ARCANE.darkened(0.25))
+    _rect(img, 16, 21, 1, 5, ARCANE_L.darkened(0.1))
+    _trapezoid_o(img, 16, 13, 21, 4.3, 4.8, STEEL_D)
+    _trapezoid(img, 16, 15, 20, 3.2, 3.7, STEEL_L)
+    _rect(img, 13, 15, 7, 1, CYAN)
+    _glow(img, 16.0, 17.3, 3.5, CYAN, 0.6)
+    _diamond(img, 16, 17, 3, CYAN); _px(img, 16, 17, C(1,1,1))
+    _disc_o(img, 11, 15, 2.3, STEEL, STEEL_D); _disc_o(img, 21, 15, 2.3, STEEL, STEEL_D)
+    _rect(img, 9, 16, 3, 5, ARCANE.darkened(0.1)); _rect(img, 20, 16, 3, 5, ARCANE.darkened(0.1))
+    _px(img, 9, 20, SKIN); _px(img, 21, 20, SKIN)
+    _disc_o(img, 16, 9, 4.9, ROSE_D, INK)
+    _ellipse(img, 16, 11, 3.3, 3.6, SKIN)
+    _rect(img, 12, 9, 3, 5, ROSE); _rect(img, 19, 9, 3, 5, ROSE)
+    _px(img, 12, 9, ROSE_L)
+    _rect(img, 12, 7, 9, 3, ROSE); _px(img, 13, 7, ROSE_L)
+    _rect(img, 13, 9, 7, 1, ROSE_D)
+    _px(img, 15, 12, INK); _px(img, 19, 12, INK)
+    _px(img, 15, 11, SKIN_D); _px(img, 19, 11, SKIN_D)
+    _px(img, 16, 15, SKIN_D)
+    _rect(img, 13, 8, 7, 1, GOLD); _glow(img, 16.0, 8.0, 2.1, CYAN_L, 0.7); _px(img, 16, 8, CYAN_L)
+
+def _fig_aria_back(img):
+    _ground_shadow(img)
+    _rect(img, 12, 24, 4, 5, STEEL_D); _rect(img, 17, 24, 4, 5, STEEL_D)
+    _trapezoid_o(img, 16, 12, 29, 4.8, 10.0, ARCANE.darkened(0.45))
+    _trapezoid(img, 16, 13, 28, 3.7, 8.0, ARCANE)
+    _rect(img, 16, 13, 1, 15, ARCANE_L.darkened(0.12))
+    _px(img, 12, 17, ARCANE_L.darkened(0.2)); _px(img, 20, 21, ARCANE_L.darkened(0.2))
+    _disc_o(img, 11, 15, 2.3, STEEL, STEEL_D); _disc_o(img, 21, 15, 2.3, STEEL, STEEL_D)
+    _rect(img, 12, 13, 8, 1, CYAN)
+    _disc_o(img, 16, 9, 4.9, ROSE_D, INK); _disc(img, 16, 9, 4.1, ROSE)
+    _ellipse(img, 13, 7, 1.9, 1.6, ROSE_L)
+    _rect(img, 15, 12, 3, 11, ROSE_D); _rect(img, 15, 12, 3, 9, ROSE)
+    _px(img, 15, 16, ROSE_L); _px(img, 16, 20, ROSE_D)
+    _rect(img, 12, 8, 8, 1, GOLD)
+
+def _fig_aria_side(img):
+    _ground_shadow(img)
+    _trapezoid(img, 12, 15, 28, 3.2, 6.9, ARCANE.darkened(0.45))
+    _trapezoid(img, 12, 16, 27, 2.3, 5.3, ARCANE.darkened(0.2))
+    _px(img, 7, 27, ARCANE.darkened(0.3))
+    _rect(img, 15, 24, 4, 5, STEEL_D); _rect(img, 15, 24, 4, 1, STEEL)
+    _rect(img, 17, 25, 4, 4, STEEL_D.darkened(0.08))
+    _trapezoid_o(img, 16, 13, 23, 3.2, 4.0, STEEL_D)
+    _trapezoid(img, 16, 15, 21, 2.3, 2.9, STEEL_L)
+    _rect(img, 17, 16, 4, 1, CYAN)
+    _disc_o(img, 15, 15, 2.3, STEEL, STEEL_D)
+    _rect(img, 19, 16, 3, 5, ARCANE.darkened(0.1)); _px(img, 20, 20, SKIN)
+    _trapezoid_o(img, 12, 12, 25, 1.6, 2.4, ROSE_D)
+    _trapezoid(img, 12, 12, 24, 0.9, 1.6, ROSE)
+    _px(img, 12, 17, ROSE_L); _px(img, 12, 23, ROSE_D)
+    _disc_o(img, 16, 9, 4.8, ROSE_D, INK); _disc(img, 15, 8, 4.0, ROSE)
+    _ellipse(img, 13, 7, 1.6, 1.3, ROSE_L)
+    _ellipse(img, 19, 11, 2.8, 3.1, SKIN)
+    _px(img, 21, 11, SKIN_D); _rect(img, 19, 11, 1, 3, INK); _px(img, 20, 15, SKIN_D)
+    _px(img, 17, 7, ROSE); _px(img, 19, 8, ROSE)
+    _px(img, 16, 7, GOLD); _px(img, 17, 8, GOLD); _glow(img, 18.7, 9.3, 1.9, CYAN_L, 0.7); _px(img, 19, 9, CYAN_L)
+
+def _fig_knight(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 15, 28, 3.3, 8.0, STEEL_D)
+    _trapezoid(img, 16, 16, 27, 2.0, 6.0, STEEL)
+    _rect(img, 8, 16, 4, 3, BLOOD); _px(img, 7, 17, BLOOD_D); _px(img, 11, 15, BLOOD)
+    _rect(img, 13, 17, 5, 7, STEEL_L); _px(img, 13, 17, STEEL)
+    _rect(img, 15, 19, 1, 4, C(1,1,1,0.55))
+    _disc_o(img, 16, 9, 5.6, STEEL_D, INK); _disc(img, 16, 8, 4.5, STEEL)
+    _ellipse(img, 13, 7, 2.1, 1.9, STEEL_L)
+    _glow(img, 16.0, 9.3, 4.5, CYAN, 0.4)
+    _rect(img, 12, 9, 8, 1, CYAN_L); _px(img, 12, 9, CYAN)
+    _tri_up(img, 16, 4, 1, 4, BLOOD)
+    _rect(img, 23, 12, 1, 12, STEEL_L); _rect(img, 21, 21, 4, 1, GOLD)
+
+def _fig_mage(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 15, 28, 2.7, 8.7, ARCANE.darkened(0.45))
+    _trapezoid(img, 16, 16, 27, 1.6, 6.7, ARCANE)
+    _rect(img, 15, 19, 3, 8, ARCANE_L.darkened(0.1))
+    _disc_o(img, 16, 11, 4.5, ARCANE.darkened(0.4), INK)
+    _disc(img, 16, 11, 3.5, C(0.86, 0.78, 0.66))
+    _glow_eyes(img, 16, 9, CYAN, 3)
+    _trapezoid_o(img, 16, 1, 8, 0.7, 6.0, ARCANE.darkened(0.25))
+    _glow(img, 16.0, 1.3, 2.7, GOLD_L, 0.8); _px(img, 16, 1, GOLD_L); _px(img, 12, 8, GOLD)
+    _rect(img, 8, 11, 1, 16, GOLD_D)
+    _glow(img, 8.0, 9.3, 4.0, CYAN, 0.7)
+    _disc_o(img, 8, 9, 2.7, CYAN, INK); _px(img, 8, 8, CYAN_L)
+
+def _fig_ranger(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 15, 28, 3.3, 8.0, POISON.darkened(0.5))
+    _trapezoid(img, 16, 16, 27, 2.1, 6.1, POISON.darkened(0.25))
+    _rect(img, 15, 19, 3, 7, POISON.darkened(0.1))
+    _disc_o(img, 16, 9, 5.6, POISON.darkened(0.5), INK)
+    _ellipse(img, 16, 8, 4.5, 4.8, POISON.darkened(0.3))
+    _ellipse(img, 16, 11, 3.2, 2.7, C(0.07, 0.07, 0.10))
+    _glow_eyes(img, 16, 11, CYAN_L, 3)
+    for i in range(11):
+        yy = 6+i; dx = int(round(3.0*math.sin(i/10.0*math.pi)))
+        _px(img, 18-dx, yy, GOLD_D)
+    _rect(img, 24, 8, 1, 15, C(0.85, 0.85, 0.9, 0.8))
+    return img
+
+def _fig_gobelin(img):
+    _ground_shadow(img)
+    skin = POISON.darkened(0.15)
+    _trapezoid_o(img, 16, 17, 28, 4.0, 7.3, skin.darkened(0.35))
+    _trapezoid(img, 16, 19, 27, 2.7, 5.6, skin)
+    _rect(img, 13, 20, 5, 4, C(0.45, 0.32, 0.22))
+    _disc_o(img, 16, 12, 5.3, skin.darkened(0.3), INK); _disc(img, 16, 12, 4.3, skin)
+    _ellipse(img, 13, 9, 1.7, 1.5, skin.lightened(0.28))
+    _tri_up(img, 8, 15, 3, 7, skin.darkened(0.1)); _tri_up(img, 24, 15, 3, 7, skin.darkened(0.1))
+    _glow_eyes(img, 16, 11, GOLD_L, 3)
+    _rect(img, 13, 15, 5, 1, INK); _px(img, 15, 15, BONE)
+    _rect(img, 24, 17, 1, 7, STEEL_L)
+
+def _fig_wolf(img):
+    _ground_shadow(img)
+    fur = C(0.40, 0.42, 0.50); fur_d = fur.darkened(0.42); fur_l = fur.lightened(0.20)
+    _ellipse(img, 19, 20, 10.0, 5.9, fur_d); _ellipse(img, 19, 20, 8.7, 4.8, fur)
+    _ellipse(img, 23, 17, 4.5, 4.0, fur); _ellipse(img, 21, 16, 2.7, 1.9, fur_l)
+    _rect(img, 12, 24, 3, 4, fur_d); _rect(img, 21, 24, 3, 4, fur_d)
+    _ellipse(img, 28, 16, 3.5, 1.9, fur_d)
+    _disc_o(img, 8, 17, 4.8, fur_d, INK); _disc(img, 8, 17, 3.9, fur)
+    _tri_up(img, 5, 13, 1, 4, fur_d); _tri_up(img, 11, 13, 1, 4, fur_d)
+    _rect(img, 1, 17, 5, 3, fur_l); _px(img, 1, 19, INK)
+    _glow(img, 7.3, 16.7, 2.1, CYAN_L, 0.7)
+    _rect(img, 7, 16, 3, 1, CYAN_L); _px(img, 5, 20, BONE)
+
+def _fig_skeleton(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 16, 27, 2.7, 5.3, BONE_D); _trapezoid(img, 16, 17, 25, 1.9, 4.0, BONE)
+    for ry in [14, 16, 18]: _rect(img, 13, ry, 7, 1, INK_SOFT)
+    _rect(img, 16, 17, 1, 9, BONE_D)
+    _disc_o(img, 16, 11, 5.3, BONE_D, INK); _disc(img, 16, 9, 4.4, BONE)
+    _ellipse(img, 13, 8, 1.7, 1.5, C(1,1,0.95))
+    _rect(img, 12, 9, 3, 3, INK); _rect(img, 17, 9, 3, 3, INK)
+    _glow(img, 12.7, 10.0, 2.1, CYAN, 0.7); _glow(img, 19.3, 10.0, 2.1, CYAN, 0.7)
+    _px(img, 12, 9, CYAN); _px(img, 19, 9, CYAN)
+    for tx in range(10, 15, 2): _px(img, tx, 13, INK)
+
+def _fig_orc(img):
+    _ground_shadow(img)
+    skin = C(0.30, 0.44, 0.30); skin_l = skin.lightened(0.20)
+    _trapezoid_o(img, 15, 13, 28, 6.7, 10.0, skin.darkened(0.45))
+    _trapezoid(img, 15, 15, 27, 5.3, 8.0, skin)
+    _rect(img, 8, 16, 13, 3, C(0.36, 0.25, 0.18)); _rect(img, 11, 20, 8, 4, skin_l)
+    _disc_o(img, 15, 9, 6.1, skin.darkened(0.4), INK); _disc(img, 15, 9, 5.1, skin)
+    _ellipse(img, 12, 7, 2.1, 1.7, skin_l)
+    _rect(img, 9, 8, 12, 1, INK)
+    _glow_eyes(img, 15, 9, BLOOD, 4)
+    _tri_up(img, 12, 17, 1, 5, BONE); _tri_up(img, 17, 17, 1, 5, BONE)
+    _rect(img, 12, 15, 7, 1, INK)
+    _rect(img, 24, 7, 1, 20, C(0.36, 0.25, 0.18))
+    _rect(img, 19, 7, 7, 7, STEEL_D); _rect(img, 20, 8, 4, 4, STEEL)
+    _rect(img, 20, 8, 4, 1, STEEL_L); _px(img, 19, 9, STEEL_L); _px(img, 19, 11, STEEL_L)
+
+def _fig_spectre(img):
+    _glow(img, 16.0, 12.0, 8.7, ARCANE, 0.5)
+    _disc_o(img, 16, 12, 6.7, ARCANE.darkened(0.35), INK_SOFT); _disc(img, 16, 12, 5.6, ARCANE.darkened(0.1))
+    _trapezoid(img, 16, 15, 27, 4.7, 8.0, ARCANE.darkened(0.1))
+    for x in range(8, 25):
+        cut = 20-((x % 3))
+        for y in range(cut, TILE): _px(img, x, y, C(0,0,0,0))
+    _ellipse(img, 16, 12, 3.5, 2.9, C(0.06, 0.05, 0.10))
+    _glow_eyes(img, 16, 11, CYAN_L, 3); _px(img, 16, 15, CYAN)
+    _fade(img, 0.82)
+
+def _fig_boss(img):
+    _ellipse(img, 16, 29, 10.7, 2.7, C(INK.r, INK.g, INK.b, 0.40))
+    _trapezoid_o(img, 16, 12, 29, 6.0, 11.3, INK_SOFT)
+    _trapezoid(img, 16, 13, 28, 4.8, 9.3, C(0.22, 0.12, 0.16))
+    _rect(img, 15, 17, 3, 11, BLOOD_D)
+    _rect(img, 11, 17, 11, 4, C(0.30, 0.16, 0.20))
+    _glow(img, 16.0, 18.7, 3.5, GOLD, 0.65)
+    _disc_o(img, 16, 19, 2.7, GOLD, GOLD_D); _px(img, 16, 17, GOLD_L)
+    _disc_o(img, 16, 9, 6.1, INK_SOFT, INK); _disc(img, 16, 9, 5.1, C(0.26, 0.16, 0.20))
+    _tri_up(img, 8, 8, 3, 8, BONE_D); _tri_up(img, 24, 8, 3, 8, BONE_D)
+    _px(img, 8, 0, BONE); _px(img, 24, 0, BONE)
+    _glow_eyes(img, 16, 9, EMBER, 4); _px(img, 12, 9, GOLD_L); _px(img, 20, 9, GOLD_L)
+    _rect(img, 13, 13, 7, 1, INK)
+
+CREATURES = {
+    "aria": _fig_aria, "aria_back": _fig_aria_back, "aria_side": _fig_aria_side,
+    "knight": _fig_knight, "mage": _fig_mage, "ranger": _fig_ranger,
+    "gobelin": _fig_gobelin, "loup": _fig_wolf, "squelette": _fig_skeleton,
+    "orc": _fig_orc, "spectre": _fig_spectre, "boss": _fig_boss,
+}
+def _gen_creature(kind):
+    img = _new(False); CREATURES.get(kind, _fig_knight)(img); return img
+
+# --- Butin --------------------------------------------------------------------
+def _gen_weapon():
+    img = _new(False)
+    _rect(img, 13, 4, 5, 17, INK); _rect(img, 15, 5, 3, 15, STEEL)
+    _rect(img, 15, 5, 1, 15, STEEL_L); _tri_up(img, 16, 5, 1, 3, STEEL_L)
+    _glow(img, 16.0, 12.0, 5.3, CYAN, 0.30)
+    _rect(img, 9, 20, 13, 3, GOLD_D); _rect(img, 9, 20, 13, 1, GOLD)
+    _px(img, 8, 20, GOLD); _px(img, 23, 20, GOLD)
+    _rect(img, 15, 23, 3, 5, C(0.40, 0.27, 0.18))
+    _disc_o(img, 16, 28, 2.1, GOLD, GOLD_D); _px(img, 16, 27, GOLD_L)
+    return img
+
+def _gen_armor():
+    img = _new(False)
+    _trapezoid(img, 16, 4, 16, 9.3, 10.7, STEEL_D); _trapezoid(img, 16, 5, 16, 8.0, 9.3, STEEL)
+    for y in range(12, 22):
+        w = int(round(8.0*(1.0-(y-12)/9.5)))
+        _rect(img, 12-w, y, 1, 1, STEEL_D); _rect(img, 12+w, y, 1, 1, STEEL_D)
+        if w > 1: _rect(img, 12-w+1, y, (w-1)*2, 1, STEEL)
+    _rect(img, 11, 7, 3, 11, STEEL_L)
+    _glow(img, 16.0, 13.3, 4.0, ARCANE, 0.5)
+    _disc_o(img, 16, 13, 3.2, ARCANE, INK_SOFT); _disc(img, 16, 13, 1.7, ARCANE_L)
+    for ry in [5, 9, 13]: _px(img, 8, ry, STEEL_L); _px(img, 24, ry, STEEL_L)
+    return img
+
+def _gen_relic():
+    img = _new(False)
+    _disc_o(img, 16, 20, 8.0, GOLD, GOLD_D); _disc(img, 16, 20, 4.0, C(0,0,0,0))
+    _px(img, 12, 16, GOLD_L)
+    _glow(img, 16.0, 8.0, 4.5, CYAN, 0.7)
+    _disc_o(img, 16, 8, 4.0, CYAN, INK_SOFT); _disc(img, 16, 8, 2.3, CYAN_L)
+    _px(img, 15, 7, C(1,1,1))
+    _px(img, 16, 3, CYAN_L); _px(img, 11, 8, CYAN_L); _px(img, 21, 8, CYAN_L)
+    return img
+
+def _gen_artifact():
+    img = _new(False)
+    _glow(img, 16.0, 16.0, 12.0, ARCANE, 0.45)
+    _disc(img, 16, 16, 10.7, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.28))
+    _disc(img, 16, 16, 6.7, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.30))
+    for i in range(10):
+        w = int(round(3.5*(1.0-i/10.0)))
+        _rect(img, 12-w, 12-i, w*2+1, 1, ARCANE); _rect(img, 12-w, 12+i, w*2+1, 1, ARCANE)
+        _rect(img, 12-i, 12-w, 1, w*2+1, ARCANE); _rect(img, 12+i, 12-w, 1, w*2+1, ARCANE)
+    _disc(img, 16, 16, 3.2, ARCANE_L); _disc(img, 16, 16, 1.5, C(1,1,1))
+    return img
+
+def _gen_potion():
+    img = _new(False)
+    _rect(img, 13, 4, 5, 3, C(0.40, 0.28, 0.18)); _rect(img, 13, 7, 5, 4, STEEL_D)
+    _disc_o(img, 16, 20, 8.0, INK_SOFT, INK); _disc(img, 16, 20, 6.9, C(0.55, 0.78, 0.88))
+    _glow(img, 16.0, 21.3, 5.9, BLOOD, 0.45)
+    _ellipse(img, 16, 23, 5.9, 4.8, BLOOD); _ellipse(img, 16, 23, 4.5, 3.5, BLOOD.lightened(0.14))
+    _rect(img, 12, 16, 1, 8, C(1,1,1,0.7)); _px(img, 19, 15, C(1,1,1,0.6))
+    return img
+
+# --- Icônes de nœud de carte --------------------------------------------------
+def _gen_node_combat():
+    img = _new(False)
+    _line(img, 7, 25, 24, 7, INK); _line(img, 8, 25, 25, 7, INK)
+    _line(img, 7, 24, 23, 7, STEEL); _line(img, 8, 24, 24, 7, STEEL_L); _px(img, 25, 5, STEEL_L)
+    _line(img, 25, 25, 8, 7, INK); _line(img, 24, 25, 7, 7, INK)
+    _line(img, 25, 24, 9, 7, STEEL); _line(img, 24, 24, 8, 7, STEEL_L); _px(img, 5, 5, STEEL_L)
+    _line(img, 4, 23, 11, 27, GOLD); _line(img, 28, 23, 21, 27, GOLD)
+    _disc_o(img, 7, 27, 1.9, GOLD, GOLD_D); _disc_o(img, 25, 27, 1.9, GOLD, GOLD_D)
+    _glow(img, 16.0, 16.0, 3.2, CYAN_L, 0.7)
+    _px(img, 16, 16, C(1,1,1)); _px(img, 16, 15, CYAN_L); _px(img, 17, 16, CYAN_L)
+    return img
+
+def _gen_node_boss():
+    img = _new(False)
+    _line(img, 7, 19, 4, 9, BONE_D); _line(img, 8, 19, 5, 9, BONE); _px(img, 4, 8, BONE); _px(img, 5, 7, BONE)
+    _line(img, 25, 19, 28, 9, BONE_D); _line(img, 24, 19, 27, 9, BONE); _px(img, 28, 8, BONE); _px(img, 27, 7, BONE)
+    _rect(img, 8, 19, 17, 7, GOLD_D); _rect(img, 8, 19, 17, 1, GOLD_L); _rect(img, 9, 20, 15, 4, GOLD)
+    _tri_up(img, 11, 19, 3, 5, GOLD); _tri_up(img, 16, 19, 3, 8, GOLD); _tri_up(img, 21, 19, 3, 5, GOLD)
+    _px(img, 11, 13, GOLD_L); _px(img, 21, 13, GOLD_L)
+    _glow(img, 16.0, 10.7, 3.5, EMBER, 0.75)
+    _diamond(img, 16, 11, 3, EMBER.darkened(0.2)); _diamond(img, 16, 11, 1, EMBER); _px(img, 16, 9, GOLD_L)
+    _diamond(img, 16, 21, 1, EMBER); _px(img, 16, 21, GOLD_L)
+    return img
+
+def _gen_node_elite():
+    img = _new(False)
+    _tri_up(img, 8, 9, 1, 5, BONE_D); _tri_up(img, 24, 9, 1, 5, BONE_D); _px(img, 8, 4, BONE); _px(img, 24, 4, BONE)
+    _disc_o(img, 16, 13, 8.0, BONE_D, INK); _disc(img, 16, 12, 6.9, BONE)
+    _ellipse(img, 12, 8, 2.1, 1.7, C(1,1,0.95))
+    _rect(img, 11, 11, 4, 4, INK); _rect(img, 19, 11, 4, 4, INK)
+    _glow(img, 12.7, 12.7, 2.4, EMBER, 0.7); _glow(img, 20.7, 12.7, 2.4, EMBER, 0.7)
+    _px(img, 12, 12, EMBER); _px(img, 20, 12, EMBER); _px(img, 12, 11, GOLD_L); _px(img, 20, 11, GOLD_L)
+    _px(img, 16, 16, INK)
+    _rect(img, 11, 20, 12, 4, BONE_D); _rect(img, 11, 20, 12, 1, BONE)
+    for tx in range(12, 23, 3): _rect(img, tx, 20, 1, 4, INK)
+    return img
+
+def _gen_node_shop():
+    img = _new(False)
+    leather = C(0.45, 0.32, 0.22); leather_d = leather.darkened(0.35)
+    _glow(img, 16.0, 8.0, 3.2, GOLD, 0.55)
+    _disc_o(img, 16, 8, 3.1, GOLD, GOLD_D); _px(img, 15, 7, GOLD_L)
+    _disc_o(img, 16, 20, 9.3, leather_d, INK); _disc(img, 16, 20, 8.0, leather)
+    _ellipse(img, 12, 16, 3.1, 2.1, leather.lightened(0.22))
+    _rect(img, 11, 11, 11, 3, leather_d); _rect(img, 9, 13, 13, 1, GOLD_D); _rect(img, 9, 12, 13, 1, GOLD)
+    _diamond(img, 16, 21, 3, GOLD); _px(img, 16, 21, GOLD_L)
+    return img
+
+def _gen_node_event():
+    img = _new(False)
+    _glow(img, 16.0, 16.0, 11.3, ARCANE, 0.45)
+    _disc(img, 16, 16, 10.7, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.25))
+    _diamond(img, 16, 16, 9, ARCANE.darkened(0.35)); _diamond(img, 16, 16, 8, ARCANE)
+    _diamond(img, 16, 16, 5, ARCANE.darkened(0.45))
+    _rect(img, 13, 11, 5, 1, CYAN_L); _px(img, 17, 12, CYAN_L); _px(img, 17, 13, CYAN_L)
+    _px(img, 16, 15, CYAN_L); _px(img, 16, 16, CYAN_L); _px(img, 16, 17, CYAN_L)
+    _glow(img, 16.0, 20.0, 1.9, C(1,1,1), 0.8); _px(img, 16, 20, C(1,1,1))
+    return img
+
+def _gen_node_rest():
+    img = _new(False)
+    wood = C(0.45, 0.32, 0.21); wood_l = C(0.55, 0.40, 0.27)
+    _line(img, 7, 25, 21, 20, INK); _line(img, 25, 25, 11, 20, INK)
+    _line(img, 7, 24, 21, 19, wood); _line(img, 8, 24, 23, 19, wood_l)
+    _line(img, 25, 24, 11, 19, wood); _line(img, 24, 24, 9, 19, wood_l)
+    _px(img, 7, 24, wood_l); _px(img, 25, 24, wood_l)
+    _glow(img, 16.0, 16.0, 6.7, EMBER, 0.55)
+    _tri_up(img, 16, 20, 5, 13, EMBER.darkened(0.25)); _tri_up(img, 16, 20, 4, 11, EMBER)
+    _tri_up(img, 16, 19, 3, 8, GOLD); _px(img, 16, 11, GOLD_L)
+    _px(img, 13, 17, EMBER.lightened(0.1)); _px(img, 19, 17, EMBER)
+    _px(img, 12, 24, EMBER); _px(img, 20, 24, GOLD)
+    return img
+
+# --- Terrain par biome --------------------------------------------------------
+def _gen_ground(a, b):
+    img = _new(True); img.fill(a)
+    joint_outer = a.darkened(0.42).lerp(INK, 0.55)
+    joint_inner = a.darkened(0.22).lerp(INK_SOFT, 0.35)
+    for i in range(TILE):
+        _px(img, i, 0, joint_outer); _px(img, 0, i, joint_outer)
+        _px(img, i, 16, joint_inner); _px(img, 16, i, joint_inner)
+    for i in range(TILE):
+        _px(img, i, 1, a.lightened(0.10)); _px(img, 1, i, a.lightened(0.10))
+        _px(img, i, 17, a.lightened(0.06)); _px(img, 17, i, a.lightened(0.06))
+    for i in range(TILE):
+        _px(img, i, 15, a.darkened(0.16)); _px(img, 15, i, a.darkened(0.16))
+    # Grain tramé (Bayer) : transitions douces sans bruit criard.
+    for y in range(TILE):
+        for x in range(TILE):
+            thr = (BAYER4[y & 3][x & 3]+0.5)/16.0
+            r = rng.randf()
+            if r > 0.90 and 0.5 > thr: _px(img, x, y, b)
+            elif r < 0.06: _px(img, x, y, a.darkened(0.22))
+            elif (x*5+y*3) % 17 == 0: _px(img, x, y, a.lightened(0.06))
+    for p in [(2,2),(14,2),(2,14),(14,14)]:
+        _px(img, p[0], p[1], b.lightened(0.14))
+    for i in range(9):
+        _px(img, i, 0, a.lightened(0.09)); _px(img, 0, i, a.lightened(0.07))
+    edge = a.darkened(0.40).lerp(INK_SOFT, 0.5)
+    for i in range(TILE):
+        _px(img, i, TILE-1, edge); _px(img, TILE-1, i, edge)
+    return img
+
+def _gen_tree(trunk, leaf, style):
+    img = _new(False)
+    tk  = trunk;   tk_d = trunk.darkened(0.45); tk_l = trunk.lightened(0.18)
+    lf  = leaf;    lf_d = leaf.darkened(0.42);  lf_l = leaf.lightened(0.28)
+    lf_h = leaf.lightened(0.50)
+    if style == "round":
+        # Root bumps
+        _ellipse(img, 13, 29, 2.5, 1.4, tk_d)
+        _ellipse(img, 19, 29, 2.0, 1.2, tk_d)
+        _ellipse(img, 16, 30, 3.2, 1.3, tk_d)
+        # Trunk with bark texture
+        _trapezoid(img, 16, 16, 30, 2.0, 3.8, tk_d)
+        _trapezoid(img, 16, 16, 29, 1.2, 2.8, tk)
+        _rect(img, 16, 16, 1, 13, tk_l)
+        _px(img, 15, 20, tk_d); _px(img, 17, 24, tk_d)
+        _px(img, 16, 22, tk_l); _px(img, 15, 26, tk_l)
+        # Side branch stubs
+        _rect(img, 10, 20, 5, 1, tk_d); _rect(img, 11, 20, 3, 1, tk)
+        _rect(img, 20, 23, 4, 1, tk_d); _rect(img, 20, 23, 3, 1, tk)
+        # Canopy
+        _disc_o(img, 16, 13, 11.0, lf_d, INK_SOFT)
+        _disc(img, 16, 13, 9.5, lf)
+        _disc(img, 11, 9, 4.5, lf_l); _disc(img, 11, 9, 2.4, lf_h)
+        _disc(img, 21, 11, 3.2, lf_l)
+        _px(img, 9, 7, lf_h);  _px(img, 10, 6, lf_l)
+        _px(img, 19, 5, lf_l); _px(img, 23, 9, lf_h)
+        _ellipse(img, 16, 20, 7.0, 2.2, lf_d)
+    elif style == "pine":
+        _rect(img, 14, 25, 4, 6, tk_d); _rect(img, 15, 25, 2, 6, tk)
+        _px(img, 15, 27, tk_l)
+        _tri_up(img, 16, 28, 10, 10, lf_d); _tri_up(img, 16, 28, 9, 8, lf)
+        _tri_up(img, 16, 21, 8, 8, lf_d);   _tri_up(img, 16, 21, 7, 7, lf)
+        _tri_up(img, 16, 15, 6, 7, lf_d);   _tri_up(img, 16, 15, 5, 6, lf)
+        _tri_up(img, 16, 10, 4, 6, lf_d);   _tri_up(img, 16, 10, 3, 5, lf)
+        _tri_up(img, 16, 6,  2, 4, lf)
+        _px(img, 8, 21, lf_h); _px(img, 9, 15, lf_h); _px(img, 10, 10, lf_h)
+        _px(img, 16, 4, lf_h)
+    elif style == "cactus":
+        _rect(img, 13, 5, 6, 25, lf_d); _rect(img, 14, 5, 5, 25, lf)
+        _rect(img, 15, 5, 2, 25, lf_l)
+        _rect(img, 7, 12, 7, 3, lf_d);  _rect(img, 7, 12, 7, 2, lf)
+        _rect(img, 7, 9, 3, 5, lf_d);   _rect(img, 8, 9, 2, 5, lf)
+        _rect(img, 19, 15, 6, 3, lf_d); _rect(img, 19, 15, 6, 2, lf)
+        _rect(img, 22, 11, 3, 6, lf_d); _rect(img, 23, 11, 2, 6, lf)
+        for yy in range(7, 28, 4):
+            _px(img, 14, yy, lf_l); _px(img, 13, yy+2, lf_d)
+    elif style == "dead":
+        _rect(img, 15, 4, 3, 27, tk_d); _rect(img, 15, 4, 2, 27, tk)
+        _rect(img, 15, 4, 1, 20, tk_l)
+        _rect(img, 8, 15, 7, 1, tk_d);  _rect(img, 9, 15, 6, 1, tk)
+        _rect(img, 8, 11, 1, 5, tk_d);  _rect(img, 9, 11, 1, 4, tk)
+        _rect(img, 7, 10, 2, 2, tk_d)
+        _rect(img, 17, 12, 7, 1, tk_d); _rect(img, 17, 12, 6, 1, tk)
+        _rect(img, 23, 8, 1, 5, tk_d);  _rect(img, 22, 9, 1, 4, tk)
+        _px(img, 6, 10, tk_d); _px(img, 8, 9, tk_d)
+        _px(img, 24, 7, tk_d); _px(img, 22, 8, tk_d)
+        _rect(img, 13, 4, 5, 2, tk)
+    else:
+        _disc_o(img, 16, 16, 8.5, lf_d, INK_SOFT); _disc(img, 16, 16, 7.0, lf)
+        _disc(img, 12, 12, 3.5, lf_l); _px(img, 11, 11, lf_h)
+    return img
+
+def _gen_rock(c):
+    img = _new(False)
+    _ellipse(img, 16, 20, 11.3, 8.7, INK_SOFT); _ellipse(img, 16, 20, 10.0, 7.3, c)
+    _ellipse(img, 12, 16, 3.7, 2.7, c.lightened(0.32))
+    _rect(img, 17, 15, 1, 11, c.darkened(0.42)); _rect(img, 17, 19, 5, 1, c.darkened(0.42))
+    _rect(img, 8, 24, 15, 1, c.darkened(0.32))
+    return img
+
+def _gen_water(c):
+    img = _new(True); base = c.darkened(0.45); img.fill(base)
+    trough = c.darkened(0.32); mid = c.lightened(0.06); crest = c.lightened(0.40)
+    for y in range(1, TILE, 4):
+        off = (y//4) % 3
+        for x in range(TILE):
+            phase = (x+off*5) % 12
+            ty = y+(phase//6)
+            if ty < TILE: _px(img, x, ty, trough)
+            my = y+1+(phase//8)
+            if my < TILE: _px(img, x, my, mid)
+            if phase == 0 or phase == 6:
+                cy = y+1
+                if cy < TILE: _px(img, x, cy, crest)
+                if cy-1 >= 0: _px(img, x, cy-1, C(1.0, 1.0, 1.0, 0.55))
+    for y in range(TILE):
+        for x in range(TILE):
+            if (x*3+y*7) % 23 == 0: _px(img, x, y, crest.lightened(0.18))
+    for i in range(TILE):
+        _px(img, i, TILE-1, base.darkened(0.35)); _px(img, TILE-1, i, base.darkened(0.35))
+    _px(img, TILE-1, TILE-1, base.darkened(0.50))
+    return img
+
+def _gen_decor(c, style):
+    img = _new(False)
+    if style == "flower":
+        _rect(img, 16, 19, 1, 8, POISON.darkened(0.2))
+        _glow(img, 16.0, 16.0, 2.9, c, 0.45)
+        _disc_o(img, 16, 16, 3.2, c, INK_SOFT); _px(img, 16, 16, GOLD_L)
+    elif style == "mushroom":
+        _rect(img, 16, 21, 3, 5, BONE)
+        _glow(img, 17.3, 17.3, 4.0, c, 0.35)
+        _ellipse(img, 17, 19, 5.6, 3.7, c.darkened(0.25)); _ellipse(img, 17, 17, 4.5, 2.7, c)
+        _px(img, 15, 17, C(1,1,1)); _px(img, 19, 19, C(1,1,1))
+    elif style == "bones":
+        _rect(img, 11, 21, 11, 1, BONE)
+        _rect(img, 11, 20, 1, 4, BONE); _rect(img, 20, 20, 1, 4, BONE)
+        _px(img, 9, 20, BONE_D); _px(img, 21, 20, BONE_D)
+    elif style == "crystal":
+        _glow(img, 16.0, 17.3, 5.3, c, 0.6)
+        _diamond(img, 16, 19, 5, c.darkened(0.3)); _diamond(img, 16, 19, 4, c)
+        _rect(img, 16, 15, 1, 8, c.lightened(0.48)); _px(img, 15, 16, C(1,1,1))
+    elif style == "reed":
+        for sx in [12, 16, 20]:
+            _rect(img, sx, 15, 1, 12, c.darkened(0.15)); _ellipse(img, sx, 13, 1.9, 3.2, c.darkened(0.3))
+    elif style == "ember":
+        _glow(img, 16.0, 21.3, 5.3, EMBER, 0.6)
+        _ellipse(img, 16, 23, 4.5, 2.7, INK_SOFT)
+        _ellipse(img, 16, 21, 3.2, 2.1, EMBER.darkened(0.2)); _ellipse(img, 16, 21, 1.9, 1.3, EMBER)
+        _px(img, 16, 19, GOLD_L)
+    else:
+        _disc_o(img, 16, 19, 2.7, c, INK_SOFT)
+    return img
+
+def _gen_road():
+    img = _new(True); dirt = C(0.24, 0.20, 0.18); img.fill(dirt)
+    for i in range(60):
+        x = rng.randi_range(0, TILE-1); y = rng.randi_range(0, TILE-1)
+        _px(img, x, y, dirt.darkened(rng.randf()*0.35))
+    for i in range(9):
+        x = rng.randi_range(2, TILE-3); y = rng.randi_range(2, TILE-3)
+        _ellipse(img, x, y, 1.9, 1.5, C(0.40, 0.36, 0.33)); _px(img, x-1, y-1, C(0.50, 0.46, 0.42))
+    return img
+
+# --- main ---------------------------------------------------------------------
+def main():
+    global ASSETS
+    ASSETS = sys.argv[1] if len(sys.argv) > 1 else "assets"
+    os.makedirs(ASSETS, exist_ok=True)
+    _save(_gen_floor(), "floor"); _save(_gen_wall(), "wall"); _save(_gen_stairs(), "stairs")
+    for k in ["aria","aria_back","aria_side","knight","mage","ranger",
+              "gobelin","loup","squelette","orc","spectre","boss",
+              "araignee","sanglier","chauvesouris","serpent","ours",
+              "zombie","dullahan","liche","banshee","revenant",
+              "brigand","gnoll","troll","kobold","cultiste",
+              "elementaire_feu","golem","fee","drake","coffre","mimic",
+              "roi_liche","seigneur_fantome","wyrm","araignee_mere","troll_ancestral",
+              "paladin_dechu","sorciere","bourreau","oeil_neant","dieu_bete","ame","chaudron"]:
+        _save(_gen_creature(k), k)
+    _save(_gen_weapon(), "arme"); _save(_gen_armor(), "armure"); _save(_gen_relic(), "relique")
+    _save(_gen_artifact(), "artifact"); _save(_gen_potion(), "potion")
+    _save(_gen_node_combat(), "node_combat"); _save(_gen_node_boss(), "node_boss")
+    _save(_gen_node_elite(), "node_elite"); _save(_gen_node_shop(), "node_shop")
+    _save(_gen_node_event(), "node_event"); _save(_gen_node_rest(), "node_rest")
+    for bm in BIOMES:
+        i = bm["id"]
+        _save(_gen_ground(bm["ground_a"], bm["ground_b"]), "%s_ground" % i)
+        _save(_gen_tree(bm["trunk"], bm["leaf"], bm["tree_style"]), "%s_tree" % i)
+        _save(_gen_rock(bm["rock"]), "%s_rock" % i)
+        _save(_gen_water(bm["water"]), "%s_water" % i)
+        _save(_gen_decor(bm["decor"], bm["decor_style"]), "%s_decor" % i)
+    _save(_gen_road(), "road")
+    print("=== ASSETS GENERATED ===", ASSETS)
+
+# === Nouveaux monstres (Pass 1) ==============================================
+def _fig_araignee(img):
+    _ground_shadow(img)
+    leg = POISON.darkened(0.5)
+    for ey in (10, 13, 16):
+        _line(img, 11, 19, 1, ey, leg); _line(img, 11, 20, 3, ey + 1, leg)
+        _line(img, 21, 19, 31, ey, leg); _line(img, 21, 20, 29, ey + 1, leg)
+    _disc_o(img, 16, 20, 6.7, POISON.darkened(0.45), INK)
+    _disc(img, 16, 20, 5.3, POISON.darkened(0.12))
+    _ellipse(img, 13, 17, 2.1, 1.6, POISON.lightened(0.22))
+    _disc_o(img, 16, 12, 4.0, POISON.darkened(0.32), INK)
+    _disc(img, 16, 12, 2.9, POISON.darkened(0.05))
+    _glow_eyes(img, 16, 11, BLOOD, 3)
+
+def _fig_sanglier(img):
+    _ground_shadow(img)
+    fur = C(0.50, 0.40, 0.34); fur_d = fur.darkened(0.4)
+    _ellipse(img, 17, 20, 10.7, 6.7, fur_d); _ellipse(img, 17, 20, 9.3, 5.6, fur)
+    _ellipse(img, 20, 16, 4.0, 2.9, fur.lightened(0.18))   # dos hérissé
+    for sx in (10, 13, 16): _line(img, sx, 15, sx - 1, 9, INK)  # poils
+    _rect(img, 11, 24, 3, 4, fur_d); _rect(img, 21, 24, 3, 4, fur_d)
+    _disc_o(img, 7, 19, 4.3, fur_d, INK); _disc(img, 7, 19, 3.3, fur)  # tête basse
+    _rect(img, 1, 19, 5, 3, fur.lightened(0.1))            # groin
+    _px(img, 1, 19, INK)
+    _tri_up(img, 4, 23, 1, 4, BONE); _tri_up(img, 8, 23, 1, 4, BONE)  # défenses
+    _glow_eyes(img, 7, 16, EMBER, 1)
+
+def _fig_chauvesouris(img):
+    _ground_shadow(img)
+    body = C(0.45, 0.30, 0.42)
+    # ailes
+    _trapezoid(img, 5, 11, 20, 0.7, 5.3, body.darkened(0.4))
+    _trapezoid(img, 27, 11, 20, 0.7, 5.3, body.darkened(0.4))
+    _line(img, 9, 12, 4, 9, body.darkened(0.2)); _line(img, 23, 12, 28, 9, body.darkened(0.2))
+    _disc_o(img, 16, 16, 4.0, body.darkened(0.3), INK)
+    _disc(img, 16, 16, 3.1, body)
+    _tri_up(img, 13, 12, 1, 4, body.darkened(0.2)); _tri_up(img, 19, 12, 1, 4, body.darkened(0.2))
+    _glow_eyes(img, 16, 15, BLOOD, 1)
+    _px(img, 15, 19, BONE); _px(img, 17, 19, BONE)         # crocs
+
+def _fig_serpent(img):
+    _ground_shadow(img)
+    sk = C(0.36, 0.62, 0.40); sk_d = sk.darkened(0.4)
+    # corps en S
+    for i in range(14):
+        t = i / 13.0
+        x = int(7 + 7 * abs(math.sin(t * math.pi * 1.5)))
+        y = 20 - i
+        _disc(img, x, y, 2.7, sk_d); _disc(img, x, y, 1.7, sk)
+    _disc_o(img, 19, 9, 3.5, sk_d, INK); _disc(img, 19, 9, 2.5, sk)
+    _glow_eyes(img, 19, 8, GOLD_L, 1)
+    _line(img, 21, 11, 24, 12, BLOOD)                        # langue
+    _px(img, 24, 12, BLOOD); _px(img, 25, 11, BLOOD)
+
+def _fig_ours(img):
+    _ground_shadow(img)
+    fur = C(0.46, 0.36, 0.31); fur_d = fur.darkened(0.42)
+    _trapezoid_o(img, 16, 13, 28, 6.7, 9.3, fur_d)
+    _trapezoid(img, 16, 15, 27, 5.3, 7.3, fur)
+    _rect(img, 11, 20, 11, 4, fur.lightened(0.12))
+    _disc_o(img, 16, 9, 5.9, fur_d, INK); _disc(img, 16, 9, 4.8, fur)
+    _disc(img, 8, 5, 2.1, fur_d); _disc(img, 24, 5, 2.1, fur_d)  # oreilles
+    _disc(img, 8, 5, 1.3, fur); _disc(img, 24, 5, 1.3, fur)
+    _ellipse(img, 16, 12, 2.4, 1.7, fur.lightened(0.2))    # museau
+    _px(img, 16, 12, INK)
+    _glow_eyes(img, 16, 8, EMBER, 3)
+    _tri_up(img, 13, 21, 1, 4, BONE); _tri_up(img, 19, 21, 1, 4, BONE)  # griffes
+
+def _fig_zombie(img):
+    _ground_shadow(img)
+    sk = C(0.48, 0.62, 0.40); sk_d = sk.darkened(0.4)
+    _glow(img, 16.0, 17.3, 8.0, POISON, 0.22)                 # aura de maladie
+    _trapezoid_o(img, 15, 15, 28, 3.7, 6.0, sk_d)
+    _trapezoid(img, 15, 16, 27, 2.7, 4.7, sk)
+    _rect(img, 12, 17, 7, 3, sk_d)                         # déchirures
+    _rect(img, 20, 16, 4, 3, sk)                          # bras tendu
+    _rect(img, 24, 16, 3, 5, sk_d)
+    _disc_o(img, 15, 9, 4.8, sk_d, INK); _disc(img, 15, 9, 3.9, sk)
+    _ellipse(img, 12, 7, 1.6, 1.3, sk.lightened(0.2))
+    _px(img, 13, 9, INK); _rect(img, 16, 9, 3, 1, INK)    # yeux asymétriques
+    _glow(img, 13.3, 9.3, 1.6, POISON, 0.6)
+    _rect(img, 13, 13, 4, 1, INK)
+
+def _fig_dullahan(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 9, 28, 4.3, 8.0, STEEL_D)       # corps sans tête
+    _trapezoid(img, 16, 11, 27, 3.2, 6.0, STEEL)
+    _rect(img, 13, 12, 7, 7, STEEL_L)                      # plastron
+    _rect(img, 15, 13, 1, 4, C(1, 1, 1, 0.5))
+    _disc_o(img, 11, 8, 2.3, STEEL, STEEL_D); _disc_o(img, 21, 8, 2.3, STEEL, STEEL_D)
+    _px(img, 16, 8, BLOOD); _rect(img, 15, 8, 4, 1, BLOOD_D)   # cou tranché
+    # tête portée dans la main
+    _glow(img, 25.3, 18.7, 4.0, ARCANE, 0.4)
+    _disc_o(img, 25, 19, 3.5, STEEL_D, INK); _disc(img, 25, 19, 2.5, BONE)
+    _glow_eyes(img, 25, 17, EMBER, 1)
+    _rect(img, 5, 12, 1, 13, STEEL_L)                      # épée
+
+def _fig_liche(img):
+    _ground_shadow(img)
+    _trapezoid_o(img, 16, 15, 28, 2.7, 8.0, ARCANE.darkened(0.5))
+    _trapezoid(img, 16, 16, 27, 1.6, 6.1, ARCANE.darkened(0.25))
+    _rect(img, 15, 19, 3, 8, ARCANE_L.darkened(0.1))
+    _disc_o(img, 16, 11, 4.5, BONE_D, INK); _disc(img, 16, 9, 3.6, BONE)  # crâne
+    _rect(img, 13, 9, 3, 3, INK); _rect(img, 17, 9, 3, 3, INK)
+    _glow(img, 14.0, 10.0, 1.9, ARCANE_L, 0.7); _glow(img, 19.3, 10.0, 1.9, ARCANE_L, 0.7)
+    _px(img, 13, 9, ARCANE_L); _px(img, 19, 9, ARCANE_L)
+    # couronne
+    _rect(img, 12, 5, 8, 1, GOLD); _tri_up(img, 12, 5, 1, 3, GOLD); _tri_up(img, 16, 5, 1, 3, GOLD); _tri_up(img, 20, 5, 1, 3, GOLD)
+    # bâton à gemme
+    _rect(img, 8, 9, 1, 17, GOLD_D)
+    _glow(img, 8.0, 8.0, 3.5, ARCANE, 0.7); _disc_o(img, 8, 8, 2.4, ARCANE, INK); _px(img, 8, 7, ARCANE_L)
+
+def _fig_banshee(img):
+    _glow(img, 16.0, 13.3, 9.3, CYAN, 0.35)
+    _disc_o(img, 16, 11, 5.6, CYAN.darkened(0.4), INK_SOFT)
+    _disc(img, 16, 11, 4.5, CYAN.darkened(0.12))
+    # chevelure flottante
+    for sx in (7, 9, 15, 17): _line(img, sx, 11, sx + (3 if sx < 16 else -3), 24, CYAN.darkened(0.2))
+    _trapezoid(img, 16, 15, 28, 4.7, 8.0, CYAN.darkened(0.18))
+    for x in range(8, 25):
+        cut = 28 - (x % 3)
+        for y in range(cut, TILE): _px(img, x, y, C(0, 0, 0, 0))
+    _ellipse(img, 16, 11, 3.2, 2.7, C(0.05, 0.08, 0.10))
+    _glow_eyes(img, 16, 9, C(1, 1, 1), 3)
+    _ellipse(img, 16, 15, 1.3, 2.1, C(0.9, 1, 1, 0.8))    # bouche hurlante
+    _fade(img, 0.82)
+
+def _fig_revenant(img):
+    _ground_shadow(img)
+    arm = C(0.30, 0.30, 0.38)
+    _trapezoid_o(img, 16, 13, 28, 4.0, 7.3, arm.darkened(0.4))
+    _trapezoid(img, 16, 15, 27, 2.9, 5.6, arm)
+    _rect(img, 13, 17, 7, 4, arm.lightened(0.18))
+    _disc_o(img, 16, 9, 5.1, arm.darkened(0.4), INK); _disc(img, 16, 9, 4.0, arm)
+    _rect(img, 12, 9, 8, 1, INK)                           # fente du heaume
+    _glow_eyes(img, 16, 9, BLOOD, 3)
+    _tri_up(img, 16, 4, 1, 4, BLOOD)                      # cimier
+    _rect(img, 24, 11, 1, 15, STEEL_L); _rect(img, 7, 11, 1, 15, STEEL_L)  # deux lames (miroir)
+
+def _fig_brigand(img):
+    _ground_shadow(img)
+    cloth = C(0.40, 0.32, 0.26)
+    _trapezoid_o(img, 16, 15, 28, 3.5, 7.3, cloth.darkened(0.4))
+    _trapezoid(img, 16, 16, 27, 2.4, 5.6, cloth)
+    _disc_o(img, 16, 9, 5.1, cloth.darkened(0.45), INK)   # capuche
+    _ellipse(img, 16, 11, 3.2, 2.7, C(0.08, 0.07, 0.10))
+    _glow_eyes(img, 16, 11, ARCANE_L, 1)                   # corrompu (magie noire)
+    _rect(img, 21, 17, 1, 7, STEEL_L); _rect(img, 20, 23, 4, 1, GOLD)   # dague
+    _glow(img, 16.0, 16.0, 4.0, ARCANE, 0.18)
+
+def _fig_gnoll(img):
+    _ground_shadow(img)
+    fur = C(0.68, 0.58, 0.34); fur_d = fur.darkened(0.4)
+    _trapezoid_o(img, 16, 15, 28, 3.5, 6.7, fur_d)
+    _trapezoid(img, 16, 16, 27, 2.4, 5.1, fur)
+    _rect(img, 12, 19, 8, 3, C(0.4, 0.3, 0.2))
+    _disc_o(img, 16, 9, 4.8, fur_d, INK); _disc(img, 16, 9, 3.9, fur)
+    _tri_up(img, 11, 7, 1, 4, fur_d); _tri_up(img, 21, 7, 1, 4, fur_d)  # oreilles
+    _rect(img, 13, 11, 5, 3, fur.lightened(0.12))          # museau hyène
+    _px(img, 13, 12, INK); _px(img, 17, 12, INK); _px(img, 15, 12, BONE)
+    _glow_eyes(img, 16, 9, GOLD_L, 1)
+    _rect(img, 23, 13, 1, 11, STEEL_L)                     # arme
+
+def _fig_troll(img):
+    _ground_shadow(img)
+    sk = C(0.45, 0.60, 0.45); sk_d = sk.darkened(0.42)
+    _trapezoid_o(img, 15, 12, 28, 7.3, 10.0, sk_d)
+    _trapezoid(img, 15, 13, 27, 6.0, 8.0, sk)
+    _rect(img, 9, 19, 12, 4, sk.lightened(0.12))
+    for rp in ((8, 16), (13, 13), (15, 18)):              # runes gravées
+        _glow(img, rp[0], rp[1], 2.1, CYAN, 0.5); _px(img, rp[0], rp[1], CYAN_L)
+    _disc_o(img, 15, 9, 5.6, sk_d, INK); _disc(img, 15, 9, 4.5, sk)
+    _rect(img, 9, 11, 12, 1, INK)                           # arcade lourde
+    _glow_eyes(img, 15, 11, EMBER, 3)
+    _tri_up(img, 12, 16, 1, 4, BONE); _tri_up(img, 17, 16, 1, 4, BONE)
+
+def _fig_kobold(img):
+    _ground_shadow(img)
+    sk = C(0.80, 0.50, 0.35); sk_d = sk.darkened(0.4)
+    _trapezoid_o(img, 16, 19, 28, 3.2, 5.1, sk_d)
+    _trapezoid(img, 16, 20, 27, 2.1, 3.7, sk)
+    _disc_o(img, 16, 13, 4.3, sk_d, INK); _disc(img, 16, 13, 3.3, sk)
+    _rect(img, 15, 15, 5, 3, sk.lightened(0.1))           # museau lézard
+    _tri_up(img, 11, 12, 1, 5, sk_d); _tri_up(img, 21, 12, 1, 5, sk_d)   # oreilles
+    _glow_eyes(img, 16, 12, GOLD_L, 1)
+    _rect(img, 23, 16, 1, 7, STEEL_L)                     # dague
+    _tri_up(img, 17, 12, 1, 4, BONE)
+
+def _fig_cultiste(img):
+    _ground_shadow(img)
+    robe = C(0.45, 0.25, 0.34)
+    _trapezoid_o(img, 16, 11, 29, 2.7, 8.7, robe.darkened(0.45))
+    _trapezoid(img, 16, 12, 28, 1.9, 6.9, robe)
+    _disc_o(img, 16, 9, 4.5, robe.darkened(0.5), INK)     # capuche pointue
+    _tri_up(img, 16, 8, 3, 5, robe.darkened(0.35))
+    _ellipse(img, 16, 11, 2.7, 2.3, C(0.06, 0.05, 0.08))
+    _glow_eyes(img, 16, 11, BLOOD, 1)
+    # sigille flottant
+    _glow(img, 16.0, 22.7, 4.3, BLOOD, 0.45)
+    _diamond(img, 16, 23, 3, BLOOD.darkened(0.2)); _px(img, 16, 23, GOLD_L)
+
+def _fig_elementaire_feu(img):
+    _glow(img, 16.0, 17.3, 12.0, EMBER, 0.5)
+    # corps de flammes
+    _tri_up(img, 16, 28, 9, 21, EMBER.darkened(0.3))
+    _tri_up(img, 16, 28, 7, 19, EMBER)
+    _tri_up(img, 12, 25, 3, 9, EMBER.darkened(0.1)); _tri_up(img, 20, 25, 3, 9, EMBER.darkened(0.1))
+    _tri_up(img, 16, 25, 4, 15, GOLD)
+    _tri_up(img, 16, 21, 3, 9, GOLD_L)
+    _glow_eyes(img, 16, 16, C(1, 1, 1), 3)
+    _px(img, 16, 7, GOLD_L)
+
+def _fig_golem(img):
+    _ground_shadow(img)
+    st = C(0.58, 0.58, 0.64); st_d = st.darkened(0.4); st_l = st.lightened(0.16)
+    _rect(img, 7, 12, 19, 17, INK)                         # contour bloc
+    _rect(img, 8, 13, 16, 15, st_d)
+    _rect(img, 9, 15, 13, 12, st)
+    _rect(img, 9, 15, 13, 3, st_l)                        # haut éclairé
+    _rect(img, 11, 8, 11, 5, st_d); _rect(img, 12, 8, 8, 4, st)   # tête bloc
+    _rect(img, 4, 15, 3, 9, st_d); _rect(img, 25, 15, 3, 9, st_d)  # bras
+    _glow(img, 13.3, 10.7, 1.9, ARCANE, 0.5); _glow(img, 18.7, 10.7, 1.9, ARCANE, 0.5)
+    _px(img, 13, 11, ARCANE_L); _px(img, 19, 11, ARCANE_L)  # yeux runiques
+    _line(img, 12, 17, 15, 23, st_d); _line(img, 19, 16, 17, 24, st_d)  # fissures
+
+def _fig_fee(img):
+    _glow(img, 16.0, 16.0, 9.3, ARCANE, 0.4)
+    # ailes
+    _ellipse(img, 9, 13, 4.0, 5.3, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
+    _ellipse(img, 23, 13, 4.0, 5.3, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
+    _ellipse(img, 9, 13, 2.7, 3.7, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
+    _ellipse(img, 23, 13, 2.7, 3.7, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
+    _trapezoid_o(img, 16, 15, 24, 1.6, 3.2, ARCANE.darkened(0.2))
+    _disc_o(img, 16, 11, 2.9, ROSE_D, INK); _ellipse(img, 16, 11, 2.0, 2.3, SKIN)
+    _px(img, 15, 11, INK); _px(img, 17, 11, INK)
+    _glow(img, 16.0, 10.7, 2.1, CYAN_L, 0.5)
+    _px(img, 16, 5, GOLD_L); _px(img, 12, 8, CYAN_L); _px(img, 20, 8, CYAN_L)  # étincelles
+
+def _fig_drake(img):
+    _ground_shadow(img)
+    sc = C(0.55, 0.40, 0.40); sc_d = sc.darkened(0.42)
+    # corps serpentiforme
+    _ellipse(img, 16, 21, 9.3, 5.3, sc_d); _ellipse(img, 16, 21, 8.0, 4.3, sc)
+    _ellipse(img, 21, 19, 4.0, 3.2, sc.lightened(0.12))
+    _line(img, 24, 23, 31, 27, sc_d)                      # queue
+    _disc_o(img, 11, 12, 4.5, sc_d, INK); _disc(img, 11, 12, 3.6, sc)   # tête
+    _rect(img, 4, 12, 7, 3, sc.lightened(0.1))             # museau
+    _tri_up(img, 12, 9, 1, 4, sc_d); _tri_up(img, 9, 9, 1, 3, sc_d)  # cornes
+    _glow_eyes(img, 11, 11, GOLD_L, 1)
+    # souffle
+    _glow(img, 2.7, 13.3, 3.5, EMBER, 0.6)
+    _px(img, 3, 13, EMBER_L); _px(img, 1, 12, GOLD_L); _px(img, 1, 15, EMBER)
+
+def _fig_coffre(img):
+    _ground_shadow(img)
+    wood = C(0.45, 0.32, 0.20); wood_d = wood.darkened(0.4)
+    _rect(img, 7, 16, 19, 12, INK)                         # contour
+    _rect(img, 8, 17, 16, 9, wood)
+    _rect(img, 8, 11, 16, 7, wood_d)                       # couvercle bombé
+    _rect(img, 8, 11, 16, 1, wood.lightened(0.15))
+    _rect(img, 7, 16, 19, 1, GOLD_D)                      # ferrure
+    _rect(img, 15, 15, 3, 5, GOLD)                        # serrure
+    _px(img, 15, 16, GOLD_L); _px(img, 16, 17, INK)
+    _px(img, 9, 12, wood.lightened(0.2))
+
+def _fig_mimic(img):
+    _fig_coffre(img)
+    # gueule + dents + langue + yeux
+    _rect(img, 8, 16, 16, 4, C(0.10, 0.04, 0.06))         # bouche ouverte
+    for tx in range(6, 18, 2):
+        _tri_up(img, tx + 1, 16, 1, 3, BONE)              # dents hautes
+        _px(img, tx + 1, 19, BONE); _px(img, tx + 1, 17, BONE)
+    _ellipse(img, 16, 20, 2.9, 1.6, BLOOD)                # langue
+    _glow_eyes(img, 16, 12, EMBER, 4)
+
+CREATURES.update({
+    "araignee": _fig_araignee, "sanglier": _fig_sanglier, "chauvesouris": _fig_chauvesouris,
+    "serpent": _fig_serpent, "ours": _fig_ours, "zombie": _fig_zombie,
+    "dullahan": _fig_dullahan, "liche": _fig_liche, "banshee": _fig_banshee,
+    "revenant": _fig_revenant, "brigand": _fig_brigand, "gnoll": _fig_gnoll,
+    "troll": _fig_troll, "kobold": _fig_kobold, "cultiste": _fig_cultiste,
+    "elementaire_feu": _fig_elementaire_feu, "golem": _fig_golem, "fee": _fig_fee,
+    "drake": _fig_drake, "coffre": _fig_coffre, "mimic": _fig_mimic,
+})
+
+# === Boss (Pass 2) ===========================================================
+def _fig_roi_liche(img):
+    _glow(img, 16.0, 17.3, 12.7, ARCANE, 0.32)
+    _rect(img, 5, 8, 21, 21, INK)
+    _rect(img, 7, 9, 19, 19, C(0.28, 0.28, 0.40))
+    _rect(img, 7, 7, 3, 7, BONE_D); _rect(img, 24, 7, 3, 7, BONE_D)
+    _tri_up(img, 7, 8, 1, 4, BONE); _tri_up(img, 24, 8, 1, 4, BONE)
+    _trapezoid_o(img, 16, 16, 28, 4.3, 8.0, ARCANE.darkened(0.42))
+    _trapezoid(img, 16, 17, 27, 3.2, 6.4, ARCANE.darkened(0.16))
+    _disc_o(img, 16, 12, 4.5, BONE_D, INK); _disc(img, 16, 11, 3.6, BONE)
+    _rect(img, 13, 11, 3, 3, INK); _rect(img, 17, 11, 3, 3, INK)
+    _glow(img, 14.0, 11.3, 1.7, ARCANE_L, 0.7); _glow(img, 19.3, 11.3, 1.7, ARCANE_L, 0.7)
+    _px(img, 13, 11, ARCANE_L); _px(img, 19, 11, ARCANE_L)
+    _rect(img, 12, 5, 8, 1, GOLD_D)
+    for fx in (9, 12, 15):
+        _glow(img, fx, 2.7, 2.1, ARCANE, 0.7)
+        _tri_up(img, fx, 5, 1, 4, INK_SOFT); _px(img, fx, 1, ARCANE_L)
+
+def _fig_seigneur_fantome(img):
+    _glow(img, 16.0, 14.7, 12.0, CYAN, 0.4)
+    _disc_o(img, 16, 11, 6.1, CYAN.darkened(0.4), INK_SOFT)
+    _disc(img, 16, 11, 5.1, CYAN.darkened(0.12))
+    _trapezoid(img, 16, 15, 29, 6.0, 9.3, CYAN.darkened(0.16))
+    for x in range(7, 27):
+        cut = 29 - (x % 4)
+        for y in range(cut, TILE): _px(img, x, y, C(0, 0, 0, 0))
+    _ellipse(img, 16, 11, 3.5, 2.9, C(0.05, 0.08, 0.10))
+    _glow_eyes(img, 16, 9, C(1, 1, 1), 3)
+    # âmes hurlantes en orbite
+    for ax, ay in [(3, 6), (21, 6), (4, 14), (20, 14)]:
+        _glow(img, ax, ay, 2.7, CYAN_L, 0.7); _disc(img, ax, ay, 1.3, CYAN_L)
+    _fade(img, 0.85)
+
+def _fig_wyrm(img):
+    _ground_shadow(img)
+    sc = C(0.55, 0.42, 0.40); sc_d = sc.darkened(0.42)
+    # corps enroulé
+    for i in range(20):
+        a = i / 19.0 * math.pi * 2.0
+        x = int(12 + 6.5 * math.cos(a)); y = int(15 + 5.0 * math.sin(a))
+        _disc(img, x, y, 2.9, sc_d)
+    for i in range(20):
+        a = i / 19.0 * math.pi * 2.0
+        x = int(12 + 6.5 * math.cos(a)); y = int(15 + 5.0 * math.sin(a))
+        _disc(img, x, y, 1.9, sc)
+    _disc_o(img, 16, 9, 4.5, sc_d, INK); _disc(img, 16, 9, 3.6, sc)
+    _rect(img, 13, 9, 7, 3, sc.lightened(0.12))
+    _tri_up(img, 13, 7, 1, 4, sc_d); _tri_up(img, 19, 7, 1, 4, sc_d)
+    _glow_eyes(img, 16, 8, GOLD_L, 1)
+    _glow(img, 16.0, 13.3, 2.7, EMBER, 0.5); _px(img, 16, 13, EMBER_L)
+
+def _fig_araignee_mere(img):
+    _ground_shadow(img)
+    leg = POISON.darkened(0.5)
+    for ey in (8, 11, 15, 18):
+        _line(img, 9, 19, 1, ey, leg); _line(img, 23, 19, 31, ey, leg)
+    _disc_o(img, 16, 20, 9.3, POISON.darkened(0.45), INK)
+    _disc(img, 16, 20, 8.0, POISON.darkened(0.1))
+    # œufs visibles (abdomen translucide)
+    for ex, ey in [(10, 14), (14, 14), (12, 17), (9, 16), (15, 16)]:
+        _disc(img, ex, ey, 1.6, C(0.85, 0.95, 0.7, 0.9)); _px(img, ex, ey, C(1, 1, 1))
+    _disc_o(img, 16, 11, 4.8, POISON.darkened(0.3), INK); _disc(img, 16, 11, 3.9, POISON.darkened(0.02))
+    _glow_eyes(img, 16, 9, BLOOD, 3); _glow_eyes(img, 16, 12, BLOOD, 1)
+
+def _fig_troll_ancestral(img):
+    _ground_shadow(img)
+    sk = C(0.42, 0.58, 0.44); sk_d = sk.darkened(0.42)
+    _trapezoid_o(img, 15, 9, 29, 8.7, 11.3, sk_d)
+    _trapezoid(img, 15, 11, 28, 7.3, 9.3, sk)
+    _rect(img, 8, 17, 15, 4, sk.lightened(0.1))
+    # mousse + runes gravées
+    for rp in [(7, 17), (10, 12), (14, 14), (16, 18), (12, 9)]:
+        _glow(img, rp[0], rp[1], 2.4, CYAN, 0.55); _px(img, rp[0], rp[1], CYAN_L)
+    for mp in [(8, 10), (15, 11)]:
+        _disc(img, mp[0], mp[1], 1.7, POISON.darkened(0.2))
+    _disc_o(img, 15, 8, 6.1, sk_d, INK); _disc(img, 15, 8, 5.1, sk)
+    _rect(img, 8, 9, 13, 1, INK)
+    _glow_eyes(img, 15, 8, EMBER, 4)
+    _tri_up(img, 11, 15, 1, 5, BONE); _tri_up(img, 19, 15, 1, 5, BONE)
+
+def _fig_paladin_dechu(img):
+    _ground_shadow(img)
+    st = C(0.78, 0.74, 0.58); st_d = st.darkened(0.4)
+    # auréole noire brisée
+    for i in range(0, 12):
+        if i % 3 == 0: continue
+        a = i / 12.0 * math.pi * 2.0
+        _px(img, int(16 + 7 * math.cos(a)), int(7 + 4 * math.sin(a)), INK_SOFT)
+    _glow(img, 16.0, 6.7, 4.0, ARCANE, 0.3)
+    _trapezoid_o(img, 16, 13, 28, 5.3, 8.0, st_d)
+    _trapezoid(img, 16, 15, 27, 4.3, 6.4, st)
+    _rect(img, 12, 17, 8, 5, st.lightened(0.12))
+    _line(img, 16, 16, 19, 25, st_d)        # fissure d'armure
+    _disc_o(img, 16, 11, 4.5, st_d, INK); _disc(img, 16, 11, 3.6, st)
+    _rect(img, 12, 11, 8, 1, INK)
+    _glow_eyes(img, 16, 11, ARCANE_L, 3)
+    _rect(img, 5, 12, 1, 13, STEEL_L); _rect(img, 4, 21, 4, 1, GOLD)   # épée brisée
+
+def _fig_sorciere(img):
+    _ground_shadow(img)
+    robe = C(0.45, 0.30, 0.42)
+    # cage d'os
+    for bx in (5, 19):
+        _rect(img, bx, 7, 1, 21, BONE_D)
+    _rect(img, 7, 7, 20, 1, BONE_D); _rect(img, 7, 27, 20, 1, BONE_D)
+    for bx in range(9, 25, 4): _rect(img, bx, 7, 1, 21, C(BONE_D.r, BONE_D.g, BONE_D.b, 0.5))
+    _trapezoid_o(img, 16, 15, 25, 2.7, 5.6, robe.darkened(0.4))
+    _trapezoid(img, 16, 16, 24, 1.9, 4.5, robe)
+    _disc_o(img, 16, 11, 3.7, robe.darkened(0.45), INK)
+    _ellipse(img, 16, 11, 2.4, 2.1, SKIN.darkened(0.15))
+    _px(img, 15, 11, INK); _px(img, 17, 11, INK)
+    _tri_up(img, 16, 8, 3, 5, robe.darkened(0.3))   # chapeau
+    _glow(img, 16.0, 10.7, 1.9, POISON, 0.4)
+
+def _fig_bourreau(img):
+    _ground_shadow(img)
+    cloth = C(0.30, 0.28, 0.32)
+    _trapezoid_o(img, 15, 11, 28, 6.0, 8.7, cloth.darkened(0.4))
+    _trapezoid(img, 15, 12, 27, 4.8, 6.9, cloth)
+    _rect(img, 11, 16, 11, 5, cloth.lightened(0.12))
+    _disc_o(img, 15, 9, 4.8, cloth.darkened(0.45), INK)
+    _disc(img, 15, 9, 3.9, C(0.20, 0.18, 0.22))     # masque intégral
+    _rect(img, 12, 9, 7, 1, INK)
+    _glow_eyes(img, 15, 9, BLOOD, 3)
+    # hache géante
+    _rect(img, 24, 4, 1, 24, C(0.36, 0.25, 0.18))
+    _rect(img, 20, 4, 7, 8, STEEL_D); _rect(img, 21, 5, 5, 5, STEEL)
+    _rect(img, 21, 5, 5, 1, STEEL_L); _px(img, 20, 7, STEEL_L); _px(img, 20, 8, STEEL_L)
+
+def _fig_oeil_neant(img):
+    _glow(img, 16.0, 16.0, 13.3, ARCANE, 0.4)
+    # tentacules
+    for a in range(0, 360, 45):
+        ar = a / 180.0 * math.pi
+        ex = int(12 + 9 * math.cos(ar)); ey = int(12 + 9 * math.sin(ar))
+        _line(img, 16, 16, ex, ey, ARCANE.darkened(0.25))
+        _px(img, ex, ey, ARCANE)
+    _disc_o(img, 16, 16, 8.0, ARCANE.darkened(0.4), INK)
+    _disc(img, 16, 16, 6.7, C(0.85, 0.85, 0.95))    # sclère
+    _disc(img, 16, 16, 3.5, BLOOD.darkened(0.1))    # iris
+    _glow(img, 16.0, 16.0, 2.7, BLOOD, 0.5)
+    _disc(img, 16, 16, 1.6, INK)                    # pupille
+    _px(img, 13, 13, C(1, 1, 1))
+
+def _fig_dieu_bete(img):
+    _ground_shadow(img)
+    body = C(0.62, 0.45, 0.30); body_d = body.darkened(0.4)
+    _glow(img, 16.0, 16.0, 12.0, BLOOD, 0.25)
+    # corps de lion
+    _ellipse(img, 16, 21, 9.3, 6.0, body_d); _ellipse(img, 16, 21, 8.0, 4.8, body)
+    _rect(img, 9, 25, 3, 4, body_d); _rect(img, 20, 25, 3, 4, body_d)
+    # queue de serpent
+    _line(img, 24, 23, 29, 16, POISON.darkened(0.2)); _disc(img, 29, 15, 1.9, POISON)
+    _px(img, 29, 15, BLOOD)
+    # tête de cerf
+    _disc_o(img, 16, 11, 4.8, body_d, INK); _disc(img, 16, 11, 3.9, body)
+    _rect(img, 15, 12, 4, 3, body.lightened(0.1))
+    _glow_eyes(img, 16, 11, EMBER, 3)
+    # ramures en cristal noir
+    for sx in (8, 16):
+        _line(img, sx, 8, sx - 3 if sx < 16 else sx + 3, 1, INK_SOFT)
+        _line(img, sx, 5, sx - 5 if sx < 16 else sx + 5, 4, INK_SOFT)
+        _glow(img, sx - 3 if sx < 16 else sx + 3, 1.3, 2.1, ARCANE, 0.6)
+        _px(img, sx - 3 if sx < 16 else sx + 3, 1, ARCANE_L)
+
+def _fig_ame(img):
+    _glow(img, 16.0, 16.0, 9.3, CYAN, 0.6)
+    _disc_o(img, 16, 15, 4.0, CYAN.darkened(0.3), INK_SOFT)
+    _disc(img, 16, 15, 2.9, CYAN_L)
+    _trapezoid(img, 16, 17, 25, 2.7, 4.0, CYAN.darkened(0.1))
+    for x in range(11, 23):
+        cut = 25 - (x % 2)
+        for y in range(cut, TILE): _px(img, x, y, C(0, 0, 0, 0))
+    _px(img, 15, 13, INK); _px(img, 17, 13, INK)
+    _fade(img, 0.85)
+
+def _fig_chaudron(img):
+    _ground_shadow(img)
+    iron = C(0.22, 0.22, 0.26)
+    _disc_o(img, 16, 20, 8.7, iron.darkened(0.3), INK)
+    _disc(img, 16, 20, 7.3, iron)
+    _ellipse(img, 12, 17, 2.7, 1.9, iron.lightened(0.2))
+    _ellipse(img, 16, 15, 8.0, 2.4, INK)            # ouverture
+    _ellipse(img, 16, 15, 6.7, 1.7, POISON.darkened(0.2))   # breuvage
+    _glow(img, 16.0, 13.3, 4.0, POISON, 0.5)
+    for bx, by in [(10, 9), (13, 8), (12, 7)]:
+        _disc(img, bx, by, 1.1, POISON.lightened(0.2))
+    _rect(img, 8, 24, 16, 3, iron.darkened(0.4))    # pieds/feu
+    _glow(img, 16.0, 25.3, 4.0, EMBER, 0.5)
+
+CREATURES.update({
+    "roi_liche": _fig_roi_liche, "seigneur_fantome": _fig_seigneur_fantome,
+    "wyrm": _fig_wyrm, "araignee_mere": _fig_araignee_mere,
+    "troll_ancestral": _fig_troll_ancestral, "paladin_dechu": _fig_paladin_dechu,
+    "sorciere": _fig_sorciere, "bourreau": _fig_bourreau,
+    "oeil_neant": _fig_oeil_neant, "dieu_bete": _fig_dieu_bete,
+    "ame": _fig_ame, "chaudron": _fig_chaudron,
+})
+
+if __name__ == "__main__":
+    main()

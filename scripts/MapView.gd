@@ -2,7 +2,7 @@
 ## de guerre et caméra (culling au viewport). Repli ASCII si une texture manque.
 extends Node2D
 
-const CELL := 24          # taille native des tuiles (assets 24x24)
+const CELL := 32          # taille native des tuiles (assets 32x32)
 const COLOR_FLOOR := Color(0.12, 0.13, 0.10)
 const COLOR_GLYPH := Color(0.30, 0.34, 0.28)
 const COLOR_STAIRS := Color(1.0, 0.85, 0.3)
