@@ -88,7 +88,10 @@ func _load_textures() -> void:
 		# Boss (Pass 2) + gardiens liés
 		"roi_liche", "seigneur_fantome", "wyrm", "araignee_mere", "troll_ancestral",
 		"paladin_dechu", "sorciere", "bourreau", "oeil_neant", "dieu_bete",
-		"ame", "chaudron"]
+		"ame", "chaudron",
+		# Décor du monde ouvert : props globaux + variantes d'obstacles
+		"campfire", "crate", "barrel", "signpost", "lantern_post",
+		"fallen_log", "ruins_pillar"]
 	for b in Data.BIOMES:
 		for role in ["ground", "tree", "rock", "water", "decor"]:
 			names.append(Data.biome_sprite(b["id"], role))
@@ -334,7 +337,10 @@ func _draw_terrain(bid: String, x: int, y: int) -> void:
 				_draw_glyph(x, y, "♣", dungeon.biome.get("leaf", Color(0.3, 0.6, 0.3)))
 		Dungeon.ROCK:
 			_draw_ground(bid, x, y)
-			if not _blit(Data.biome_sprite(bid, "rock"), x, y):
+			var ov: String = dungeon.obstacle[y][x]
+			if ov != "" and _blit(ov, x, y):
+				pass
+			elif not _blit(Data.biome_sprite(bid, "rock"), x, y):
 				draw_rect(_cell_rect(x, y).grow(-4), dungeon.biome.get("rock", Color(0.5, 0.5, 0.55)), true)
 		_:
 			_draw_ground(bid, x, y)

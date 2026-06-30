@@ -106,6 +106,15 @@ func _init() -> void:
 		_save(_gen_decor(b["decor"], b["decor_style"]), "%s_decor" % id)
 	_save(_gen_road(), "road")
 
+	# --- Décor du monde ouvert (props globaux) ---
+	_save(_gen_campfire(), "campfire")
+	_save(_gen_crate(), "crate")
+	_save(_gen_barrel(), "barrel")
+	_save(_gen_signpost(), "signpost")
+	_save(_gen_lantern_post(), "lantern_post")
+	_save(_gen_fallen_log(), "fallen_log")
+	_save(_gen_ruins_pillar(), "ruins_pillar")
+
 	print("=== ASSETS GENERATED ===")
 	quit()
 
@@ -1615,4 +1624,174 @@ func _gen_road() -> Image:
 		var y := rng.randi_range(2, TILE - 3)
 		_ellipse(img, x, y, 1.9, 1.5, Color(0.40, 0.36, 0.33))
 		_px(img, x - 1, y - 1, Color(0.50, 0.46, 0.42))
+	return img
+
+# --- Décor du monde ouvert (props globaux, indépendants du biome) -------------
+const PROP_WOOD := Color(0.45, 0.32, 0.20)
+
+# Triangle plein pointant vers la droite, sommet en (apex_x, apex_y).
+func _tri_right(img: Image, apex_x: int, apex_y: int, length: int, half_h: int, c: Color) -> void:
+	for i in range(length):
+		var h := int(round(half_h * (1.0 - float(i) / float(length))))
+		var xx := apex_x - i
+		for yy in range(apex_y - h, apex_y + h + 1):
+			_px(img, xx, yy, c)
+
+func _gen_campfire() -> Image:
+	var img := _new(false)
+	var wood := Color(0.32, 0.20, 0.12)
+	var wood_d := wood.darkened(0.4)
+	var wood_l := wood.lightened(0.2)
+	var ash := Color(0.22, 0.20, 0.20)
+
+	_ellipse(img, 16, 27, 8.5, 2.4, Color(INK.r, INK.g, INK.b, 0.32))
+	_disc(img, 16, 25, 7.0, ash)
+	_disc(img, 16, 25, 5.8, ash.darkened(0.15))
+
+	_trapezoid(img, 16, 22, 26, 1.0, 6.5, wood_d); _trapezoid(img, 16, 22, 25, 0.6, 5.8, wood)
+	_line(img, 9, 27, 23, 21, wood_d); _line(img, 9, 26, 23, 20, wood)
+	_line(img, 23, 27, 9, 21, wood_d); _line(img, 23, 26, 9, 20, wood)
+	_px(img, 9, 27, wood_l); _px(img, 23, 27, wood_l)
+
+	_glow(img, 16.0, 21.3, 6.0, EMBER, 0.6)
+	_ellipse(img, 16, 22, 3.5, 2.2, EMBER.darkened(0.15))
+	_tri_up(img, 16, 21, 3, 7, EMBER.darkened(0.1)); _tri_up(img, 16, 20, 2, 5, EMBER)
+	_tri_up(img, 16, 18, 1, 4, GOLD_L)
+	_px(img, 13, 22, EMBER_L); _px(img, 19, 21, EMBER_L)
+	return img
+
+func _gen_crate() -> Image:
+	var img := _new(false)
+	var wood := PROP_WOOD
+	var wood_d := wood.darkened(0.4)
+	var wood_l := wood.lightened(0.18)
+	var iron := STEEL_D
+
+	_ellipse(img, 16, 28, 8.0, 2.0, Color(INK.r, INK.g, INK.b, 0.30))
+	_rect(img, 7, 11, 18, 17, INK)
+	_rect(img, 8, 12, 16, 15, wood_d)
+	_rect(img, 8, 12, 16, 5, wood)
+	_rect(img, 8, 12, 16, 1, wood_l)
+
+	for sx in [12, 16, 20]:
+		_rect(img, sx, 13, 1, 13, wood_d)
+	_line(img, 9, 13, 22, 25, iron); _line(img, 22, 13, 9, 25, iron)
+	_rect(img, 7, 11, 18, 1, iron); _rect(img, 7, 26, 18, 1, iron)
+	for cx in [8, 22]:
+		_px(img, cx, 11, STEEL_L); _px(img, cx, 26, STEEL_L)
+	return img
+
+func _gen_barrel() -> Image:
+	var img := _new(false)
+	var wood := PROP_WOOD
+	var wood_d := wood.darkened(0.42)
+	var wood_l := wood.lightened(0.20)
+	var iron := STEEL_D
+
+	_ellipse(img, 16, 28, 7.5, 2.0, Color(INK.r, INK.g, INK.b, 0.30))
+	_trapezoid_o(img, 16, 8, 26, 5.5, 7.0, wood_d)
+	_trapezoid(img, 16, 9, 25, 4.7, 6.2, wood)
+	_rect(img, 16, 9, 1, 16, wood_l)
+
+	for sx in [11, 14, 19, 22]:
+		_line(img, sx, 9, sx, 25, wood_d)
+
+	for hy in [12, 18, 23]:
+		_ellipse(img, 16, hy, 6.3, 1.3, iron)
+		_px(img, 11, hy, STEEL_L)
+	_ellipse(img, 16, 9, 4.7, 1.3, wood_l)
+	return img
+
+func _gen_signpost() -> Image:
+	var img := _new(false)
+	var wood := PROP_WOOD
+	var wood_d := wood.darkened(0.42)
+	var wood_l := wood.lightened(0.20)
+
+	_ellipse(img, 16, 29, 4.0, 1.4, Color(INK.r, INK.g, INK.b, 0.30))
+	_rect(img, 15, 13, 3, 17, wood_d); _rect(img, 15, 13, 2, 17, wood)
+	_rect(img, 15, 13, 1, 13, wood_l)
+
+	_rect(img, 7, 8, 19, 8, INK)
+	_rect(img, 8, 9, 17, 6, wood_d)
+	_rect(img, 8, 9, 17, 3, wood)
+	_rect(img, 8, 9, 17, 1, wood_l)
+	_rect(img, 11, 11, 8, 2, wood_d.darkened(0.25))
+	_tri_right(img, 22, 12, 4, 3, wood_d.darkened(0.25))
+	_px(img, 9, 10, INK); _px(img, 23, 10, INK)
+	_px(img, 15, 13, INK)
+	return img
+
+func _gen_lantern_post() -> Image:
+	var img := _new(false)
+	var iron := STEEL_D
+	var iron_l := STEEL_L
+	var glass := Color(1.0, 0.78, 0.35, 0.55)
+
+	_ellipse(img, 16, 29, 3.5, 1.3, Color(INK.r, INK.g, INK.b, 0.30))
+	_rect(img, 15, 13, 2, 16, iron); _px(img, 15, 13, iron_l)
+	_ellipse(img, 16, 13, 3.5, 1.3, iron)
+
+	_glow(img, 16.0, 8.7, 7.0, EMBER, 0.55)
+	_rect(img, 12, 6, 8, 7, INK)
+	_rect(img, 13, 7, 6, 5, glass)
+	_ellipse(img, 16, 9, 2.3, 2.6, GOLD_L)
+	for lx in [13, 16, 19]:
+		_rect(img, lx, 6, 1, 7, iron)
+	_rect(img, 12, 5, 8, 1, iron); _rect(img, 12, 13, 8, 1, iron)
+	_tri_up(img, 16, 5, 4, 3, iron)
+	_px(img, 16, 2, iron_l)
+	return img
+
+func _gen_fallen_log() -> Image:
+	var img := _new(false)
+	var bark := Color(0.30, 0.20, 0.13)
+	var bark_d := bark.darkened(0.42)
+	var bark_l := bark.lightened(0.20)
+	var wood_core := Color(0.68, 0.50, 0.30)
+	var wood_core_d := wood_core.darkened(0.25)
+	var moss := Color(0.40, 0.62, 0.30)
+
+	_ellipse(img, 16, 27, 12.5, 2.8, Color(INK.r, INK.g, INK.b, 0.34))
+
+	_rect(img, 4, 14, 23, 11, INK)
+	_rect(img, 5, 15, 21, 9, bark_d)
+	_rect(img, 5, 15, 21, 4, bark)
+	_rect(img, 5, 15, 21, 1, bark_l)
+	_disc_o(img, 5, 19, 5.5, bark_d, INK); _disc(img, 5, 19, 4.6, bark)
+
+	for sx in range(8, 26, 3):
+		_rect(img, sx, 15, 1, 9, bark_d)
+
+	_disc_o(img, 26, 19, 5.5, bark_d, INK)
+	_disc(img, 26, 19, 4.6, wood_core_d)
+	_disc(img, 26, 19, 3.4, wood_core)
+	_disc(img, 26, 19, 2.1, wood_core_d)
+	_disc(img, 26, 19, 0.9, wood_core.lightened(0.2))
+
+	_rect(img, 10, 15, 3, 2, moss); _rect(img, 18, 16, 2, 2, moss.darkened(0.1))
+	_px(img, 7, 16, bark_l); _px(img, 16, 16, bark_l)
+	return img
+
+func _gen_ruins_pillar() -> Image:
+	var img := _new(false)
+	var stone := Color(0.42, 0.40, 0.46)
+	var stone_d := stone.darkened(0.42)
+	var stone_l := stone.lightened(0.26)
+	var moss := Color(0.40, 0.62, 0.30)
+
+	_ellipse(img, 16, 28, 10.5, 2.6, Color(INK.r, INK.g, INK.b, 0.34))
+
+	_rect(img, 6, 21, 9, 7, stone_d); _rect(img, 7, 22, 7, 5, stone)
+	_rect(img, 7, 22, 7, 1, stone_l)
+	_rect(img, 16, 23, 10, 5, stone_d); _rect(img, 17, 24, 8, 3, stone)
+
+	_trapezoid_o(img, 13, 6, 22, 4.3, 5.3, stone_d, INK)
+	_trapezoid(img, 13, 7, 21, 3.4, 4.4, stone)
+	_rect(img, 13, 7, 1, 13, stone_l)
+	_line(img, 8, 6, 18, 10, INK); _line(img, 8, 7, 18, 11, stone_d)
+	for cx in [10, 13, 16]:
+		_rect(img, cx, 10, 1, 10, stone_d)
+	_rect(img, 8, 21, 2, 2, moss); _rect(img, 19, 24, 2, 2, moss.darkened(0.1))
+	_px(img, 7, 22, stone_l)
 	return img

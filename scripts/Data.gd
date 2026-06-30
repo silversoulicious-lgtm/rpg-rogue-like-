@@ -186,6 +186,40 @@ static func biome_for_floor(floor: int) -> Dictionary:
 static func biome_sprite(biome_id: String, role: String) -> String:
 	return "%s_%s" % [biome_id, role]
 
+# --- Décor du monde ouvert (props globaux, indépendants du biome) -------------
+# Petits éléments d'ambiance posés sur le sol praticable, en plus du décor
+# propre à chaque biome (fleurs/champignons/etc). Rares : c'est de la garniture,
+# pas le décor principal.
+const WORLD_PROPS := [
+	{ "id": "campfire", "weight": 0.16 },
+	{ "id": "crate", "weight": 0.20 },
+	{ "id": "barrel", "weight": 0.18 },
+	{ "id": "signpost", "weight": 0.12 },
+	{ "id": "lantern_post", "weight": 0.16 },
+]
+const WORLD_PROPS_DENSITY := 0.010
+
+# Obstacles infranchissables alternatifs aux rochers — apportent de la variété
+# au terrain bloquant. Utilisés avec modération (faible probabilité par case
+# de rocher) pour ne pas noyer le biome sous les props.
+const OBSTACLE_VARIANTS := [
+	{ "id": "fallen_log", "weight": 0.5 },
+	{ "id": "ruins_pillar", "weight": 0.5 },
+]
+const OBSTACLE_VARIANT_CHANCE := 0.07
+
+## Tire un élément pondéré dans une liste de {"id", "weight"} (RNG fourni).
+static func weighted_pick(pool: Array, rng: RandomNumberGenerator) -> String:
+	var total := 0.0
+	for p in pool:
+		total += float(p["weight"])
+	var r: float = rng.randf() * total
+	for p in pool:
+		r -= float(p["weight"])
+		if r <= 0.0:
+			return p["id"]
+	return pool[-1]["id"]
+
 # --- ENNEMIS ------------------------------------------------------------------
 const ENEMIES := [
 	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },

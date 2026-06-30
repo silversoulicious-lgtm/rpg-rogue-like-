@@ -17,6 +17,7 @@ var width: int
 var height: int
 var tiles: Array = []           # tiles[y][x] -> type de tuile
 var decor: Array = []           # decor[y][x] -> nom de sprite décoratif ("" si aucun)
+var obstacle: Array = []        # obstacle[y][x] -> variante de sprite pour une case ROCK ("" = rocher du biome)
 var explored: Array = []        # explored[y][x] -> déjà vue (mémoire, dessinée en sombre)
 var visible: Array = []         # visible[y][x] -> dans le champ de vision actuel
 var biome: Dictionary = {}      # biome courant (Data.BIOMES[i])
@@ -38,6 +39,7 @@ func _init(w: int, h: int, rng: RandomNumberGenerator, biome_def: Dictionary = {
 func _generate(rng: RandomNumberGenerator) -> void:
 	_fill(FLOOR)
 	decor = _make_grid("")
+	obstacle = _make_grid("")
 	explored = _make_grid(false)
 	visible = _make_grid(false)
 
@@ -52,10 +54,16 @@ func _generate(rng: RandomNumberGenerator) -> void:
 	var area: int = width * height
 	# Étendues d'eau (mares / rivières) en amas
 	_scatter_clusters(WATER, int(area * float(biome.get("water_density", 0.04)) / 6.0), 4, 14, rng)
+	# Un grand lac, occasionnel — plus probable/visible dans les biomes humides.
+	var water_density: float = float(biome.get("water_density", 0.04))
+	if rng.randf() < clampf(water_density * 4.0, 0.2, 0.9):
+		_scatter_clusters(WATER, 1, 30, 70, rng)
 	# Bosquets d'arbres
 	_scatter_clusters(TREE, int(area * float(biome.get("tree_density", 0.06)) / 4.0), 2, 9, rng)
 	# Rochers (petits amas + isolés)
 	_scatter_clusters(ROCK, int(area * float(biome.get("rock_density", 0.04)) / 3.0), 1, 5, rng)
+	# Variantes d'obstacles (tronc abattu / colonne en ruine), avec modération.
+	_scatter_obstacle_variants(rng)
 
 	# Point d'entrée et escalier (coins opposés, sur du sol)
 	start = _clear_spot(Vector2i(rng.randi_range(2, 5), rng.randi_range(2, 5)))
@@ -146,8 +154,23 @@ func _scatter_decor(rng: RandomNumberGenerator) -> void:
 	var density: float = float(biome.get("decor_density", 0.08))
 	for y in height:
 		for x in width:
-			if tiles[y][x] == FLOOR and rng.randf() < density:
+			if tiles[y][x] != FLOOR:
+				continue
+			# Props du monde (feu de camp, caisses...) : rares, indépendants du biome,
+			# prioritaires sur le décor du biome pour ne pas empiler les deux.
+			if rng.randf() < Data.WORLD_PROPS_DENSITY:
+				decor[y][x] = Data.weighted_pick(Data.WORLD_PROPS, rng)
+			elif rng.randf() < density:
 				decor[y][x] = name
+
+## Variante de sprite pour certaines cases ROCK (tronc abattu, colonne en ruine)
+## à la place du rocher du biome — apporte de la variété au terrain bloquant,
+## utilisé avec modération (faible probabilité par case).
+func _scatter_obstacle_variants(rng: RandomNumberGenerator) -> void:
+	for y in height:
+		for x in width:
+			if tiles[y][x] == ROCK and rng.randf() < Data.OBSTACLE_VARIANT_CHANCE:
+				obstacle[y][x] = Data.weighted_pick(Data.OBSTACLE_VARIANTS, rng)
 
 # --- Connexité (BFS) ----------------------------------------------------------
 func _reachable(a: Vector2i, b: Vector2i) -> bool:
