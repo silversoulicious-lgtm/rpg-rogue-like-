@@ -113,6 +113,37 @@ logique/affichage/données : `Main.gd` (logique), `Hud.gd` (affichage),
   fidèle** (mêmes primitives/logique que `_assets_gen.gd`) ; les deux doivent
   rester cohérents. `_assets_gen.gd` reste la source canonique côté Godot.
 
+### Bestiaire élargi — 20 monstres + 10 boss (data-driven)
+- **Socle réutilisable** (pas de classe par monstre — idiomatique au projet) :
+  `Entity.ai` (sac de traits) + répartiteur `Main._enemy_act` sur `ai.behavior`
+  (melee, charger, ranged, caster [invocation/cri/sacrifice], fleer, teleporter,
+  ambush, stationary). Briques : `_enemy_step_toward/away`, `_enemy_atk` (meute),
+  `_enemy_summon`, `_free_adjacent`, `_random_walkable_near`.
+- **Statuts** ajoutés : `bleed`, `disease` (DoT, dans `Entity.tick_statuses`),
+  `weaken` (défense réduite via `_player_def`), `confusion` (déplacement aléatoire
+  dans `try_move`). Helpers `apply_bleed/disease/weaken/confuse`. Affichage HUD.
+- **Combat** : résistances `ai.resist_phys/resist_magic` (négatif = vulnérabilité,
+  golem ↔ sorts via contexte `_attack_dmg_type`), `immune_fire`/`weak_fire`,
+  coups multiples (`atk_count`), vol de vie, statut au contact (`on_hit`),
+  explosion à la mort (`explode`), régén suspendue par la brûlure, pièges au sol
+  (`hazards`, `_drop_trap`/`_trigger_hazard_at`, rendus par MapView).
+- **20 monstres** dans `Data.ENEMIES` (champ `ai`) + **10 boss** dans
+  `Data.BOSSES` (sélection cyclique par strate via `_pick_boss_def`). Mécaniques
+  boss : gardiens liés protecteurs (`guardians` → `_boss_on_spawn`/
+  `_living_guardians` : âmes-boucliers du Seigneur Fantôme, chaudrons de la
+  Sorcière), ponte au coup reçu (`spawn_on_hit`, Araignée Mère), phases selon PV
+  (`_boss_update_phase`, Dieu-Bête), charge (Bourreau), souffle élémentaire
+  (Drake/Wyrm), invocation continue (Roi Liche), régén/faible au feu (Troll
+  Ancestral), copie du joueur (Paladin Déchu), regard à distance (Œil du Néant).
+- **Sprites** : 21 (monstres + coffre/mimic) + 12 (boss + âme/chaudron) PNG 24×24
+  générés (moteur Python + `_assets_gen.gd` synchronisé) avec `.import`.
+- **Animations idle/attack/death** : couche de feedback `MapView` découplée
+  (bob d'idle, bond d'attaque, flash de dégât, fondu de mort) — appelée par
+  `Main` (`fx_attack/fx_hit/fx_death`), pilotée par `_process`, sans incidence
+  logique.
+- **Smoketest** étendu : spawn + 14–16 tours pour chacun des 20 monstres et des
+  10 boss (gardiens, ponte, phases), + vérif statuts/immunité/pièges.
+
 ### Outillage / validation
 - Godot 4.3 headless utilisé pour valider réellement les changements
   (rendu de sprites en image, exécution de `_smoketest.gd` via

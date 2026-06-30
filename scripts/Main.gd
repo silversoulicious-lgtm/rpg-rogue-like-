@@ -395,9 +395,14 @@ func generate_floor(node_type: String = "combat") -> void:
 	if is_boss:
 		var boss_spots: Array = dungeon.random_floor_tiles(1, rng, occupied)
 		if not boss_spots.is_empty():
-			enemies.append(_make_enemy(Data.BOSS, floor_num, boss_spots[0], true))
+			var bdef: Dictionary = _pick_boss_def()
+			var boss: Entity = _make_enemy(bdef, floor_num, boss_spots[0], true)
+			enemies.append(boss)
 			occupied.append(boss_spots[0])
-		add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ! Vaincs-le pour ouvrir l'escalier.[/color]")
+			_boss_on_spawn(boss, occupied)
+			add_message("[color=#ff6464]⚠ %s t'attend ! Vaincs-le pour ouvrir l'escalier.[/color]" % boss.display_name)
+		else:
+			add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ![/color]")
 	elif is_elite:
 		add_message("[color=#ff9a64]☠ Salle d'élite : ennemis renforcés, meilleur butin.[/color]")
 
@@ -417,6 +422,67 @@ func generate_floor(node_type: String = "combat") -> void:
 ## Probabilité qu'un monstre soit légendaire (porteur de pouvoir), ×4 avec Chasseur.
 func _legendary_chance() -> float:
 	return LEGENDARY_CHANCE * (4.0 if GameState.legendary_boost() else 1.0)
+
+## Boss de la strate courante (sélection cyclique parmi Data.BOSSES).
+func _pick_boss_def() -> Dictionary:
+	if Data.BOSSES.is_empty():
+		return Data.BOSS
+	return Data.BOSSES[map_act % Data.BOSSES.size()]
+
+## À l'apparition d'un boss : crée ses gardiens liés (âmes-boucliers, chaudrons)
+## qui le protègent tant qu'ils vivent (cf. _living_guardians + _player_attack).
+func _boss_on_spawn(boss: Entity, occupied: Array) -> void:
+	var g: Dictionary = boss.ai.get("guardians", {})
+	if g.is_empty():
+		return
+	var count: int = int(g.get("count", 3))
+	var spr: String = String(g.get("sprite", "ame"))
+	for sp in dungeon.random_floor_tiles(count, rng, occupied):
+		var gd := Entity.new()
+		gd.display_name = "Chaudron" if spr == "chaudron" else "Âme-bouclier"
+		gd.glyph = "*"
+		gd.sprite = spr
+		gd.color = boss.color
+		gd.faction = Entity.Faction.ENEMY
+		gd.max_hp = maxi(8, int(boss.max_hp * 0.18))
+		gd.hp = gd.max_hp
+		gd.atk = 0
+		gd.defense = 0
+		gd.speed = 1
+		gd.shard_value = 2
+		gd.x = sp.x
+		gd.y = sp.y
+		gd.ai = { "behavior": "stationary", "guard_for": boss.get_instance_id() }
+		enemies.append(gd)
+		occupied.append(sp)
+	add_message("[color=#c8b0ff]%s est protégé par %d gardien(s) — détruis-les pour le rendre vulnérable ![/color]" % [boss.display_name, count])
+
+## Nombre de gardiens encore en vie liés à ce boss.
+func _living_guardians(boss: Entity) -> int:
+	var n: int = 0
+	var bid: int = boss.get_instance_id()
+	for e in enemies:
+		if e.is_alive() and int(e.ai.get("guard_for", 0)) == bid:
+			n += 1
+	return n
+
+## Dieu-Bête : bascule de phase selon les PV (distance -> mêlée -> zone).
+func _boss_update_phase(e: Entity) -> void:
+	var ratio: float = float(e.hp) / float(maxi(1, e.max_hp))
+	var phase: int = 1 if ratio > 0.66 else (2 if ratio > 0.33 else 3)
+	if int(e.ai.get("phase", 0)) == phase:
+		return
+	e.ai["phase"] = phase
+	match phase:
+		1:
+			e.ai["behavior"] = "ranged"
+		2:
+			e.ai["behavior"] = "charger"
+			e.atk = int(round(e.atk * 1.2))
+			add_message("[color=#ff6a40]%s — Phase II : l'arène se resserre, assaut furieux ![/color]" % e.display_name)
+		3:
+			e.ai["behavior"] = "caster"
+			add_message("[color=#c8b0ff]%s — Phase III : invocations désespérées ![/color]" % e.display_name)
 
 func _pick_enemy_def() -> Dictionary:
 	var pool: Array = []
@@ -884,6 +950,11 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		var resist: float = float(target.ai.get("resist_magic", 0.0)) if _attack_dmg_type == "magic" else float(target.ai.get("resist_phys", 0.0))
 		if resist != 0.0:
 			raw *= clampf(1.0 - resist, 0.05, 2.5)
+	# Boss protégé par ses gardiens (âmes-boucliers / chaudrons) tant qu'ils vivent.
+	if target.is_boss and target.ai.has("guardians") and _living_guardians(target) > 0:
+		raw *= clampf(1.0 - float(target.ai["guardians"].get("resist", 0.85)), 0.02, 1.0)
+		if rng.randf() < 0.34:
+			add_message("[color=#9fb8ff]%s est protégé — détruis ses gardiens ![/color]" % target.display_name)
 	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
 		raw *= 1.0 + player.proc_value("frenesie")
@@ -901,6 +972,17 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		map_view.fx_hit(target)
 	var dealt: int = target.take_damage(max(1, int(round(raw)) - def))
 	run_best_hit = max(run_best_hit, dealt)
+	# Araignée Mère : pond une créature à chaque coup reçu (jusqu'à un quota).
+	if target.is_boss and target.ai.has("spawn_on_hit") and target.is_alive() and target.spawned_count < int(target.ai.get("soh_max", 6)):
+		var ssp: Vector2i = _free_adjacent(target.pos())
+		if ssp != NO_TILE:
+			var smdef: Dictionary = _enemy_def_by_sprite(String(target.ai["spawn_on_hit"]))
+			if not smdef.is_empty():
+				var sm: Entity = _make_enemy(smdef, floor_num, ssp)
+				sm.energy = 0
+				enemies.append(sm)
+				target.spawned_count += 1
+				add_message("[color=#9fdf6a]%s pond une créature ![/color]" % target.display_name)
 	var flair := ""
 	if force_crit:
 		flair = "  [color=#ffd24a]COUP MORTEL![/color]"
@@ -1339,6 +1421,9 @@ func _begin_turn(e: Entity) -> bool:
 func _enemy_act(e: Entity) -> void:
 	if e.ai_cd > 0:
 		e.ai_cd -= 1
+	# Boss à phases (Dieu-Bête) : ajuste le comportement selon les PV.
+	if e.is_boss and e.ai.get("phases", false):
+		_boss_update_phase(e)
 	# Rage : Gardien (boss) ET berserkers (ai.berserk), sous un seuil de PV.
 	var rage_at: float = 0.8 if has_oath("glas") else 0.5
 	if (e.is_boss or e.ai.get("berserk", false)) and not e.enraged and e.hp <= e.max_hp * float(e.ai.get("berserk_at", rage_at)):
@@ -1368,6 +1453,7 @@ func _enemy_act(e: Entity) -> void:
 		"fleer": _enemy_act_fleer(e)
 		"teleporter": _enemy_act_teleporter(e)
 		"ambush": _enemy_act_ambush(e)
+		"stationary": pass            # gardiens liés : inertes, à détruire
 		_: _enemy_act_melee(e)
 
 # --- Briques de déplacement réutilisables -------------------------------------

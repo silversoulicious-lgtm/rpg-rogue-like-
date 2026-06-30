@@ -84,7 +84,11 @@ func _load_textures() -> void:
 		"araignee", "sanglier", "chauvesouris", "serpent", "ours",
 		"zombie", "dullahan", "liche", "banshee", "revenant",
 		"brigand", "gnoll", "troll", "kobold", "cultiste",
-		"elementaire_feu", "golem", "fee", "drake", "mimic", "coffre"]
+		"elementaire_feu", "golem", "fee", "drake", "mimic", "coffre",
+		# Boss (Pass 2) + gardiens liés
+		"roi_liche", "seigneur_fantome", "wyrm", "araignee_mere", "troll_ancestral",
+		"paladin_dechu", "sorciere", "bourreau", "oeil_neant", "dieu_bete",
+		"ame", "chaudron"]
 	for b in Data.BIOMES:
 		for role in ["ground", "tree", "rock", "water", "decor"]:
 			names.append(Data.biome_sprite(b["id"], role))

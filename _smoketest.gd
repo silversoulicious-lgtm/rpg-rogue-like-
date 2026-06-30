@@ -591,6 +591,40 @@ func _ready() -> void:
 	assert(main.hazards.size() == 1, "piège posé au sol")
 	print("OK résistances/immunité/pièges")
 
+	# --- Boss Pass 2 : spawn (+ gardiens) + exécution des mécaniques --------------
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	for bi in Data.BOSSES.size():
+		var bdef: Dictionary = Data.BOSSES[bi]
+		main.enemies.clear()
+		main.hazards.clear()
+		main.player.max_hp = 99999
+		main.player.hp = 99999
+		main.player.atk = 80
+		var bspot: Vector2i = _find_spot(main, main.player.pos())
+		var boss = main._make_enemy(bdef, 10, bspot, true)
+		for ad in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var ap: Vector2i = main.player.pos() + ad
+			if main.dungeon.is_walkable(ap.x, ap.y) and main.enemy_at(ap.x, ap.y) == null:
+				boss.x = ap.x
+				boss.y = ap.y
+				break
+		main.enemies.append(boss)
+		main._boss_on_spawn(boss, [boss.pos(), main.player.pos()])
+		assert(boss.is_boss, "%s est un boss" % bdef["name"])
+		if boss.ai.has("guardians"):
+			assert(main._living_guardians(boss) > 0, "%s protégé par des gardiens" % bdef["name"])
+		for _t in 16:
+			if main.state != main.State.PLAYING:
+				break
+			main.try_move(signi(boss.x - main.player.x), signi(boss.y - main.player.y))
+			if main.state != main.State.PLAYING:
+				break
+			main.pass_turn()
+		main.state = main.State.PLAYING
+	assert(Data.BOSSES.size() == 10, "10 boss définis (vu %d)" % Data.BOSSES.size())
+	print("OK boss Pass 2: %d boss (gardiens, ponte, phases, charge, souffle) sans crash" % Data.BOSSES.size())
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 
