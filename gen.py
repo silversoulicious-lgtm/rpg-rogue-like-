@@ -197,6 +197,27 @@ def _diamond(img, cx, cy, r, c):
 def _ground_shadow(img):
     _ellipse(img, 16, 28, 8.7, 2.4, C(INK.r, INK.g, INK.b, 0.34))
 
+def _tri_band(img, cx, base_y, half_w, height, c_light, c_mid, c_dark):
+    """Triangle filled with a left(lit)->right(shadow) 3-band gradient."""
+    for i in range(height):
+        w = int(round(half_w * (1.0 - i / float(height))))
+        yy = base_y - i
+        span = max(1, 2 * w)
+        for xx in range(cx - w, cx + w + 1):
+            t = (xx - (cx - w)) / float(span)
+            c = c_light if t < 0.35 else (c_mid if t < 0.7 else c_dark)
+            _px(img, xx, yy, c)
+
+def _disc_band(img, cx, cy, r, c_light, c_mid, c_dark):
+    """Disc filled with a left(lit)->right(shadow) 3-band gradient."""
+    for yy in range(int(cy - r), int(cy + r) + 1):
+        for xx in range(int(cx - r), int(cx + r) + 1):
+            dx = (xx - cx) / r; dy = (yy - cy) / r
+            if dx * dx + dy * dy <= 1.0:
+                t = (xx - (cx - r)) / (2.0 * r)
+                c = c_light if t < 0.35 else (c_mid if t < 0.7 else c_dark)
+                _px(img, xx, yy, c)
+
 def _fade(img, a):
     for y in range(TILE):
         for x in range(TILE):
@@ -432,28 +453,76 @@ def _fig_gobelin(img):
 
 def _fig_wolf(img):
     _ground_shadow(img)
-    fur = C(0.40, 0.42, 0.50); fur_d = fur.darkened(0.42); fur_l = fur.lightened(0.20)
-    _ellipse(img, 19, 20, 10.0, 5.9, fur_d); _ellipse(img, 19, 20, 8.7, 4.8, fur)
-    _ellipse(img, 23, 17, 4.5, 4.0, fur); _ellipse(img, 21, 16, 2.7, 1.9, fur_l)
-    _rect(img, 12, 24, 3, 4, fur_d); _rect(img, 21, 24, 3, 4, fur_d)
-    _ellipse(img, 28, 16, 3.5, 1.9, fur_d)
-    _disc_o(img, 8, 17, 4.8, fur_d, INK); _disc(img, 8, 17, 3.9, fur)
-    _tri_up(img, 5, 13, 1, 4, fur_d); _tri_up(img, 11, 13, 1, 4, fur_d)
-    _rect(img, 1, 17, 5, 3, fur_l); _px(img, 1, 19, INK)
-    _glow(img, 7.3, 16.7, 2.1, CYAN_L, 0.7)
-    _rect(img, 7, 16, 3, 1, CYAN_L); _px(img, 5, 20, BONE)
+    fur = C(0.40, 0.42, 0.50); fur_d = fur.darkened(0.45); fur_l = fur.lightened(0.26)
+    fur_belly = fur.lightened(0.12)
+
+    # tail (behind body), curved up and back
+    _ellipse(img, 27, 18, 3.0, 1.6, fur_d); _ellipse(img, 29, 15, 1.8, 1.6, fur_d)
+    _px(img, 30, 13, fur_l)
+
+    # back legs (darker, set behind torso) then front legs (lighter, in front)
+    _rect(img, 20, 23, 3, 6, fur_d); _rect(img, 13, 23, 3, 6, fur_d)
+    _rect(img, 20, 27, 3, 1, INK_SOFT); _rect(img, 13, 27, 3, 1, INK_SOFT)
+    _rect(img, 11, 22, 3, 7, fur); _rect(img, 18, 22, 3, 7, fur)
+    _rect(img, 11, 27, 3, 1, INK_SOFT); _rect(img, 18, 27, 3, 1, INK_SOFT)
+
+    # torso: distinct neck taper so head doesn't merge into the body blob
+    _ellipse(img, 18, 19, 9.0, 5.4, fur_d)
+    _ellipse(img, 18, 19, 7.8, 4.4, fur)
+    _ellipse(img, 18, 22, 6.5, 2.4, fur_belly)
+    _ellipse(img, 21, 15, 2.6, 2.2, fur_l)
+
+    # head, separated from torso by a darker neck wedge + its own outline
+    _ellipse(img, 11, 17, 2.6, 2.0, fur_d)
+    _disc_o(img, 7, 15, 4.4, fur_d, INK)
+    _disc(img, 7, 15, 3.5, fur)
+    _ellipse(img, 6, 14, 1.4, 1.1, fur_l)
+    # snout, protruding so the silhouette reads as a head not a circle
+    _trapezoid(img, 4, 15, 18, 1.8, 1.0, fur_d); _trapezoid(img, 4, 15, 17, 1.4, 0.8, fur)
+    _px(img, 1, 17, INK)
+    # ears
+    _tri_up(img, 4, 12, 1, 4, fur_d); _tri_up(img, 9, 12, 1, 4, fur_d)
+    _px(img, 4, 9, fur_l); _px(img, 9, 9, fur_l)
+
+    _glow(img, 6.3, 14.7, 1.8, CYAN_L, 0.7)
+    _px(img, 6, 14, CYAN_L)
 
 def _fig_skeleton(img):
     _ground_shadow(img)
-    _trapezoid_o(img, 16, 16, 27, 2.7, 5.3, BONE_D); _trapezoid(img, 16, 17, 25, 1.9, 4.0, BONE)
-    for ry in [14, 16, 18]: _rect(img, 13, ry, 7, 1, INK_SOFT)
-    _rect(img, 16, 17, 1, 9, BONE_D)
-    _disc_o(img, 16, 11, 5.3, BONE_D, INK); _disc(img, 16, 9, 4.4, BONE)
-    _ellipse(img, 13, 8, 1.7, 1.5, C(1,1,0.95))
-    _rect(img, 12, 9, 3, 3, INK); _rect(img, 17, 9, 3, 3, INK)
-    _glow(img, 12.7, 10.0, 2.1, CYAN, 0.7); _glow(img, 19.3, 10.0, 2.1, CYAN, 0.7)
-    _px(img, 12, 9, CYAN); _px(img, 19, 9, CYAN)
-    for tx in range(10, 15, 2): _px(img, tx, 13, INK)
+    bn = BONE; bn_d = BONE_D; bn_l = BONE.lightened(0.12)
+
+    # legs as individual bone shafts with a visible knee joint, not a filled wedge
+    for lx in (13, 18):
+        _rect(img, lx, 21, 2, 4, bn_d); _disc(img, lx + 1, 25, 1.3, bn)
+        _rect(img, lx, 26, 2, 3, bn_d)
+        _rect(img, lx - 1, 28, 4, 1, INK_SOFT)
+
+    # pelvis block
+    _trapezoid_o(img, 16, 18, 22, 3.3, 4.3, bn_d)
+    _trapezoid(img, 16, 19, 21, 2.4, 3.3, bn)
+
+    # ribcage: curved bars that narrow towards the bottom, with a sternum line
+    for i, ry in enumerate(range(10, 19, 2)):
+        hw = 5 - i // 2
+        _rect(img, 16 - hw, ry, hw * 2 + 1, 1, bn_d)
+        _rect(img, 16 - hw + 1, ry, hw * 2 - 1, 1, bn)
+    _rect(img, 16, 10, 1, 9, bn_d)
+
+    # arms hanging at the sides, with elbow joints
+    for ax in (10, 22):
+        _rect(img, ax, 12, 1, 5, bn_d); _disc(img, ax, 17, 1.0, bn)
+        _rect(img, ax, 18, 1, 4, bn_d)
+        _px(img, ax, 22, INK_SOFT)
+
+    # skull with jaw line + teeth + deep eye sockets
+    _disc_o(img, 16, 7, 5.0, bn_d, INK)
+    _disc(img, 16, 6, 4.2, bn)
+    _rect(img, 12, 9, 8, 2, bn_d)
+    for tx in range(12, 20, 2): _px(img, tx, 9, bn_l)
+    _rect(img, 12, 5, 3, 3, INK); _rect(img, 17, 5, 3, 3, INK)
+    _glow(img, 13.5, 6.5, 2.0, CYAN, 0.7); _glow(img, 18.5, 6.5, 2.0, CYAN, 0.7)
+    _px(img, 13, 6, CYAN_L); _px(img, 18, 6, CYAN_L)
+    _px(img, 16, 4, bn_d)
 
 def _fig_orc(img):
     _ground_shadow(img)
@@ -684,24 +753,29 @@ def _gen_tree(trunk, leaf, style):
         # Side branch stubs
         _rect(img, 10, 20, 5, 1, tk_d); _rect(img, 11, 20, 3, 1, tk)
         _rect(img, 20, 23, 4, 1, tk_d); _rect(img, 20, 23, 3, 1, tk)
-        # Canopy
+        # Canopy - left(lit)->right(shadow) gradient instead of a flat fill
         _disc_o(img, 16, 13, 11.0, lf_d, INK_SOFT)
-        _disc(img, 16, 13, 9.5, lf)
+        _disc_band(img, 16, 13, 9.5, lf_l, lf, lf_d)
         _disc(img, 11, 9, 4.5, lf_l); _disc(img, 11, 9, 2.4, lf_h)
         _disc(img, 21, 11, 3.2, lf_l)
         _px(img, 9, 7, lf_h);  _px(img, 10, 6, lf_l)
         _px(img, 19, 5, lf_l); _px(img, 23, 9, lf_h)
         _ellipse(img, 16, 20, 7.0, 2.2, lf_d)
     elif style == "pine":
+        cone = C(0.32, 0.20, 0.12)
+        # trunk w/ bark striations
         _rect(img, 14, 25, 4, 6, tk_d); _rect(img, 15, 25, 2, 6, tk)
-        _px(img, 15, 27, tk_l)
-        _tri_up(img, 16, 28, 10, 10, lf_d); _tri_up(img, 16, 28, 9, 8, lf)
-        _tri_up(img, 16, 21, 8, 8, lf_d);   _tri_up(img, 16, 21, 7, 7, lf)
-        _tri_up(img, 16, 15, 6, 7, lf_d);   _tri_up(img, 16, 15, 5, 6, lf)
-        _tri_up(img, 16, 10, 4, 6, lf_d);   _tri_up(img, 16, 10, 3, 5, lf)
-        _tri_up(img, 16, 6,  2, 4, lf)
-        _px(img, 8, 21, lf_h); _px(img, 9, 15, lf_h); _px(img, 10, 10, lf_h)
-        _px(img, 16, 4, lf_h)
+        _px(img, 14, 27, tk_d); _px(img, 17, 29, tk_d); _px(img, 15, 28, tk_l)
+        tiers = [(16, 28, 10, 10), (16, 21, 8, 8), (16, 15, 6, 7), (16, 10, 4, 6), (16, 6, 2, 4)]
+        for cx, base_y, hw, h in tiers:
+            _tri_up(img, cx, base_y, hw + 1, h + 1, INK_SOFT)              # crisp silhouette
+            _tri_band(img, cx, base_y, hw, h, lf_l, lf, lf_d)              # lit->shadow gradient
+            _px(img, cx - hw + 1, base_y - 1, lf_l)
+            _px(img, cx + hw - 1, base_y - 1, lf_d)
+        _ellipse(img, 12, 23, 1.1, 1.6, cone); _ellipse(img, 21, 17, 1.0, 1.4, cone)  # pinecones
+        for cx, cy in [(13, 24), (12, 17), (13, 12), (14, 8)]:
+            _px(img, cx, cy, lf_h)
+        _px(img, 15, 5, lf_h)
     elif style == "cactus":
         _rect(img, 13, 5, 6, 25, lf_d); _rect(img, 14, 5, 5, 25, lf)
         _rect(img, 15, 5, 2, 25, lf_l)
@@ -711,6 +785,9 @@ def _gen_tree(trunk, leaf, style):
         _rect(img, 22, 11, 3, 6, lf_d); _rect(img, 23, 11, 2, 6, lf)
         for yy in range(7, 28, 4):
             _px(img, 14, yy, lf_l); _px(img, 13, yy+2, lf_d)
+        # ridge highlight along each arm tip + a small desert flower for accent
+        _px(img, 8, 9, lf_h); _px(img, 24, 11, lf_h)
+        _disc(img, 9, 8, 1.1, ROSE); _px(img, 9, 8, ROSE_L)
     elif style == "dead":
         _rect(img, 15, 4, 3, 27, tk_d); _rect(img, 15, 4, 2, 27, tk)
         _rect(img, 15, 4, 1, 20, tk_l)
@@ -722,17 +799,45 @@ def _gen_tree(trunk, leaf, style):
         _px(img, 6, 10, tk_d); _px(img, 8, 9, tk_d)
         _px(img, 24, 7, tk_d); _px(img, 22, 8, tk_d)
         _rect(img, 13, 4, 5, 2, tk)
+        # bark knots + a couple of bare twig forks for extra texture
+        _px(img, 16, 16, tk_d); _px(img, 15, 22, tk_d); _px(img, 16, 9, tk_l)
+        _line(img, 9, 14, 7, 12, tk_d); _line(img, 23, 11, 25, 9, tk_d)
     else:
-        _disc_o(img, 16, 16, 8.5, lf_d, INK_SOFT); _disc(img, 16, 16, 7.0, lf)
+        _disc_o(img, 16, 16, 8.5, lf_d, INK_SOFT); _disc_band(img, 16, 16, 7.0, lf_l, lf, lf_d)
         _disc(img, 12, 12, 3.5, lf_l); _px(img, 11, 11, lf_h)
     return img
 
 def _gen_rock(c):
     img = _new(False)
-    _ellipse(img, 16, 20, 11.3, 8.7, INK_SOFT); _ellipse(img, 16, 20, 10.0, 7.3, c)
-    _ellipse(img, 12, 16, 3.7, 2.7, c.lightened(0.32))
-    _rect(img, 17, 15, 1, 11, c.darkened(0.42)); _rect(img, 17, 19, 5, 1, c.darkened(0.42))
-    _rect(img, 8, 24, 15, 1, c.darkened(0.32))
+    c_d = c.darkened(0.42); c_dd = c.darkened(0.58); c_l = c.lightened(0.30); c_ll = c.lightened(0.50)
+    moss = C(0.40, 0.62, 0.30)
+
+    _ellipse(img, 16, 29, 9.5, 2.2, C(INK.r, INK.g, INK.b, 0.30))   # ombre de contact
+
+    # petit bloc compagnon (arrière-gauche), dessiné avant pour que le rocher principal le chevauche
+    _ellipse(img, 9, 21, 4.3, 3.6, INK_SOFT)
+    _ellipse(img, 9, 21, 3.4, 2.8, c_d)
+    _ellipse(img, 8, 19, 1.3, 1.0, c_l)
+
+    # rocher principal
+    _ellipse(img, 17, 19, 11.0, 8.4, INK_SOFT)
+    _ellipse(img, 17, 19, 9.7, 7.2, c)
+    _ellipse(img, 13, 14, 3.8, 2.7, c_l)             # plaque de lumière haut-gauche
+    _ellipse(img, 12, 13, 1.6, 1.1, c_ll)            # cœur spéculaire
+    _ellipse(img, 21, 23, 3.6, 2.6, c_dd)            # ombre bas-droite
+
+    # fissures irrégulières plutôt que des rects droits
+    _line(img, 18, 12, 17, 17, c_dd); _line(img, 17, 17, 19, 22, c_dd)
+    _line(img, 10, 18, 13, 20, c_dd)
+
+    # petits cailloux à la base (blobs 2x2, pas des cercles à 1px qui créent des croix)
+    _rect(img, 23, 24, 2, 2, c_d); _px(img, 23, 24, c_l)
+    _rect(img, 21, 26, 2, 2, c); _px(img, 21, 26, c_l)
+    _rect(img, 4, 24, 2, 2, c_d); _px(img, 4, 24, c_l)
+
+    # touffes de mousse le long du sommet
+    _rect(img, 18, 12, 2, 2, moss); _rect(img, 19, 13, 2, 1, moss.darkened(0.15))
+    _rect(img, 9, 17, 2, 2, moss.darkened(0.1))
     return img
 
 def _gen_water(c):
@@ -845,16 +950,40 @@ def _fig_araignee(img):
 
 def _fig_sanglier(img):
     _ground_shadow(img)
-    fur = C(0.50, 0.40, 0.34); fur_d = fur.darkened(0.4)
-    _ellipse(img, 17, 20, 10.7, 6.7, fur_d); _ellipse(img, 17, 20, 9.3, 5.6, fur)
-    _ellipse(img, 20, 16, 4.0, 2.9, fur.lightened(0.18))   # dos hérissé
-    for sx in (10, 13, 16): _line(img, sx, 15, sx - 1, 9, INK)  # poils
+    fur = C(0.50, 0.40, 0.34); fur_d = fur.darkened(0.42); fur_l = fur.lightened(0.20)
+    hide_head = fur.darkened(0.18)
+
+    # legs (stubby, dark, behind the body silhouette)
     _rect(img, 11, 24, 3, 4, fur_d); _rect(img, 21, 24, 3, 4, fur_d)
-    _disc_o(img, 7, 19, 4.3, fur_d, INK); _disc(img, 7, 19, 3.3, fur)  # tête basse
-    _rect(img, 1, 19, 5, 3, fur.lightened(0.1))            # groin
-    _px(img, 1, 19, INK)
-    _tri_up(img, 4, 23, 1, 4, BONE); _tri_up(img, 8, 23, 1, 4, BONE)  # défenses
-    _glow_eyes(img, 7, 16, EMBER, 1)
+    _rect(img, 11, 27, 3, 1, INK_SOFT); _rect(img, 21, 27, 3, 1, INK_SOFT)
+
+    # body: barrel-shaped, distinct from head via a neck shadow wedge
+    _ellipse(img, 18, 20, 10.0, 6.2, fur_d)
+    _ellipse(img, 18, 20, 8.7, 5.1, fur)
+    _ellipse(img, 18, 23, 6.5, 2.2, fur.darkened(0.12))
+
+    # bristled mane: a row of small spikes along the spine, not just thin lines
+    for sx in range(11, 23, 2):
+        _tri_up(img, sx, 15, 1, 3, fur_d)
+    for sx in range(12, 22, 2):
+        _tri_up(img, sx, 14, 1, 2, fur_l)
+
+    # head, lowered, with its own outline so it reads as a separate mass
+    _ellipse(img, 10, 18, 2.4, 2.0, fur_d)
+    _disc_o(img, 6, 18, 4.6, hide_head.darkened(0.3), INK)
+    _disc(img, 6, 18, 3.7, hide_head)
+    _ellipse(img, 5, 16, 1.3, 1.0, fur_l)
+    # snout block, flatter + wider so it reads as a boar snout
+    _rect(img, 0, 17, 5, 4, hide_head.lightened(0.10))
+    _px(img, 0, 18, INK); _px(img, 0, 19, INK)
+    # tusks curling outward from the snout
+    _tri_up(img, 2, 22, 1, 4, BONE); _tri_up(img, 6, 22, 1, 3, BONE)
+    _px(img, 1, 18, BONE_D)
+    # small ear
+    _tri_up(img, 8, 14, 2, 3, fur_d); _px(img, 8, 12, fur_l)
+
+    _glow(img, 5.3, 16.7, 1.6, EMBER, 0.7)
+    _px(img, 5, 16, EMBER)
 
 def _fig_chauvesouris(img):
     _ground_shadow(img)
@@ -1055,29 +1184,62 @@ def _fig_golem(img):
     _line(img, 12, 17, 15, 23, st_d); _line(img, 19, 16, 17, 24, st_d)  # fissures
 
 def _fig_fee(img):
-    _glow(img, 16.0, 16.0, 9.3, ARCANE, 0.4)
-    # ailes
-    _ellipse(img, 9, 13, 4.0, 5.3, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
-    _ellipse(img, 23, 13, 4.0, 5.3, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
-    _ellipse(img, 9, 13, 2.7, 3.7, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
-    _ellipse(img, 23, 13, 2.7, 3.7, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
-    _trapezoid_o(img, 16, 15, 24, 1.6, 3.2, ARCANE.darkened(0.2))
-    _disc_o(img, 16, 11, 2.9, ROSE_D, INK); _ellipse(img, 16, 11, 2.0, 2.3, SKIN)
+    _glow(img, 16.0, 16.0, 9.3, ARCANE, 0.35)
+    skin = SKIN; dress = ARCANE; dress_d = ARCANE.darkened(0.30)
+
+    # wings: teardrop shape w/ vein lines instead of plain translucent blobs
+    for wx, sign in ((9, -1), (23, 1)):
+        _ellipse(img, wx, 13, 3.0, 4.6, C(ARCANE.r, ARCANE.g, ARCANE.b, 0.40))
+        _ellipse(img, wx, 13, 1.8, 3.1, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.55))
+        _line(img, 16 + sign, 13, wx, 9, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
+        _line(img, 16 + sign, 14, wx, 16, C(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
+
+    # dress: a proper trapezoid silhouette w/ a waist accent, not just an outline
+    _trapezoid_o(img, 16, 15, 24, 1.6, 3.2, dress_d)
+    _trapezoid(img, 16, 16, 23, 1.1, 2.6, dress)
+    _rect(img, 14, 17, 4, 1, ARCANE_L)             # ceinture
+
+    # tête w/ silhouette de cheveux (pas juste un disque nu)
+    _disc_o(img, 16, 11, 2.9, ROSE_D, INK)
+    _ellipse(img, 16, 11, 2.0, 2.3, skin)
+    _tri_up(img, 13, 9, 1, 3, ROSE_D); _tri_up(img, 19, 9, 1, 3, ROSE_D)
     _px(img, 15, 11, INK); _px(img, 17, 11, INK)
     _glow(img, 16.0, 10.7, 2.1, CYAN_L, 0.5)
-    _px(img, 16, 5, GOLD_L); _px(img, 12, 8, CYAN_L); _px(img, 20, 8, CYAN_L)  # étincelles
+
+    # baguette + traînée d'étincelles
+    _line(img, 19, 18, 22, 21, GOLD_D); _px(img, 22, 21, GOLD_L)
+    _px(img, 16, 5, GOLD_L); _px(img, 12, 8, CYAN_L); _px(img, 20, 8, CYAN_L)
 
 def _fig_drake(img):
     _ground_shadow(img)
-    sc = C(0.55, 0.40, 0.40); sc_d = sc.darkened(0.42)
-    # corps serpentiforme
-    _ellipse(img, 16, 21, 9.3, 5.3, sc_d); _ellipse(img, 16, 21, 8.0, 4.3, sc)
-    _ellipse(img, 21, 19, 4.0, 3.2, sc.lightened(0.12))
-    _line(img, 24, 23, 31, 27, sc_d)                      # queue
-    _disc_o(img, 11, 12, 4.5, sc_d, INK); _disc(img, 11, 12, 3.6, sc)   # tête
-    _rect(img, 4, 12, 7, 3, sc.lightened(0.1))             # museau
-    _tri_up(img, 12, 9, 1, 4, sc_d); _tri_up(img, 9, 9, 1, 3, sc_d)  # cornes
+    sc = C(0.55, 0.40, 0.40); sc_d = sc.darkened(0.45); sc_l = sc.lightened(0.20)
+    wing_mem = C(0.55, 0.30, 0.30, 0.75)
+
+    # queue effilée avec pointe en fer de lance
+    _line(img, 24, 23, 30, 27, sc_d); _line(img, 24, 22, 30, 26, sc)
+    _tri_up(img, 30, 29, 2, 3, sc_d)
+
+    # aile repliée (derrière le corps) - membrane entre les "doigts", pas un blob
+    _trapezoid(img, 21, 12, 22, 1.0, 9.0, sc_d.darkened(0.1))
+    for fx in (15, 19, 23, 27):
+        _line(img, 21, 13, fx, 21, wing_mem)
+    _line(img, 21, 12, 27, 14, sc_d)
+
+    # pattes avec petites griffes
+    _rect(img, 13, 24, 3, 4, sc_d); _rect(img, 19, 24, 3, 4, sc_d)
+    _tri_up(img, 13, 28, 1, 2, BONE); _tri_up(img, 21, 28, 1, 2, BONE)
+
+    # corps serpentiforme avec crête dorsale (évite la silhouette "animal endormi")
+    _ellipse(img, 17, 21, 9.3, 5.3, sc_d); _ellipse(img, 17, 21, 8.0, 4.3, sc)
+    _ellipse(img, 21, 19, 4.0, 3.2, sc_l)
+    for rx in (12, 15, 18, 21): _tri_up(img, rx, 17, 1, 2, sc_d)
+
+    # tête avec mâchoire + cornes, museau projeté vers l'avant
+    _disc_o(img, 11, 12, 4.5, sc_d, INK); _disc(img, 11, 12, 3.6, sc)
+    _rect(img, 4, 12, 7, 3, sc_l); _rect(img, 4, 14, 7, 1, sc_d)
+    _tri_up(img, 12, 9, 1, 4, sc_d); _tri_up(img, 9, 9, 1, 3, sc_d)
     _glow_eyes(img, 11, 11, GOLD_L, 1)
+
     # souffle
     _glow(img, 2.7, 13.3, 3.5, EMBER, 0.6)
     _px(img, 3, 13, EMBER_L); _px(img, 1, 12, GOLD_L); _px(img, 1, 15, EMBER)
@@ -1149,21 +1311,31 @@ def _fig_seigneur_fantome(img):
 
 def _fig_wyrm(img):
     _ground_shadow(img)
-    sc = C(0.55, 0.42, 0.40); sc_d = sc.darkened(0.42)
-    # corps enroulé
-    for i in range(20):
-        a = i / 19.0 * math.pi * 2.0
-        x = int(12 + 6.5 * math.cos(a)); y = int(15 + 5.0 * math.sin(a))
-        _disc(img, x, y, 2.9, sc_d)
-    for i in range(20):
-        a = i / 19.0 * math.pi * 2.0
-        x = int(12 + 6.5 * math.cos(a)); y = int(15 + 5.0 * math.sin(a))
-        _disc(img, x, y, 1.9, sc)
-    _disc_o(img, 16, 9, 4.5, sc_d, INK); _disc(img, 16, 9, 3.6, sc)
-    _rect(img, 13, 9, 7, 3, sc.lightened(0.12))
-    _tri_up(img, 13, 7, 1, 4, sc_d); _tri_up(img, 19, 7, 1, 4, sc_d)
-    _glow_eyes(img, 16, 8, GOLD_L, 1)
-    _glow(img, 16.0, 13.3, 2.7, EMBER, 0.5); _px(img, 16, 13, EMBER_L)
+    sc = C(0.55, 0.42, 0.40); sc_d = sc.darkened(0.45); sc_l = sc.lightened(0.18)
+
+    # spirale ouverte (270°, rayon décroissant) plutôt qu'un anneau fermé en "donut"
+    n = 26
+    for i in range(n):
+        t = i / float(n - 1)
+        a = t * math.pi * 1.35 + math.pi * 0.25
+        rad = 7.5 - 4.5 * t
+        seg_r = 2.9 - 1.6 * t
+        x = int(16 + rad * math.cos(a)); y = int(20 + rad * 0.72 * math.sin(a))
+        _disc(img, x, y, seg_r + 0.8, sc_d)
+    for i in range(n):
+        t = i / float(n - 1)
+        a = t * math.pi * 1.35 + math.pi * 0.25
+        rad = 7.5 - 4.5 * t
+        seg_r = 2.9 - 1.6 * t
+        x = int(16 + rad * math.cos(a)); y = int(20 + rad * 0.72 * math.sin(a))
+        _disc(img, x, y, seg_r, sc if i % 2 == 0 else sc_l.lerp(sc, 0.5))
+
+    # tête à l'extrémité large de la spirale, avec cornes
+    _disc_o(img, 22, 12, 4.5, sc_d, INK); _disc(img, 22, 12, 3.6, sc)
+    _rect(img, 24, 11, 4, 3, sc_l)
+    _tri_up(img, 20, 9, 1, 4, sc_d); _tri_up(img, 24, 9, 1, 3, sc_d)
+    _glow_eyes(img, 22, 11, GOLD_L, 1)
+    _glow(img, 22.0, 15.3, 2.3, EMBER, 0.5); _px(img, 22, 15, EMBER_L)
 
 def _fig_araignee_mere(img):
     _ground_shadow(img)

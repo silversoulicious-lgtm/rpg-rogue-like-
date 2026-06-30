@@ -220,6 +220,28 @@ func _glow(img: Image, cx: float, cy: float, r: float, c: Color, strength: float
 func _ground_shadow(img: Image) -> void:
 	_ellipse(img, 16, 28, 8.7, 2.4, Color(INK.r, INK.g, INK.b, 0.34))
 
+# Triangle rempli d'un dégradé 3 bandes gauche(lumière)->droite(ombre).
+func _tri_band(img: Image, cx: int, base_y: int, half_w: int, height: int, c_light: Color, c_mid: Color, c_dark: Color) -> void:
+	for i in range(height):
+		var w := int(round(half_w * (1.0 - float(i) / float(height))))
+		var yy := base_y - i
+		var span: float = max(1, 2 * w)
+		for xx in range(cx - w, cx + w + 1):
+			var t: float = (xx - (cx - w)) / span
+			var c: Color = c_light if t < 0.35 else (c_mid if t < 0.7 else c_dark)
+			_px(img, xx, yy, c)
+
+# Disque rempli d'un dégradé 3 bandes gauche(lumière)->droite(ombre).
+func _disc_band(img: Image, cx: int, cy: int, r: float, c_light: Color, c_mid: Color, c_dark: Color) -> void:
+	for yy in range(int(cy - r), int(cy + r) + 1):
+		for xx in range(int(cx - r), int(cx + r) + 1):
+			var dx := (xx - cx) / r
+			var dy := (yy - cy) / r
+			if dx * dx + dy * dy <= 1.0:
+				var t: float = (xx - (cx - r)) / (2.0 * r)
+				var c: Color = c_light if t < 0.35 else (c_mid if t < 0.7 else c_dark)
+				_px(img, xx, yy, c)
+
 func _fade(img: Image, a: float) -> void:
 	for y in TILE:
 		for x in TILE:
@@ -511,42 +533,81 @@ func _fig_gobelin(img: Image) -> void:
 func _fig_wolf(img: Image) -> void:
 	_ground_shadow(img)
 	var fur := Color(0.40, 0.42, 0.50)
-	var fur_d := fur.darkened(0.42)
-	var fur_l := fur.lightened(0.20)
-	_ellipse(img, 19, 20, 10.0, 5.9, fur_d)
-	_ellipse(img, 19, 20, 8.7, 4.8, fur)
-	_ellipse(img, 23, 17, 4.5, 4.0, fur)
-	_ellipse(img, 21, 16, 2.7, 1.9, fur_l)
-	_rect(img, 12, 24, 3, 4, fur_d)
-	_rect(img, 21, 24, 3, 4, fur_d)
-	_ellipse(img, 28, 16, 3.5, 1.9, fur_d)
-	_disc_o(img, 8, 17, 4.8, fur_d, INK)
-	_disc(img, 8, 17, 3.9, fur)
-	_tri_up(img, 5, 13, 1, 4, fur_d)
-	_tri_up(img, 11, 13, 1, 4, fur_d)
-	_rect(img, 1, 17, 5, 3, fur_l)
-	_px(img, 1, 19, INK)
-	_glow(img, 7.3, 16.7, 2.1, CYAN_L, 0.7)
-	_rect(img, 7, 16, 3, 1, CYAN_L)
-	_px(img, 5, 20, BONE)
+	var fur_d := fur.darkened(0.45)
+	var fur_l := fur.lightened(0.26)
+	var fur_belly := fur.lightened(0.12)
+
+	# queue (derrière le corps), recourbée vers le haut
+	_ellipse(img, 27, 18, 3.0, 1.6, fur_d); _ellipse(img, 29, 15, 1.8, 1.6, fur_d)
+	_px(img, 30, 13, fur_l)
+
+	# pattes arrière (sombres, derrière le torse) puis pattes avant (claires, devant)
+	_rect(img, 20, 23, 3, 6, fur_d); _rect(img, 13, 23, 3, 6, fur_d)
+	_rect(img, 20, 27, 3, 1, INK_SOFT); _rect(img, 13, 27, 3, 1, INK_SOFT)
+	_rect(img, 11, 22, 3, 7, fur); _rect(img, 18, 22, 3, 7, fur)
+	_rect(img, 11, 27, 3, 1, INK_SOFT); _rect(img, 18, 27, 3, 1, INK_SOFT)
+
+	# torse : col distinct pour que la tête ne fusionne pas avec le corps
+	_ellipse(img, 18, 19, 9.0, 5.4, fur_d)
+	_ellipse(img, 18, 19, 7.8, 4.4, fur)
+	_ellipse(img, 18, 22, 6.5, 2.4, fur_belly)
+	_ellipse(img, 21, 15, 2.6, 2.2, fur_l)
+
+	# tête, séparée du torse par un coin d'ombre + son propre contour
+	_ellipse(img, 11, 17, 2.6, 2.0, fur_d)
+	_disc_o(img, 7, 15, 4.4, fur_d, INK)
+	_disc(img, 7, 15, 3.5, fur)
+	_ellipse(img, 6, 14, 1.4, 1.1, fur_l)
+	# museau, en saillie pour que la silhouette se lise comme une tête
+	_trapezoid(img, 4, 15, 18, 1.8, 1.0, fur_d); _trapezoid(img, 4, 15, 17, 1.4, 0.8, fur)
+	_px(img, 1, 17, INK)
+	# oreilles
+	_tri_up(img, 4, 12, 1, 4, fur_d); _tri_up(img, 9, 12, 1, 4, fur_d)
+	_px(img, 4, 9, fur_l); _px(img, 9, 9, fur_l)
+
+	_glow(img, 6.3, 14.7, 1.8, CYAN_L, 0.7)
+	_px(img, 6, 14, CYAN_L)
 
 func _fig_skeleton(img: Image) -> void:
 	_ground_shadow(img)
-	_trapezoid_o(img, 16, 16, 27, 2.7, 5.3, BONE_D)
-	_trapezoid(img, 16, 17, 25, 1.9, 4.0, BONE)
-	for ry in [14, 16, 18]:
-		_rect(img, 13, ry, 7, 1, INK_SOFT)
-	_rect(img, 16, 17, 1, 9, BONE_D)
-	_disc_o(img, 16, 11, 5.3, BONE_D, INK)
-	_disc(img, 16, 9, 4.4, BONE)
-	_ellipse(img, 13, 8, 1.7, 1.5, Color(1, 1, 0.95))
-	_rect(img, 12, 9, 3, 3, INK)
-	_rect(img, 17, 9, 3, 3, INK)
-	_glow(img, 12.7, 10.0, 2.1, CYAN, 0.7); _glow(img, 19.3, 10.0, 2.1, CYAN, 0.7)
-	_px(img, 12, 9, CYAN)
-	_px(img, 19, 9, CYAN)
-	for tx in range(10, 15, 2):
-		_px(img, tx, 13, INK)
+	var bn := BONE
+	var bn_d := BONE_D
+	var bn_l := BONE.lightened(0.12)
+
+	# jambes en os individuels avec genou visible, plutôt qu'un coin plein
+	for lx in [13, 18]:
+		_rect(img, lx, 21, 2, 4, bn_d); _disc(img, lx + 1, 25, 1.3, bn)
+		_rect(img, lx, 26, 2, 3, bn_d)
+		_rect(img, lx - 1, 28, 4, 1, INK_SOFT)
+
+	# bassin
+	_trapezoid_o(img, 16, 18, 22, 3.3, 4.3, bn_d)
+	_trapezoid(img, 16, 19, 21, 2.4, 3.3, bn)
+
+	# cage thoracique : barres courbes qui se resserrent vers le bas + sternum
+	for i in range(5):
+		var ry := 10 + i * 2
+		var hw := 5 - i / 2
+		_rect(img, 16 - hw, ry, hw * 2 + 1, 1, bn_d)
+		_rect(img, 16 - hw + 1, ry, hw * 2 - 1, 1, bn)
+	_rect(img, 16, 10, 1, 9, bn_d)
+
+	# bras le long du corps, avec coudes
+	for ax in [10, 22]:
+		_rect(img, ax, 12, 1, 5, bn_d); _disc(img, ax, 17, 1.0, bn)
+		_rect(img, ax, 18, 1, 4, bn_d)
+		_px(img, ax, 22, INK_SOFT)
+
+	# crâne avec mâchoire + dents + orbites profondes
+	_disc_o(img, 16, 7, 5.0, bn_d, INK)
+	_disc(img, 16, 6, 4.2, bn)
+	_rect(img, 12, 9, 8, 2, bn_d)
+	for tx in range(12, 20, 2):
+		_px(img, tx, 9, bn_l)
+	_rect(img, 12, 5, 3, 3, INK); _rect(img, 17, 5, 3, 3, INK)
+	_glow(img, 13.5, 6.5, 2.0, CYAN, 0.7); _glow(img, 18.5, 6.5, 2.0, CYAN, 0.7)
+	_px(img, 13, 6, CYAN_L); _px(img, 18, 6, CYAN_L)
+	_px(img, 16, 4, bn_d)
 
 func _fig_orc(img: Image) -> void:
 	_ground_shadow(img)
@@ -618,17 +679,42 @@ func _fig_araignee(img: Image) -> void:
 
 func _fig_sanglier(img: Image) -> void:
 	_ground_shadow(img)
-	var fur: Color = Color(0.50, 0.40, 0.34)
-	var fur_d: Color = fur.darkened(0.4)
-	_ellipse(img, 17, 20, 10.7, 6.7, fur_d); _ellipse(img, 17, 20, 9.3, 5.6, fur)
-	_ellipse(img, 20, 16, 4.0, 2.9, fur.lightened(0.18))
-	for sx in [13, 17, 21]:
-		_line(img, sx, 15, sx - 1, 9, INK)
+	var fur := Color(0.50, 0.40, 0.34)
+	var fur_d := fur.darkened(0.42)
+	var fur_l := fur.lightened(0.20)
+	var hide_head := fur.darkened(0.18)
+
+	# pattes (trapues, sombres, derrière la silhouette du corps)
 	_rect(img, 11, 24, 3, 4, fur_d); _rect(img, 21, 24, 3, 4, fur_d)
-	_disc_o(img, 7, 19, 4.3, fur_d, INK); _disc(img, 7, 19, 3.3, fur)
-	_rect(img, 1, 19, 5, 3, fur.lightened(0.1)); _px(img, 1, 19, INK)
-	_tri_up(img, 4, 23, 1, 4, BONE); _tri_up(img, 8, 23, 1, 4, BONE)
-	_glow_eyes(img, 7, 16, EMBER, 1)
+	_rect(img, 11, 27, 3, 1, INK_SOFT); _rect(img, 21, 27, 3, 1, INK_SOFT)
+
+	# corps en tonneau, distinct de la tête via un coin d'ombre au cou
+	_ellipse(img, 18, 20, 10.0, 6.2, fur_d)
+	_ellipse(img, 18, 20, 8.7, 5.1, fur)
+	_ellipse(img, 18, 23, 6.5, 2.2, fur.darkened(0.12))
+
+	# crinière hérissée : rangée de piquants le long de l'échine
+	for sx in range(11, 23, 2):
+		_tri_up(img, sx, 15, 1, 3, fur_d)
+	for sx in range(12, 22, 2):
+		_tri_up(img, sx, 14, 1, 2, fur_l)
+
+	# tête basse, avec son propre contour pour qu'elle se lise comme une masse distincte
+	_ellipse(img, 10, 18, 2.4, 2.0, fur_d)
+	_disc_o(img, 6, 18, 4.6, hide_head.darkened(0.3), INK)
+	_disc(img, 6, 18, 3.7, hide_head)
+	_ellipse(img, 5, 16, 1.3, 1.0, fur_l)
+	# groin large et plat
+	_rect(img, 0, 17, 5, 4, hide_head.lightened(0.10))
+	_px(img, 0, 18, INK); _px(img, 0, 19, INK)
+	# défenses recourbées
+	_tri_up(img, 2, 22, 1, 4, BONE); _tri_up(img, 6, 22, 1, 3, BONE)
+	_px(img, 1, 18, BONE_D)
+	# petite oreille
+	_tri_up(img, 8, 14, 2, 3, fur_d); _px(img, 8, 12, fur_l)
+
+	_glow(img, 5.3, 16.7, 1.6, EMBER, 0.7)
+	_px(img, 5, 16, EMBER)
 
 func _fig_chauvesouris(img: Image) -> void:
 	_ground_shadow(img)
@@ -819,28 +905,69 @@ func _fig_golem(img: Image) -> void:
 	_line(img, 12, 17, 15, 23, st_d); _line(img, 19, 16, 17, 24, st_d)
 
 func _fig_fee(img: Image) -> void:
-	_glow(img, 16.0, 16.0, 9.3, ARCANE, 0.4)
-	_ellipse(img, 9, 13, 4.0, 5.3, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
-	_ellipse(img, 23, 13, 4.0, 5.3, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
-	_ellipse(img, 9, 13, 2.7, 3.7, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
-	_ellipse(img, 23, 13, 2.7, 3.7, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
-	_trapezoid_o(img, 16, 15, 24, 1.6, 3.2, ARCANE.darkened(0.2))
-	_disc_o(img, 16, 11, 2.9, ROSE_D, INK); _ellipse(img, 16, 11, 2.0, 2.3, SKIN)
+	_glow(img, 16.0, 16.0, 9.3, ARCANE, 0.35)
+	var skin := SKIN
+	var dress := ARCANE
+	var dress_d := ARCANE.darkened(0.30)
+
+	# ailes : forme en goutte avec nervures plutôt que des blobs translucides plats
+	for wing in [Vector2i(9, -1), Vector2i(23, 1)]:
+		var wx: int = wing.x
+		var sign: int = wing.y
+		_ellipse(img, wx, 13, 3.0, 4.6, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.40))
+		_ellipse(img, wx, 13, 1.8, 3.1, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.55))
+		_line(img, 16 + sign, 13, wx, 9, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
+		_line(img, 16 + sign, 14, wx, 16, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
+
+	# robe : silhouette trapézoïdale franche avec accent de taille
+	_trapezoid_o(img, 16, 15, 24, 1.6, 3.2, dress_d)
+	_trapezoid(img, 16, 16, 23, 1.1, 2.6, dress)
+	_rect(img, 14, 17, 4, 1, ARCANE_L)
+
+	# tête avec silhouette de cheveux
+	_disc_o(img, 16, 11, 2.9, ROSE_D, INK)
+	_ellipse(img, 16, 11, 2.0, 2.3, skin)
+	_tri_up(img, 13, 9, 1, 3, ROSE_D); _tri_up(img, 19, 9, 1, 3, ROSE_D)
 	_px(img, 15, 11, INK); _px(img, 17, 11, INK)
 	_glow(img, 16.0, 10.7, 2.1, CYAN_L, 0.5)
+
+	# baguette + traînée d'étincelles
+	_line(img, 19, 18, 22, 21, GOLD_D); _px(img, 22, 21, GOLD_L)
 	_px(img, 16, 5, GOLD_L); _px(img, 12, 8, CYAN_L); _px(img, 20, 8, CYAN_L)
 
 func _fig_drake(img: Image) -> void:
 	_ground_shadow(img)
-	var sc: Color = Color(0.55, 0.40, 0.40)
-	var sc_d: Color = sc.darkened(0.42)
-	_ellipse(img, 16, 21, 9.3, 5.3, sc_d); _ellipse(img, 16, 21, 8.0, 4.3, sc)
-	_ellipse(img, 21, 19, 4.0, 3.2, sc.lightened(0.12))
-	_line(img, 24, 23, 31, 27, sc_d)
+	var sc := Color(0.55, 0.40, 0.40)
+	var sc_d := sc.darkened(0.45)
+	var sc_l := sc.lightened(0.20)
+	var wing_mem := Color(0.55, 0.30, 0.30, 0.75)
+
+	# queue effilée avec pointe en fer de lance
+	_line(img, 24, 23, 30, 27, sc_d); _line(img, 24, 22, 30, 26, sc)
+	_tri_up(img, 30, 29, 2, 3, sc_d)
+
+	# aile repliée (derrière le corps) - membrane entre les "doigts"
+	_trapezoid(img, 21, 12, 22, 1.0, 9.0, sc_d.darkened(0.1))
+	for fx in [15, 19, 23, 27]:
+		_line(img, 21, 13, fx, 21, wing_mem)
+	_line(img, 21, 12, 27, 14, sc_d)
+
+	# pattes avec petites griffes
+	_rect(img, 13, 24, 3, 4, sc_d); _rect(img, 19, 24, 3, 4, sc_d)
+	_tri_up(img, 13, 28, 1, 2, BONE); _tri_up(img, 21, 28, 1, 2, BONE)
+
+	# corps serpentiforme avec crête dorsale
+	_ellipse(img, 17, 21, 9.3, 5.3, sc_d); _ellipse(img, 17, 21, 8.0, 4.3, sc)
+	_ellipse(img, 21, 19, 4.0, 3.2, sc_l)
+	for rx in [12, 15, 18, 21]:
+		_tri_up(img, rx, 17, 1, 2, sc_d)
+
+	# tête avec mâchoire + cornes, museau projeté vers l'avant
 	_disc_o(img, 11, 12, 4.5, sc_d, INK); _disc(img, 11, 12, 3.6, sc)
-	_rect(img, 4, 12, 7, 3, sc.lightened(0.1))
+	_rect(img, 4, 12, 7, 3, sc_l); _rect(img, 4, 14, 7, 1, sc_d)
 	_tri_up(img, 12, 9, 1, 4, sc_d); _tri_up(img, 9, 9, 1, 3, sc_d)
 	_glow_eyes(img, 11, 11, GOLD_L, 1)
+
 	_glow(img, 2.7, 13.3, 3.5, EMBER, 0.6)
 	_px(img, 3, 13, EMBER_L); _px(img, 1, 12, GOLD_L); _px(img, 1, 15, EMBER)
 
@@ -898,19 +1025,35 @@ func _fig_seigneur_fantome(img: Image) -> void:
 
 func _fig_wyrm(img: Image) -> void:
 	_ground_shadow(img)
-	var sc: Color = Color(0.55, 0.42, 0.40)
-	var sc_d: Color = sc.darkened(0.42)
-	for i in range(20):
-		var a: float = i / 19.0 * PI * 2.0
-		_disc(img, int(16 + 8.7 * cos(a)), int(20 + 6.7 * sin(a)), 2.9, sc_d)
-	for i in range(20):
-		var a2: float = i / 19.0 * PI * 2.0
-		_disc(img, int(16 + 8.7 * cos(a2)), int(20 + 6.7 * sin(a2)), 1.9, sc)
-	_disc_o(img, 16, 9, 4.5, sc_d, INK); _disc(img, 16, 9, 3.6, sc)
-	_rect(img, 13, 9, 7, 3, sc.lightened(0.12))
-	_tri_up(img, 13, 7, 1, 4, sc_d); _tri_up(img, 19, 7, 1, 4, sc_d)
-	_glow_eyes(img, 16, 8, GOLD_L, 1)
-	_glow(img, 16.0, 13.3, 2.7, EMBER, 0.5); _px(img, 16, 13, EMBER_L)
+	var sc := Color(0.55, 0.42, 0.40)
+	var sc_d := sc.darkened(0.45)
+	var sc_l := sc.lightened(0.18)
+
+	# spirale ouverte (rayon décroissant) plutôt qu'un anneau fermé en "donut"
+	var n := 26
+	for i in range(n):
+		var t: float = float(i) / float(n - 1)
+		var a: float = t * PI * 1.35 + PI * 0.25
+		var rad: float = 7.5 - 4.5 * t
+		var seg_r: float = 2.9 - 1.6 * t
+		var x: int = int(16 + rad * cos(a))
+		var y: int = int(20 + rad * 0.72 * sin(a))
+		_disc(img, x, y, seg_r + 0.8, sc_d)
+	for i in range(n):
+		var t2: float = float(i) / float(n - 1)
+		var a2: float = t2 * PI * 1.35 + PI * 0.25
+		var rad2: float = 7.5 - 4.5 * t2
+		var seg_r2: float = 2.9 - 1.6 * t2
+		var x2: int = int(16 + rad2 * cos(a2))
+		var y2: int = int(20 + rad2 * 0.72 * sin(a2))
+		_disc(img, x2, y2, seg_r2, sc if i % 2 == 0 else sc_l.lerp(sc, 0.5))
+
+	# tête à l'extrémité large de la spirale, avec cornes
+	_disc_o(img, 22, 12, 4.5, sc_d, INK); _disc(img, 22, 12, 3.6, sc)
+	_rect(img, 24, 11, 4, 3, sc_l)
+	_tri_up(img, 20, 9, 1, 4, sc_d); _tri_up(img, 24, 9, 1, 3, sc_d)
+	_glow_eyes(img, 22, 11, GOLD_L, 1)
+	_glow(img, 22.0, 15.3, 2.3, EMBER, 0.5); _px(img, 22, 15, EMBER_L)
 
 func _fig_araignee_mere(img: Image) -> void:
 	_ground_shadow(img)
@@ -1279,9 +1422,9 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 			# Side branch stubs (gnarled feel)
 			_rect(img, 10, 20, 5, 1, tk_d); _rect(img, 11, 20, 3, 1, tk)
 			_rect(img, 20, 23, 4, 1, tk_d); _rect(img, 20, 23, 3, 1, tk)
-			# Leaf canopy — outer shadow, main fill, highlight clusters
+			# Leaf canopy — left(lit)->right(shadow) gradient instead of a flat fill
 			_disc_o(img, 16, 13, 11.0, lf_d, INK_SOFT)
-			_disc(img, 16, 13, 9.5, lf)
+			_disc_band(img, 16, 13, 9.5, lf_l, lf, lf_d)
 			# Secondary cluster top-left (bright spot = sun side)
 			_disc(img, 11, 9,  4.5, lf_l)
 			_disc(img, 11, 9,  2.4, lf_h)
@@ -1293,23 +1436,24 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 			# Shadow underside
 			_ellipse(img, 16, 20, 7.0, 2.2, lf_d)
 		"pine":
-			# Trunk
+			var cone := Color(0.32, 0.20, 0.12)
+			# Trunk with bark striations
 			_rect(img, 14, 25, 4, 6, tk_d)
 			_rect(img, 15, 25, 2, 6, tk)
-			_px(img, 15, 27, tk_l)
-			# Branch tiers bottom → top (shadow tier first, then lit)
-			_tri_up(img, 16, 28, 10, 10, lf_d)
-			_tri_up(img, 16, 28, 9,  8,  lf)
-			_tri_up(img, 16, 21, 8,  8,  lf_d)
-			_tri_up(img, 16, 21, 7,  7,  lf)
-			_tri_up(img, 16, 15, 6,  7,  lf_d)
-			_tri_up(img, 16, 15, 5,  6,  lf)
-			_tri_up(img, 16, 10, 4,  6,  lf_d)
-			_tri_up(img, 16, 10, 3,  5,  lf)
-			_tri_up(img, 16, 6,  2,  4,  lf)   # tip
-			# Snow-frost highlight on each tier's left edge
-			_px(img, 8,  21, lf_h); _px(img, 9, 15, lf_h); _px(img, 10, 10, lf_h)
-			_px(img, 16, 4,  lf_h)             # top tip
+			_px(img, 14, 27, tk_d); _px(img, 17, 29, tk_d); _px(img, 15, 28, tk_l)
+			# Branch tiers bottom → top: crisp silhouette + lit->shadow gradient
+			var tiers := [[16, 28, 10, 10], [16, 21, 8, 8], [16, 15, 6, 7], [16, 10, 4, 6], [16, 6, 2, 4]]
+			for tier in tiers:
+				var cx: int = tier[0]; var base_y: int = tier[1]; var hw: int = tier[2]; var h: int = tier[3]
+				_tri_up(img, cx, base_y, hw + 1, h + 1, INK_SOFT)
+				_tri_band(img, cx, base_y, hw, h, lf_l, lf, lf_d)
+				_px(img, cx - hw + 1, base_y - 1, lf_l)
+				_px(img, cx + hw - 1, base_y - 1, lf_d)
+			# Hanging pinecones for prop detail
+			_ellipse(img, 12, 23, 1.1, 1.6, cone); _ellipse(img, 21, 17, 1.0, 1.4, cone)
+			# Subtle highlight flecks
+			_px(img, 13, 24, lf_h); _px(img, 12, 17, lf_h); _px(img, 13, 12, lf_h); _px(img, 14, 8, lf_h)
+			_px(img, 15, 5,  lf_h)
 		"cactus":
 			# Main stem
 			_rect(img, 13, 5, 6, 25, lf_d)
@@ -1325,6 +1469,9 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 			for yy in range(7, 28, 4):
 				_px(img, 14, yy, lf_l)
 				_px(img, 13, yy + 2, lf_d)
+			# Arm-tip ridge highlights + a small desert flower for accent
+			_px(img, 8, 9, lf_h); _px(img, 24, 11, lf_h)
+			_disc(img, 9, 8, 1.1, ROSE); _px(img, 9, 8, ROSE_L)
 		"dead":
 			# Main trunk (gnarled, slightly off-center)
 			_rect(img, 15, 4, 3, 27, tk_d)
@@ -1342,21 +1489,50 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 			_px(img, 24,  7, tk_d); _px(img, 22, 8, tk_d)
 			# Crown spread
 			_rect(img, 13, 4, 5, 2, tk)
+			# Bark knots + bare twig forks for extra texture
+			_px(img, 16, 16, tk_d); _px(img, 15, 22, tk_d); _px(img, 16, 9, tk_l)
+			_line(img, 9, 14, 7, 12, tk_d); _line(img, 23, 11, 25, 9, tk_d)
 		_:
 			_disc_o(img, 16, 16, 8.5, lf_d, INK_SOFT)
-			_disc(img, 16, 16, 7.0, lf)
+			_disc_band(img, 16, 16, 7.0, lf_l, lf, lf_d)
 			_disc(img, 12, 12, 3.5, lf_l)
 			_px(img, 11, 11, lf_h)
 	return img
 
 func _gen_rock(c: Color) -> Image:
 	var img := _new(false)
-	_ellipse(img, 16, 20, 11.3, 8.7, INK_SOFT)
-	_ellipse(img, 16, 20, 10.0, 7.3, c)
-	_ellipse(img, 12, 16, 3.7, 2.7, c.lightened(0.32))
-	_rect(img, 17, 15, 1, 11, c.darkened(0.42))
-	_rect(img, 17, 19, 5, 1, c.darkened(0.42))
-	_rect(img, 8, 24, 15, 1, c.darkened(0.32))
+	var c_d := c.darkened(0.42)
+	var c_dd := c.darkened(0.58)
+	var c_l := c.lightened(0.30)
+	var c_ll := c.lightened(0.50)
+	var moss := Color(0.40, 0.62, 0.30)
+
+	_ellipse(img, 16, 29, 9.5, 2.2, Color(INK.r, INK.g, INK.b, 0.30))   # ombre de contact
+
+	# petit bloc compagnon (arrière-gauche), dessiné avant pour que le rocher principal le chevauche
+	_ellipse(img, 9, 21, 4.3, 3.6, INK_SOFT)
+	_ellipse(img, 9, 21, 3.4, 2.8, c_d)
+	_ellipse(img, 8, 19, 1.3, 1.0, c_l)
+
+	# rocher principal
+	_ellipse(img, 17, 19, 11.0, 8.4, INK_SOFT)
+	_ellipse(img, 17, 19, 9.7, 7.2, c)
+	_ellipse(img, 13, 14, 3.8, 2.7, c_l)             # plaque de lumière haut-gauche
+	_ellipse(img, 12, 13, 1.6, 1.1, c_ll)            # cœur spéculaire
+	_ellipse(img, 21, 23, 3.6, 2.6, c_dd)            # ombre bas-droite
+
+	# fissures irrégulières plutôt que des rects droits
+	_line(img, 18, 12, 17, 17, c_dd); _line(img, 17, 17, 19, 22, c_dd)
+	_line(img, 10, 18, 13, 20, c_dd)
+
+	# petits cailloux à la base (blobs 2x2, pas des cercles à 1px qui créent des croix)
+	_rect(img, 23, 24, 2, 2, c_d); _px(img, 23, 24, c_l)
+	_rect(img, 21, 26, 2, 2, c); _px(img, 21, 26, c_l)
+	_rect(img, 4, 24, 2, 2, c_d); _px(img, 4, 24, c_l)
+
+	# touffes de mousse le long du sommet
+	_rect(img, 18, 12, 2, 2, moss); _rect(img, 19, 13, 2, 1, moss.darkened(0.15))
+	_rect(img, 9, 17, 2, 2, moss.darkened(0.1))
 	return img
 
 func _gen_water(c: Color) -> Image:
