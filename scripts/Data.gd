@@ -135,45 +135,47 @@ static func _triangular(rng: RandomNumberGenerator, lo: float, hi: float, mode: 
 		return lo + sqrt(u * (hi - lo) * (mode - lo))
 	return hi - sqrt((1.0 - u) * (hi - lo) * (hi - mode))
 
-# Palettes retravaillées « Les Strates » : sombres, désaturées, undertone froid
-# unifié (lisibles et atmosphériques, façon Moonring) tout en restant distinctes.
+# Palettes refondues façon Moonring (med-fantasy néon) : sols TRÈS sombres et
+# désaturés sur lesquels des accents néon (feuillage, eau, décor) ressortent
+# nettement. Chaque biome garde son identité tout en partageant un undertone
+# sombre unifié — pensé pour le pool de torche + la vignette de MapView.
 const BIOMES := [
 	{ "id": "plaine", "name": "Plaines verdoyantes",
 	  "tree_density": 0.05, "rock_density": 0.03, "water_density": 0.04, "decor_density": 0.10, "road": true,
-	  "ground_a": Color(0.17, 0.29, 0.18), "ground_b": Color(0.21, 0.35, 0.21),
-	  "trunk": Color(0.34, 0.24, 0.15), "leaf": Color(0.27, 0.45, 0.27), "tree_style": "round",
-	  "rock": Color(0.42, 0.44, 0.50), "water": Color(0.20, 0.42, 0.52),
-	  "decor": Color(0.90, 0.78, 0.35), "decor_style": "flower" },
+	  "ground_a": Color(0.090, 0.135, 0.100), "ground_b": Color(0.130, 0.190, 0.135),
+	  "trunk": Color(0.30, 0.21, 0.13), "leaf": Color(0.36, 0.72, 0.40), "tree_style": "round",
+	  "rock": Color(0.36, 0.40, 0.50), "water": Color(0.18, 0.55, 0.66),
+	  "decor": Color(1.0, 0.83, 0.34), "decor_style": "flower" },
 	{ "id": "foret", "name": "Forêt profonde",
 	  "tree_density": 0.14, "rock_density": 0.03, "water_density": 0.03, "decor_density": 0.10, "road": true,
-	  "ground_a": Color(0.11, 0.21, 0.14), "ground_b": Color(0.14, 0.26, 0.16),
-	  "trunk": Color(0.28, 0.19, 0.12), "leaf": Color(0.16, 0.34, 0.20), "tree_style": "pine",
-	  "rock": Color(0.34, 0.40, 0.40), "water": Color(0.15, 0.32, 0.42),
-	  "decor": Color(0.80, 0.28, 0.30), "decor_style": "mushroom" },
+	  "ground_a": Color(0.060, 0.120, 0.100), "ground_b": Color(0.095, 0.175, 0.135),
+	  "trunk": Color(0.26, 0.17, 0.11), "leaf": Color(0.24, 0.66, 0.42), "tree_style": "pine",
+	  "rock": Color(0.28, 0.37, 0.39), "water": Color(0.13, 0.46, 0.52),
+	  "decor": Color(0.94, 0.27, 0.36), "decor_style": "mushroom" },
 	{ "id": "desert", "name": "Désert de cendres dorées",
 	  "tree_density": 0.04, "rock_density": 0.06, "water_density": 0.01, "decor_density": 0.07, "road": true,
-	  "ground_a": Color(0.52, 0.44, 0.30), "ground_b": Color(0.60, 0.51, 0.35),
-	  "trunk": Color(0.30, 0.42, 0.26), "leaf": Color(0.34, 0.50, 0.30), "tree_style": "cactus",
-	  "rock": Color(0.50, 0.42, 0.33), "water": Color(0.24, 0.48, 0.52),
-	  "decor": Color(0.82, 0.80, 0.70), "decor_style": "bones" },
+	  "ground_a": Color(0.205, 0.150, 0.085), "ground_b": Color(0.290, 0.215, 0.120),
+	  "trunk": Color(0.32, 0.42, 0.24), "leaf": Color(0.42, 0.70, 0.34), "tree_style": "cactus",
+	  "rock": Color(0.50, 0.40, 0.26), "water": Color(0.20, 0.64, 0.66),
+	  "decor": Color(0.92, 0.88, 0.74), "decor_style": "bones" },
 	{ "id": "toundra", "name": "Toundra gelée",
 	  "tree_density": 0.07, "rock_density": 0.04, "water_density": 0.05, "decor_density": 0.08, "road": false,
-	  "ground_a": Color(0.40, 0.46, 0.56), "ground_b": Color(0.48, 0.54, 0.64),
-	  "trunk": Color(0.32, 0.26, 0.22), "leaf": Color(0.46, 0.60, 0.62), "tree_style": "pine",
-	  "rock": Color(0.46, 0.52, 0.60), "water": Color(0.38, 0.58, 0.70),
-	  "decor": Color(0.55, 0.82, 0.92), "decor_style": "crystal" },
+	  "ground_a": Color(0.105, 0.140, 0.215), "ground_b": Color(0.150, 0.205, 0.300),
+	  "trunk": Color(0.30, 0.26, 0.24), "leaf": Color(0.54, 0.78, 0.82), "tree_style": "pine",
+	  "rock": Color(0.42, 0.50, 0.60), "water": Color(0.36, 0.74, 0.90),
+	  "decor": Color(0.62, 0.90, 1.0), "decor_style": "crystal" },
 	{ "id": "marais", "name": "Marais putride",
 	  "tree_density": 0.08, "rock_density": 0.03, "water_density": 0.14, "decor_density": 0.10, "road": false,
-	  "ground_a": Color(0.19, 0.23, 0.16), "ground_b": Color(0.24, 0.28, 0.19),
-	  "trunk": Color(0.24, 0.21, 0.16), "leaf": Color(0.30, 0.36, 0.22), "tree_style": "dead",
-	  "rock": Color(0.32, 0.36, 0.32), "water": Color(0.20, 0.31, 0.24),
-	  "decor": Color(0.46, 0.58, 0.28), "decor_style": "reed" },
+	  "ground_a": Color(0.100, 0.130, 0.090), "ground_b": Color(0.140, 0.180, 0.110),
+	  "trunk": Color(0.20, 0.18, 0.13), "leaf": Color(0.36, 0.50, 0.24), "tree_style": "dead",
+	  "rock": Color(0.28, 0.33, 0.29), "water": Color(0.22, 0.42, 0.27),
+	  "decor": Color(0.64, 0.86, 0.32), "decor_style": "reed" },
 	{ "id": "volcan", "name": "Terres de feu",
 	  "tree_density": 0.05, "rock_density": 0.08, "water_density": 0.06, "decor_density": 0.07, "road": false,
-	  "ground_a": Color(0.15, 0.12, 0.14), "ground_b": Color(0.20, 0.16, 0.17),
-	  "trunk": Color(0.15, 0.12, 0.12), "leaf": Color(0.20, 0.16, 0.16), "tree_style": "dead",
-	  "rock": Color(0.24, 0.20, 0.23), "water": Color(0.88, 0.42, 0.14),
-	  "decor": Color(0.95, 0.55, 0.20), "decor_style": "ember" },
+	  "ground_a": Color(0.105, 0.072, 0.090), "ground_b": Color(0.165, 0.100, 0.110),
+	  "trunk": Color(0.16, 0.12, 0.12), "leaf": Color(0.24, 0.17, 0.17), "tree_style": "dead",
+	  "rock": Color(0.28, 0.21, 0.23), "water": Color(1.0, 0.46, 0.16),
+	  "decor": Color(1.0, 0.58, 0.20), "decor_style": "ember" },
 ]
 
 ## Renvoie le biome correspondant à un étage (change tous les BIOME_SPAN étages).

@@ -6,8 +6,18 @@ const CELL := 24          # taille native des tuiles (assets 24x24)
 const COLOR_FLOOR := Color(0.12, 0.13, 0.10)
 const COLOR_GLYPH := Color(0.30, 0.34, 0.28)
 const COLOR_STAIRS := Color(1.0, 0.85, 0.3)
-const COLOR_FOG := Color(0.02, 0.02, 0.03)        # non exploré
-const COLOR_MEMORY := Color(0.02, 0.02, 0.03, 0.55) # exploré mais hors vision
+const COLOR_FOG := Color(0.015, 0.012, 0.028)        # non exploré (quasi noir, façon Moonring)
+const COLOR_MEMORY := Color(0.015, 0.012, 0.028, 0.62) # exploré mais hors vision
+
+# --- Ambiance "Les Strates" (inspiration Moonring) ----------------------------
+# Halo de torche autour de l'héroïne + vignette de bord : concentrent le regard
+# et donnent une atmosphère de donjon. Tout est dessiné en surimpression à la
+# fin de _draw(), à partir de textures radiales générées une seule fois.
+const POOL_TINT := Color(0.016, 0.012, 0.040)     # teinte froide du pool de torche
+const POOL_MAX_A := 0.34                           # assombrissement max au bord de vision
+const GLOW_TINT := Color(1.0, 0.88, 0.66)         # halo chaud près de l'héroïne
+const GLOW_MAX_A := 0.13
+const VIGNETTE_MAX_A := 0.55
 
 var dungeon: Dungeon = null
 var entities: Array = []
@@ -17,11 +27,41 @@ var tex: Dictionary = {}
 var view_size: Vector2 = Vector2(896, 570)        # zone de jeu visible (réglée par Main)
 var _font: Font
 var _font_size := 18
+var _pool_tex: ImageTexture = null
+var _glow_tex: ImageTexture = null
+var _vignette_tex: ImageTexture = null
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_load_textures()
+	_build_atmosphere_textures()
+
+## Pré-calcule les textures d'ambiance (pool de torche + halo chaud). La vignette
+## dépend de la taille de zone de jeu : elle est créée paresseusement dans _draw.
+func _build_atmosphere_textures() -> void:
+	# Pool : clair au centre -> assombri vers le bord de vision, puis ré-estompé
+	# à 0 sur le tout dernier anneau (alpha nul au bord du carré => aucun bord net).
+	_pool_tex = _make_pool(192)
+	# Halo chaud : chaud au centre -> transparent au bord.
+	_glow_tex = _make_radial(96, _alpha(GLOW_TINT, GLOW_MAX_A), _alpha(GLOW_TINT, 0.0), 0.0, 2.0)
+
+## Texture du pool de torche : alpha = 0 au centre, croît en s'éloignant, puis
+## redescend à 0 sur l'anneau extérieur — pas de transition dure au bord du carré.
+func _make_pool(size: int) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var c := (size - 1) * 0.5
+	for y in size:
+		for x in size:
+			var d: float = clampf(Vector2(x - c, y - c).length() / c, 0.0, 1.0)
+			var edge_fade: float = clampf((1.0 - d) / 0.18, 0.0, 1.0)
+			var a: float = POOL_MAX_A * pow(d, 2.0) * edge_fade
+			img.set_pixel(x, y, Color(POOL_TINT.r, POOL_TINT.g, POOL_TINT.b, clampf(a, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
+
+## Renvoie `c` avec une nouvelle composante alpha (Color n'a pas de with_a en 4.x).
+func _alpha(c: Color, a: float) -> Color:
+	return Color(c.r, c.g, c.b, a)
 
 func _load_textures() -> void:
 	var names := ["stairs", "aria", "aria_back", "aria_side", "knight", "mage", "ranger",
@@ -108,6 +148,63 @@ func _draw() -> void:
 			if not _blit_ex(dv["name"], e.x, e.y, dv["flip"]):
 				_draw_glyph(e.x, e.y, e.glyph, e.color)
 			_draw_hp_pip(e)
+
+	_draw_atmosphere()
+
+## Surimpression d'ambiance : pool de torche + halo chaud centrés sur l'héroïne,
+## puis vignette de bord couvrant la zone de jeu. Dessinés en dernier (au-dessus
+## du terrain et des entités) pour focaliser le regard façon Moonring.
+func _draw_atmosphere() -> void:
+	var origin: Vector2 = -position
+	# Vignette créée à la demande (dépend de la taille de zone de jeu).
+	if _vignette_tex == null and view_size.x > 1.0 and view_size.y > 1.0:
+		_vignette_tex = _make_vignette(maxi(8, int(view_size.x / 3.0)), maxi(8, int(view_size.y / 3.0)))
+	# Pool + halo autour de l'héroïne (si visible).
+	var pl = null
+	for e in entities:
+		if e.faction == Entity.Faction.PLAYER and e.is_alive():
+			pl = e
+			break
+	if pl != null and dungeon.is_visible(pl.x, pl.y):
+		var hc := Vector2(pl.x * CELL + CELL * 0.5, pl.y * CELL + CELL * 0.5)
+		if _pool_tex != null:
+			var rad := float((pl.vision + 2) * CELL)
+			draw_texture_rect(_pool_tex, Rect2(hc - Vector2(rad, rad), Vector2(rad * 2.0, rad * 2.0)), false)
+		if _glow_tex != null:
+			var gr := float(CELL) * 3.2
+			draw_texture_rect(_glow_tex, Rect2(hc - Vector2(gr, gr), Vector2(gr * 2.0, gr * 2.0)), false)
+	if _vignette_tex != null:
+		draw_texture_rect(_vignette_tex, Rect2(origin, view_size), false)
+
+## Texture radiale (carrée) : couleur `inner` au centre -> `outer` au bord, avec
+## un palier `inner_stop` (zone centrale plate) et une courbe d'exposant `expo`.
+func _make_radial(size: int, inner: Color, outer: Color, inner_stop: float, expo: float) -> ImageTexture:
+	var img := Image.create(size, size, false, Image.FORMAT_RGBA8)
+	var c := (size - 1) * 0.5
+	for y in size:
+		for x in size:
+			var d: float = clampf(Vector2(x - c, y - c).length() / c, 0.0, 1.0)
+			var t: float = 0.0
+			if d > inner_stop and inner_stop < 1.0:
+				t = pow((d - inner_stop) / (1.0 - inner_stop), expo)
+			img.set_pixel(x, y, inner.lerp(outer, clampf(t, 0.0, 1.0)))
+	return ImageTexture.create_from_image(img)
+
+## Vignette rectangulaire : transparente au centre, sombre vers les bords.
+func _make_vignette(w: int, h: int) -> ImageTexture:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var cx := (w - 1) * 0.5
+	var cy := (h - 1) * 0.5
+	for y in h:
+		for x in w:
+			var nx: float = abs(x - cx) / cx
+			var ny: float = abs(y - cy) / cy
+			var e: float = maxf(nx, ny)
+			var a: float = 0.0
+			if e > 0.58:
+				a = pow((e - 0.58) / 0.42, 2.2) * VIGNETTE_MAX_A
+			img.set_pixel(x, y, Color(0.0, 0.0, 0.0, clampf(a, 0.0, VIGNETTE_MAX_A)))
+	return ImageTexture.create_from_image(img)
 
 func _draw_terrain(bid: String, x: int, y: int) -> void:
 	var t: int = dungeon.tiles[y][x]

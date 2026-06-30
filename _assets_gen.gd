@@ -1,37 +1,50 @@
 extends SceneTree
 # Générateur d'assets pixel-art — IDENTITÉ VISUELLE "Les Strates".
-# Palette restreinte et tranchée (indigo profond + accents arcaniques), façon
-# Moonring : silhouettes lisibles, contour sombre cohérent, lumière en haut-gauche.
+# Refonte façon Moonring : palette restreinte med-fantasy NÉON, silhouettes
+# lisibles, contour quasi-noir cohérent, lumière en haut-gauche, halos néon
+# (glow/bloom) sur les éléments magiques et dithering rétro (Bayer) sur les sols.
 # Lancé en headless : godot --headless --script res://_assets_gen.gd
 # Produit des PNG 24x24 dans res://assets/.
+#
+# NOTE : ce script et le moteur de rendu hors-ligne (outils de dev) partagent la
+# même logique ; les PNG livrés dans assets/ doivent rester cohérents avec lui.
 
 const TILE := 24
 var rng := RandomNumberGenerator.new()
 
 # --- PALETTE D'IDENTITÉ -------------------------------------------------------
-const INK      := Color(0.078, 0.071, 0.118)   # contour / ombre (near-black indigo)
-const INK_SOFT := Color(0.13, 0.12, 0.19)
+const INK      := Color(0.055, 0.050, 0.090)   # contour quasi-noir (indigo profond)
+const INK_SOFT := Color(0.105, 0.098, 0.160)
 const STONE    := Color(0.227, 0.212, 0.306)
 const STONE_D  := Color(0.149, 0.137, 0.212)
-const STONE_L  := Color(0.32, 0.30, 0.42)
-const FLOOR_A  := Color(0.118, 0.110, 0.165)
-const FLOOR_B  := Color(0.157, 0.145, 0.220)
+const STONE_L  := Color(0.34, 0.32, 0.46)
+const FLOOR_A  := Color(0.090, 0.084, 0.135)
+const FLOOR_B  := Color(0.140, 0.130, 0.200)
 const STEEL    := Color(0.588, 0.627, 0.725)
 const STEEL_D  := Color(0.361, 0.392, 0.490)
-const STEEL_L  := Color(0.78, 0.82, 0.90)
-const BONE     := Color(0.839, 0.824, 0.737)
+const STEEL_L  := Color(0.82, 0.86, 0.95)
+const BONE     := Color(0.880, 0.866, 0.780)
 const BONE_D   := Color(0.60, 0.58, 0.49)
-const GOLD     := Color(0.882, 0.706, 0.275)
+const GOLD     := Color(0.953, 0.749, 0.286)
 const GOLD_D   := Color(0.588, 0.431, 0.137)
-const GOLD_L   := Color(1.0, 0.87, 0.5)
-const BLOOD    := Color(0.745, 0.216, 0.235)
+const GOLD_L   := Color(1.0, 0.92, 0.55)
+const BLOOD    := Color(0.812, 0.231, 0.251)
 const BLOOD_D  := Color(0.49, 0.13, 0.16)
-const ARCANE   := Color(0.588, 0.373, 0.824)
-const ARCANE_L := Color(0.784, 0.588, 0.961)
-const CYAN     := Color(0.373, 0.824, 0.863)
-const CYAN_L   := Color(0.65, 0.95, 1.0)
-const POISON   := Color(0.471, 0.784, 0.353)
-const EMBER    := Color(0.941, 0.549, 0.216)
+const ARCANE   := Color(0.643, 0.404, 0.918)
+const ARCANE_L := Color(0.835, 0.643, 1.0)
+const CYAN     := Color(0.392, 0.882, 0.925)
+const CYAN_L   := Color(0.69, 0.99, 1.0)
+const POISON   := Color(0.510, 0.851, 0.376)
+const EMBER    := Color(1.0, 0.580, 0.220)
+const EMBER_L  := Color(1.0, 0.80, 0.42)
+
+# Bayer 4x4 (valeurs 0..15) pour le dithering rétro façon CGA.
+const BAYER4 := [
+	[0, 8, 2, 10],
+	[12, 4, 14, 6],
+	[3, 11, 1, 9],
+	[15, 7, 13, 5],
+]
 
 func _init() -> void:
 	rng.seed = 1337
@@ -176,9 +189,26 @@ func _diamond(img: Image, cx: int, cy: int, r: int, c: Color) -> void:
 		for dx in range(-w, w + 1):
 			_px(img, cx + dx, cy + dy, c)
 
+# Halo néon additif (bloom) : éclaircit le fond et lui donne un peu d'alpha.
+func _glow(img: Image, cx: float, cy: float, r: float, c: Color, strength: float = 0.85) -> void:
+	for yy in range(int(floor(cy - r)), int(ceil(cy + r)) + 1):
+		for xx in range(int(floor(cx - r)), int(ceil(cx + r)) + 1):
+			if xx < 0 or xx >= TILE or yy < 0 or yy >= TILE:
+				continue
+			var d := sqrt(pow(xx - cx, 2.0) + pow(yy - cy, 2.0)) / r
+			if d >= 1.0:
+				continue
+			var fa := (1.0 - d) * (1.0 - d) * strength
+			var p := img.get_pixel(xx, yy)
+			p.r = min(1.0, p.r + c.r * fa)
+			p.g = min(1.0, p.g + c.g * fa)
+			p.b = min(1.0, p.b + c.b * fa)
+			p.a = min(1.0, p.a + (1.0 - p.a) * fa * c.a)
+			img.set_pixel(xx, yy, p)
+
 # Ombre de contact douce au pied d'une figure (ancre la silhouette au sol).
 func _ground_shadow(img: Image) -> void:
-	_ellipse(img, 12, 21, 6.5, 1.8, Color(INK.r, INK.g, INK.b, 0.30))
+	_ellipse(img, 12, 21, 6.5, 1.8, Color(INK.r, INK.g, INK.b, 0.34))
 
 func _fade(img: Image, a: float) -> void:
 	for y in TILE:
@@ -192,23 +222,20 @@ func _fade(img: Image, a: float) -> void:
 func _gen_floor() -> Image:
 	var img := _new(true)
 	img.fill(FLOOR_A)
-	# Dallage : grain subtil + variations froides.
 	for y in TILE:
 		for x in TILE:
 			var r := rng.randf()
 			if r < 0.10:
-				_px(img, x, y, FLOOR_A.darkened(0.22))
+				_px(img, x, y, FLOOR_A.darkened(0.25))
 			elif r > 0.92:
 				_px(img, x, y, FLOOR_B)
-	# Joints de dalle (croix décentrée) pour un motif de pierre.
 	for i in TILE:
 		_px(img, i, 0, INK)
 		_px(img, 0, i, INK)
 		_px(img, i, 12, INK_SOFT.darkened(0.1))
 		_px(img, 12, i, INK_SOFT.darkened(0.1))
-	# Reflet froid en haut-gauche de chaque quart.
-	_px(img, 2, 2, FLOOR_B.lightened(0.10))
-	_px(img, 14, 2, FLOOR_B.lightened(0.10))
+	_px(img, 2, 2, FLOOR_B.lightened(0.12))
+	_px(img, 14, 2, FLOOR_B.lightened(0.12))
 	return img
 
 func _gen_wall() -> Image:
@@ -218,36 +245,32 @@ func _gen_wall() -> Image:
 	var brick_w := 8
 	var row := 0
 	for by in range(0, TILE, brick_h):
-		# Joints horizontaux épais (2px) et liseré lumineux dessous.
 		for x in TILE:
 			_px(img, x, by,     INK)
-			_px(img, x, by + 1, INK.lerp(STONE_D, 0.4))  # 2e px du joint
+			_px(img, x, by + 1, INK.lerp(STONE_D, 0.4))
 			if by + 2 < TILE:
-				_px(img, x, by + 2, STONE_L)              # liseré éclairé
+				_px(img, x, by + 2, STONE_L)
 		var off := (brick_w / 2) if (row % 2 == 1) else 0
 		var bx := -off
 		while bx <= TILE:
-			# Joints verticaux épais (2px).
 			for yy in range(by + 2, by + brick_h):
 				_px(img, bx,     yy, INK)
 				_px(img, bx + 1, yy, INK.lerp(STONE_D, 0.4))
-			# Variation subtile par rangée de brique (alternance clair/sombre).
 			var face_col := STONE_L if (row % 2 == 0) else STONE
 			for yy in range(by + 3, by + brick_h - 1):
 				for xx in range(bx + 2, bx + brick_w - 1):
 					if xx >= 0 and xx < TILE and yy >= 0 and yy < TILE:
 						_px(img, xx, yy, face_col)
-			# Ombrage interne (bas-droite de chaque brique).
 			for yy in range(by + 2, by + brick_h):
 				_px(img, bx + brick_w - 1, yy, STONE_D)
 			bx += brick_w
 		row += 1
-	# Grain subtil.
 	for i in 18:
 		_px(img, rng.randi_range(0, TILE - 1), rng.randi_range(0, TILE - 1), STONE_D)
-	# Cristaux arcaniques en positions fixes (cohérence entre tiles).
+	# Cristaux arcaniques en positions fixes, halo néon.
 	var crystal_pos := [Vector2i(5, 4), Vector2i(17, 10), Vector2i(3, 16), Vector2i(19, 3)]
 	for cp in crystal_pos:
+		_glow(img, cp.x, cp.y, 2.4, ARCANE, 0.55)
 		_px(img, cp.x,     cp.y,     ARCANE)
 		_px(img, cp.x,     cp.y - 1, ARCANE_L)
 		_px(img, cp.x - 1, cp.y,     ARCANE.darkened(0.3))
@@ -255,23 +278,20 @@ func _gen_wall() -> Image:
 
 func _gen_stairs() -> Image:
 	var img := _new(false)                        # transparent : posé sur le sol
-	# Portail d'ascension : arche sombre + lueur arcanique + chevron doré.
 	_disc_o(img, 12, 13, 9.0, INK_SOFT, INK)      # masse de l'arche
+	_glow(img, 12, 14, 9.0, ARCANE, 0.55)
 	_ellipse(img, 12, 14, 6.5, 7.5, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.55))
-	_ellipse(img, 12, 15, 4.5, 5.5, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.55))
-	# Marches suggérées dans la lueur.
+	_ellipse(img, 12, 15, 4.5, 5.5, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.6))
 	for s in range(3):
 		var y := 19 - s * 3
 		var w := 5 - s
-		_rect(img, 12 - w, y, w * 2, 1, Color(CYAN_L.r, CYAN_L.g, CYAN_L.b, 0.7))
-	# Chevron "montée".
+		_rect(img, 12 - w, y, w * 2, 1, Color(CYAN_L.r, CYAN_L.g, CYAN_L.b, 0.75))
+	_glow(img, 12, 10, 4.0, GOLD_L, 0.7)
 	_tri_up(img, 12, 9, 4, 4, GOLD_L)
 	_tri_up(img, 12, 11, 4, 3, GOLD)
 	return img
 
 # --- Créatures (héroïne & ennemis) -------------------------------------------
-# Chaque créature est une petite FIGURE (tête + corps/cape) à silhouette
-# distincte, contour INK et lumière en haut-gauche.
 func _gen_creature(kind: String) -> Image:
 	var img := _new(false)
 	match kind:
@@ -290,330 +310,284 @@ func _gen_creature(kind: String) -> Image:
 		_:         _fig_knight(img)
 	return img
 
-# Reflet d'œil lumineux générique.
+# Reflet d'œil lumineux générique, avec halo néon.
 func _glow_eyes(img: Image, cx: int, ey: int, c: Color, spread: int = 3) -> void:
+	_glow(img, cx - spread + 0.5, ey + 0.5, 2.0, c, 0.7)
+	_glow(img, cx + spread - 0.5, ey + 0.5, 2.0, c, 0.7)
 	_rect(img, cx - spread, ey, 2, 2, c)
 	_rect(img, cx + spread - 1, ey, 2, 2, c)
-	_px(img, cx - spread, ey, c.lightened(0.4))
-	_px(img, cx + spread, ey, c.lightened(0.4))
+	_px(img, cx - spread, ey, c.lightened(0.45))
+	_px(img, cx + spread, ey, c.lightened(0.45))
 
-# Héroïne ARIA : sprite signature. Longue chevelure rose, cape arcanique évasée,
-# armure légère à liseré cyan, lame luisante, diadème à gemme. Doit ressortir
-# nettement face aux ennemis (héroïne = pièce maîtresse de la lisibilité).
-const ROSE   := Color(0.92, 0.55, 0.85)
+const ROSE   := Color(0.95, 0.57, 0.87)
 const ROSE_D := Color(0.62, 0.30, 0.56)
-const ROSE_L := Color(1.0, 0.74, 0.95)
-const SKIN   := Color(0.94, 0.82, 0.72)
+const ROSE_L := Color(1.0, 0.78, 0.97)
+const SKIN   := Color(0.95, 0.83, 0.73)
 const SKIN_D := Color(0.78, 0.62, 0.54)
-
-# Proportions communes aux 3 vues (paper-doll cohérent) : tête y3-10, buste
-# y10-18, jambes y18-22, axe central x=12.
 
 # --- Vue de FACE (déplacement vers le bas / par défaut) ---
 func _fig_aria(img: Image) -> void:
 	_ground_shadow(img)
-	# Cape arcanique, juste visible derrière les épaules.
 	_trapezoid(img, 12, 11, 21, 3.6, 6.0, ARCANE.darkened(0.4))
-	# Jambes / bottes.
 	_rect(img, 9, 18, 3, 4, STEEL_D); _rect(img, 9, 18, 3, 1, STEEL)
 	_rect(img, 13, 18, 3, 4, STEEL_D); _rect(img, 13, 18, 3, 1, STEEL)
-	# Tunique arcanique sous la cuirasse.
 	_trapezoid_o(img, 12, 15, 20, 2.6, 4.0, ARCANE.darkened(0.25))
-	_rect(img, 12, 16, 1, 4, ARCANE_L.darkened(0.1))       # pli central
-	# Cuirasse claire à liseré cyan.
+	_rect(img, 12, 16, 1, 4, ARCANE_L.darkened(0.1))
 	_trapezoid_o(img, 12, 10, 16, 3.2, 3.6, STEEL_D)
 	_trapezoid(img, 12, 11, 15, 2.4, 2.8, STEEL_L)
-	_rect(img, 10, 11, 5, 1, CYAN)                          # encolure cyan
-	_diamond(img, 12, 13, 2, CYAN); _px(img, 12, 13, Color(1, 1, 1))  # emblème
-	# Spallières + bras.
+	_rect(img, 10, 11, 5, 1, CYAN)
+	_glow(img, 12, 13, 2.6, CYAN, 0.6)
+	_diamond(img, 12, 13, 2, CYAN); _px(img, 12, 13, Color(1, 1, 1))
 	_disc_o(img, 8, 11, 1.7, STEEL, STEEL_D); _disc_o(img, 16, 11, 1.7, STEEL, STEEL_D)
-	_rect(img, 7, 12, 2, 4, ARCANE.darkened(0.1))          # bras G
-	_rect(img, 15, 12, 2, 4, ARCANE.darkened(0.1))         # bras D
-	_px(img, 7, 15, SKIN); _px(img, 16, 15, SKIN)          # mains
-	# Tête : chevelure encadrant un visage net.
-	_disc_o(img, 12, 7, 3.7, ROSE_D, INK)                  # masse de cheveux
-	_ellipse(img, 12, 8, 2.5, 2.7, SKIN)                   # visage
-	_rect(img, 9, 7, 2, 4, ROSE); _rect(img, 14, 7, 2, 4, ROSE)   # mèches latérales
+	_rect(img, 7, 12, 2, 4, ARCANE.darkened(0.1))
+	_rect(img, 15, 12, 2, 4, ARCANE.darkened(0.1))
+	_px(img, 7, 15, SKIN); _px(img, 16, 15, SKIN)
+	_disc_o(img, 12, 7, 3.7, ROSE_D, INK)
+	_ellipse(img, 12, 8, 2.5, 2.7, SKIN)
+	_rect(img, 9, 7, 2, 4, ROSE); _rect(img, 14, 7, 2, 4, ROSE)
 	_px(img, 9, 7, ROSE_L)
-	_rect(img, 9, 5, 7, 2, ROSE); _px(img, 10, 5, ROSE_L) # frange
-	_rect(img, 10, 7, 5, 1, ROSE_D)                        # ligne de frange
-	_px(img, 11, 9, INK); _px(img, 14, 9, INK)             # yeux (nets)
+	_rect(img, 9, 5, 7, 2, ROSE); _px(img, 10, 5, ROSE_L)
+	_rect(img, 10, 7, 5, 1, ROSE_D)
+	_px(img, 11, 9, INK); _px(img, 14, 9, INK)
 	_px(img, 11, 8, SKIN_D); _px(img, 14, 8, SKIN_D)
-	_px(img, 12, 11, SKIN_D)                               # bouche
-	# Diadème à gemme.
-	_rect(img, 10, 6, 5, 1, GOLD); _px(img, 12, 6, CYAN_L)
+	_px(img, 12, 11, SKIN_D)
+	_rect(img, 10, 6, 5, 1, GOLD); _glow(img, 12, 6, 1.6, CYAN_L, 0.7); _px(img, 12, 6, CYAN_L)
 
 # --- Vue de DOS (déplacement vers le haut) ---
 func _fig_aria_back(img: Image) -> void:
 	_ground_shadow(img)
-	# Bottes.
 	_rect(img, 9, 18, 3, 4, STEEL_D); _rect(img, 13, 18, 3, 4, STEEL_D)
-	# Cape arcanique pleine (le dos montre la cape entière).
 	_trapezoid_o(img, 12, 9, 22, 3.6, 7.5, ARCANE.darkened(0.45))
 	_trapezoid(img, 12, 10, 21, 2.8, 6.0, ARCANE)
-	_rect(img, 12, 10, 1, 11, ARCANE_L.darkened(0.12))     # couture centrale
+	_rect(img, 12, 10, 1, 11, ARCANE_L.darkened(0.12))
 	_px(img, 9, 13, ARCANE_L.darkened(0.2)); _px(img, 15, 16, ARCANE_L.darkened(0.2))
-	# Spallières visibles en haut.
 	_disc_o(img, 8, 11, 1.7, STEEL, STEEL_D); _disc_o(img, 16, 11, 1.7, STEEL, STEEL_D)
-	_rect(img, 9, 10, 6, 1, CYAN)                           # liseré de col (dos)
-	# Tête (arrière de la chevelure) + tresse.
+	_rect(img, 9, 10, 6, 1, CYAN)
 	_disc_o(img, 12, 7, 3.7, ROSE_D, INK)
 	_disc(img, 12, 7, 3.1, ROSE)
-	_ellipse(img, 10, 5, 1.4, 1.2, ROSE_L)                 # reflet
-	_rect(img, 11, 9, 2, 8, ROSE_D); _rect(img, 11, 9, 2, 7, ROSE)   # tresse dans le dos
+	_ellipse(img, 10, 5, 1.4, 1.2, ROSE_L)
+	_rect(img, 11, 9, 2, 8, ROSE_D); _rect(img, 11, 9, 2, 7, ROSE)
 	_px(img, 11, 12, ROSE_L); _px(img, 12, 15, ROSE_D)
-	_rect(img, 9, 6, 6, 1, GOLD)                            # diadème (vu de dos)
+	_rect(img, 9, 6, 6, 1, GOLD)
 
-# --- Vue de PROFIL (déplacement latéral ; orientée vers la DROITE, miroir à gauche) ---
+# --- Vue de PROFIL (orientée vers la DROITE, miroir à gauche) ---
 func _fig_aria_side(img: Image) -> void:
 	_ground_shadow(img)
-	# Cape qui traîne en arrière (à gauche).
 	_trapezoid(img, 9, 11, 21, 2.4, 5.2, ARCANE.darkened(0.45))
 	_trapezoid(img, 9, 12, 20, 1.7, 4.0, ARCANE.darkened(0.2))
 	_px(img, 5, 20, ARCANE.darkened(0.3))
-	# Jambes décalées (pas en avant).
 	_rect(img, 11, 18, 3, 4, STEEL_D); _rect(img, 11, 18, 3, 1, STEEL)
 	_rect(img, 13, 19, 3, 3, STEEL_D.darkened(0.08))
-	# Buste de profil, tourné vers la droite.
 	_trapezoid_o(img, 12, 10, 17, 2.4, 3.0, STEEL_D)
 	_trapezoid(img, 12, 11, 16, 1.7, 2.2, STEEL_L)
-	_rect(img, 13, 12, 3, 1, CYAN)                          # liseré vers l'avant
-	_disc_o(img, 11, 11, 1.7, STEEL, STEEL_D)              # épaule (arrière)
-	_rect(img, 14, 12, 2, 4, ARCANE.darkened(0.1))         # bras avant
-	_px(img, 15, 15, SKIN)                                 # main
-	# Tresse fine dans le dos (gauche), tracée AVANT la tête (dégage l'armure).
+	_rect(img, 13, 12, 3, 1, CYAN)
+	_disc_o(img, 11, 11, 1.7, STEEL, STEEL_D)
+	_rect(img, 14, 12, 2, 4, ARCANE.darkened(0.1))
+	_px(img, 15, 15, SKIN)
 	_trapezoid_o(img, 9, 9, 19, 1.2, 1.8, ROSE_D)
 	_trapezoid(img, 9, 9, 18, 0.7, 1.2, ROSE)
 	_px(img, 9, 13, ROSE_L); _px(img, 9, 17, ROSE_D)
-	# Tête : la chevelure couvre le crâne et l'arrière ; le visage occupe l'avant
-	# (joue/mâchoire vers la droite) — plus d'effet « chauve ».
-	_disc_o(img, 12, 7, 3.6, ROSE_D, INK)                  # calotte de cheveux
+	_disc_o(img, 12, 7, 3.6, ROSE_D, INK)
 	_disc(img, 11, 6, 3.0, ROSE)
-	_ellipse(img, 10, 5, 1.2, 1.0, ROSE_L)                 # reflet
-	_ellipse(img, 14, 8, 2.1, 2.3, SKIN)                   # visage (avant)
-	_px(img, 16, 8, SKIN_D)                                # nez
-	_rect(img, 14, 8, 1, 2, INK)                           # œil
-	_px(img, 15, 11, SKIN_D)                               # menton
-	_px(img, 13, 5, ROSE); _px(img, 14, 6, ROSE)          # mèche frontale
-	# Diadème (de profil).
-	_px(img, 12, 5, GOLD); _px(img, 13, 6, GOLD); _px(img, 14, 7, CYAN_L)
+	_ellipse(img, 10, 5, 1.2, 1.0, ROSE_L)
+	_ellipse(img, 14, 8, 2.1, 2.3, SKIN)
+	_px(img, 16, 8, SKIN_D)
+	_rect(img, 14, 8, 1, 2, INK)
+	_px(img, 15, 11, SKIN_D)
+	_px(img, 13, 5, ROSE); _px(img, 14, 6, ROSE)
+	_px(img, 12, 5, GOLD); _px(img, 13, 6, GOLD); _glow(img, 14, 7, 1.4, CYAN_L, 0.7); _px(img, 14, 7, CYAN_L)
 
 # Classe « chevalier » (legacy) : armure d'acier, écharpe rouge, visière cyan.
 func _fig_knight(img: Image) -> void:
 	_ground_shadow(img)
-	# Cape / corps en acier sombre.
 	_trapezoid_o(img, 12, 11, 21, 2.5, 6.0, STEEL_D)
 	_trapezoid(img, 12, 12, 20, 1.5, 4.5, STEEL)
-	# Écharpe rouge flottante.
 	_rect(img, 6, 12, 3, 2, BLOOD)
 	_px(img, 5, 13, BLOOD_D)
 	_px(img, 8, 11, BLOOD)
-	# Plastron + reflet.
 	_rect(img, 10, 13, 4, 5, STEEL_L)
 	_px(img, 10, 13, STEEL)
 	_rect(img, 11, 14, 1, 3, Color(1, 1, 1, 0.55))
-	# Tête casquée.
 	_disc_o(img, 12, 7, 4.2, STEEL_D, INK)
 	_disc(img, 12, 6, 3.4, STEEL)
-	_ellipse(img, 10, 5, 1.6, 1.4, STEEL_L)        # reflet haut-gauche
-	# Visière lumineuse (cyan).
+	_ellipse(img, 10, 5, 1.6, 1.4, STEEL_L)
+	_glow(img, 12, 7, 3.4, CYAN, 0.4)
 	_rect(img, 9, 7, 6, 1, CYAN_L)
 	_px(img, 9, 7, CYAN)
-	# Plumet.
 	_tri_up(img, 12, 3, 1, 3, BLOOD)
-	# Épée au flanc (lame qui dépasse).
 	_rect(img, 17, 9, 1, 9, STEEL_L)
 	_rect(img, 16, 16, 3, 1, GOLD)
 
 func _fig_mage(img: Image) -> void:
 	_ground_shadow(img)
-	# Robe arcanique.
 	_trapezoid_o(img, 12, 11, 21, 2.0, 6.5, ARCANE.darkened(0.45))
 	_trapezoid(img, 12, 12, 20, 1.2, 5.0, ARCANE)
-	_rect(img, 11, 14, 2, 6, ARCANE_L.darkened(0.1))   # plis éclairés
-	# Tête.
+	_rect(img, 11, 14, 2, 6, ARCANE_L.darkened(0.1))
 	_disc_o(img, 12, 8, 3.4, ARCANE.darkened(0.4), INK)
-	_disc(img, 12, 8, 2.6, Color(0.86, 0.78, 0.66))    # visage
+	_disc(img, 12, 8, 2.6, Color(0.86, 0.78, 0.66))
 	_glow_eyes(img, 12, 7, CYAN, 2)
-	# Chapeau pointu.
 	_trapezoid_o(img, 12, 1, 6, 0.5, 4.5, ARCANE.darkened(0.25))
-	_px(img, 12, 1, GOLD_L)                              # étoile au sommet
-	_px(img, 9, 6, GOLD)                                 # fermoir
-	# Bâton à gemme.
+	_glow(img, 12, 1, 2.0, GOLD_L, 0.8); _px(img, 12, 1, GOLD_L)
+	_px(img, 9, 6, GOLD)
 	_rect(img, 6, 8, 1, 12, GOLD_D)
+	_glow(img, 6, 7, 3.0, CYAN, 0.7)
 	_disc_o(img, 6, 7, 2.0, CYAN, INK)
 	_px(img, 6, 6, CYAN_L)
 
 func _fig_ranger(img: Image) -> void:
 	_ground_shadow(img)
-	# Manteau vert.
 	_trapezoid_o(img, 12, 11, 21, 2.5, 6.0, POISON.darkened(0.5))
 	_trapezoid(img, 12, 12, 20, 1.6, 4.6, POISON.darkened(0.25))
 	_rect(img, 11, 14, 2, 5, POISON.darkened(0.1))
-	# Capuche.
 	_disc_o(img, 12, 7, 4.2, POISON.darkened(0.5), INK)
 	_ellipse(img, 12, 6, 3.4, 3.6, POISON.darkened(0.3))
-	_ellipse(img, 12, 8, 2.4, 2.0, Color(0.10, 0.10, 0.14))   # ombre du visage
+	_ellipse(img, 12, 8, 2.4, 2.0, Color(0.07, 0.07, 0.10))
 	_glow_eyes(img, 12, 8, CYAN_L, 2)
-	# Arc.
 	for i in range(11):
 		var yy := 6 + i
 		var dx := int(round(3.0 * sin(float(i) / 10.0 * PI)))
 		_px(img, 18 - dx, yy, GOLD_D)
-	_rect(img, 18, 6, 1, 11, Color(0.85, 0.85, 0.9, 0.8))     # corde
+	_rect(img, 18, 6, 1, 11, Color(0.85, 0.85, 0.9, 0.8))
 
 func _fig_gobelin(img: Image) -> void:
 	_ground_shadow(img)
 	var skin := POISON.darkened(0.15)
-	# Petit corps trapu.
 	_trapezoid_o(img, 12, 13, 21, 3.0, 5.5, skin.darkened(0.35))
 	_trapezoid(img, 12, 14, 20, 2.0, 4.2, skin)
-	_rect(img, 10, 15, 4, 3, Color(0.45, 0.32, 0.22))         # pagne de cuir
-	# Grosse tête + oreilles pointues.
+	_rect(img, 10, 15, 4, 3, Color(0.45, 0.32, 0.22))
 	_disc_o(img, 12, 9, 4.0, skin.darkened(0.3), INK)
 	_disc(img, 12, 9, 3.2, skin)
-	_ellipse(img, 10, 7, 1.3, 1.1, skin.lightened(0.25))
-	_tri_up(img, 6, 11, 2, 5, skin.darkened(0.1))             # oreille G
-	_tri_up(img, 18, 11, 2, 5, skin.darkened(0.1))            # oreille D
+	_ellipse(img, 10, 7, 1.3, 1.1, skin.lightened(0.28))
+	_tri_up(img, 6, 11, 2, 5, skin.darkened(0.1))
+	_tri_up(img, 18, 11, 2, 5, skin.darkened(0.1))
 	_glow_eyes(img, 12, 8, GOLD_L, 2)
-	_rect(img, 10, 11, 4, 1, INK)                             # bouche
-	_px(img, 11, 11, BONE)                                    # croc
-	# Dague.
+	_rect(img, 10, 11, 4, 1, INK)
+	_px(img, 11, 11, BONE)
 	_rect(img, 18, 13, 1, 5, STEEL_L)
 
 func _fig_wolf(img: Image) -> void:
 	_ground_shadow(img)
 	var fur := Color(0.40, 0.42, 0.50)
-	var fur_d := fur.darkened(0.40)
-	var fur_l := fur.lightened(0.18)
-	# Corps + arrière-train surélevé (posture de prédateur).
+	var fur_d := fur.darkened(0.42)
+	var fur_l := fur.lightened(0.20)
 	_ellipse(img, 14, 15, 7.5, 4.4, fur_d)
 	_ellipse(img, 14, 15, 6.5, 3.6, fur)
-	_ellipse(img, 17, 13, 3.4, 3.0, fur)                      # croupe haute
-	_ellipse(img, 16, 12, 2.0, 1.4, fur_l)                    # reflet dorsal
-	_rect(img, 9, 18, 2, 3, fur_d)                            # pattes
+	_ellipse(img, 17, 13, 3.4, 3.0, fur)
+	_ellipse(img, 16, 12, 2.0, 1.4, fur_l)
+	_rect(img, 9, 18, 2, 3, fur_d)
 	_rect(img, 16, 18, 2, 3, fur_d)
-	_ellipse(img, 21, 12, 2.6, 1.4, fur_d)                    # queue dressée
-	# Tête basse à gauche.
+	_ellipse(img, 21, 12, 2.6, 1.4, fur_d)
 	_disc_o(img, 6, 13, 3.6, fur_d, INK)
 	_disc(img, 6, 13, 2.9, fur)
-	_tri_up(img, 4, 10, 1, 3, fur_d)                          # oreilles
+	_tri_up(img, 4, 10, 1, 3, fur_d)
 	_tri_up(img, 8, 10, 1, 3, fur_d)
-	_rect(img, 1, 13, 4, 2, fur_l)                            # museau allongé
-	_px(img, 1, 14, INK)                                      # truffe
-	_rect(img, 5, 12, 2, 1, CYAN_L)                           # œil luisant
-	_px(img, 4, 15, BONE)                                     # croc
+	_rect(img, 1, 13, 4, 2, fur_l)
+	_px(img, 1, 14, INK)
+	_glow(img, 5.5, 12.5, 1.6, CYAN_L, 0.7)
+	_rect(img, 5, 12, 2, 1, CYAN_L)
+	_px(img, 4, 15, BONE)
 
 func _fig_skeleton(img: Image) -> void:
 	_ground_shadow(img)
-	# Cage thoracique osseuse.
 	_trapezoid_o(img, 12, 12, 20, 2.0, 4.0, BONE_D)
 	_trapezoid(img, 12, 13, 19, 1.4, 3.0, BONE)
 	for ry in [14, 16, 18]:
-		_rect(img, 10, ry, 5, 1, INK_SOFT)                    # côtes
-	_rect(img, 12, 13, 1, 7, BONE_D)                          # colonne
-	# Crâne.
+		_rect(img, 10, ry, 5, 1, INK_SOFT)
+	_rect(img, 12, 13, 1, 7, BONE_D)
 	_disc_o(img, 12, 8, 4.0, BONE_D, INK)
 	_disc(img, 12, 7, 3.3, BONE)
-	_ellipse(img, 10, 6, 1.3, 1.1, Color(1, 1, 0.95))         # reflet
-	_rect(img, 9, 7, 2, 2, INK)                               # orbite G
-	_rect(img, 13, 7, 2, 2, INK)                              # orbite D
-	_px(img, 9, 7, CYAN)                                      # lueur dans l'orbite
+	_ellipse(img, 10, 6, 1.3, 1.1, Color(1, 1, 0.95))
+	_rect(img, 9, 7, 2, 2, INK)
+	_rect(img, 13, 7, 2, 2, INK)
+	_glow(img, 9.5, 7.5, 1.6, CYAN, 0.7); _glow(img, 14.5, 7.5, 1.6, CYAN, 0.7)
+	_px(img, 9, 7, CYAN)
 	_px(img, 14, 7, CYAN)
 	for tx in range(10, 15, 2):
-		_px(img, tx, 10, INK)                                 # dents
+		_px(img, tx, 10, INK)
 
 func _fig_orc(img: Image) -> void:
 	_ground_shadow(img)
-	var skin := Color(0.30, 0.44, 0.30)        # olive sombre, distinct du gobelin vif
-	var skin_l := skin.lightened(0.18)
-	# Corps massif et large (la brute).
+	var skin := Color(0.30, 0.44, 0.30)
+	var skin_l := skin.lightened(0.20)
 	_trapezoid_o(img, 11, 10, 21, 5.0, 7.5, skin.darkened(0.45))
 	_trapezoid(img, 11, 11, 20, 4.0, 6.0, skin)
-	_rect(img, 6, 12, 10, 2, Color(0.36, 0.25, 0.18))         # baudrier de cuir
-	_rect(img, 8, 15, 6, 3, skin_l)                           # pectoraux éclairés
-	# Tête lourde et carrée.
+	_rect(img, 6, 12, 10, 2, Color(0.36, 0.25, 0.18))
+	_rect(img, 8, 15, 6, 3, skin_l)
 	_disc_o(img, 11, 7, 4.6, skin.darkened(0.4), INK)
 	_disc(img, 11, 7, 3.8, skin)
 	_ellipse(img, 9, 5, 1.6, 1.3, skin_l)
-	_rect(img, 7, 6, 9, 1, INK)                               # arcade lourde
+	_rect(img, 7, 6, 9, 1, INK)
 	_glow_eyes(img, 11, 7, BLOOD, 3)
-	_tri_up(img, 9, 13, 1, 4, BONE)                           # grandes défenses
+	_tri_up(img, 9, 13, 1, 4, BONE)
 	_tri_up(img, 13, 13, 1, 4, BONE)
-	_rect(img, 9, 11, 5, 1, INK)                              # bouche
-	# Hache à lame nette (manche + tête trapue).
-	_rect(img, 18, 5, 1, 15, Color(0.36, 0.25, 0.18))         # manche
-	_rect(img, 14, 5, 5, 5, STEEL_D)                          # tête (contour)
+	_rect(img, 9, 11, 5, 1, INK)
+	_rect(img, 18, 5, 1, 15, Color(0.36, 0.25, 0.18))
+	_rect(img, 14, 5, 5, 5, STEEL_D)
 	_rect(img, 15, 6, 3, 3, STEEL)
-	_rect(img, 15, 6, 3, 1, STEEL_L)                          # tranchant éclairé
-	_px(img, 14, 7, STEEL_L); _px(img, 14, 8, STEEL_L)        # biseau du fil
+	_rect(img, 15, 6, 3, 1, STEEL_L)
+	_px(img, 14, 7, STEEL_L); _px(img, 14, 8, STEEL_L)
 
 func _fig_spectre(img: Image) -> void:
-	# Spectre : haut net, bas vaporeux et ondulé, semi-transparence.
+	_glow(img, 12, 9, 6.5, ARCANE, 0.5)
 	_disc_o(img, 12, 9, 5.0, ARCANE.darkened(0.35), INK_SOFT)
 	_disc(img, 12, 9, 4.2, ARCANE.darkened(0.1))
-	# Voile descendant ondulé.
 	_trapezoid(img, 12, 11, 20, 3.5, 6.0, ARCANE.darkened(0.1))
 	for x in range(6, 19):
-		var cut := 20 - ((x % 3))           # bord déchiqueté
+		var cut := 20 - ((x % 3))
 		for y in range(cut, TILE):
 			_px(img, x, y, Color(0, 0, 0, 0))
-	# Visage creux lumineux.
 	_ellipse(img, 12, 9, 2.6, 2.2, Color(0.06, 0.05, 0.10))
 	_glow_eyes(img, 12, 8, CYAN_L, 2)
-	_px(img, 12, 11, CYAN)                  # bouche fantomatique
-	_fade(img, 0.80)
+	_px(img, 12, 11, CYAN)
+	_fade(img, 0.82)
 
 func _fig_boss(img: Image) -> void:
-	# Le Gardien : grande silhouette imposante, cornes, couronne de lueur.
-	_ellipse(img, 12, 22, 8.0, 2.0, Color(INK.r, INK.g, INK.b, 0.35))   # ombre large
-	# Manteau sombre teinté de sang.
+	_ellipse(img, 12, 22, 8.0, 2.0, Color(INK.r, INK.g, INK.b, 0.40))
 	_trapezoid_o(img, 12, 9, 22, 4.5, 8.5, INK_SOFT)
 	_trapezoid(img, 12, 10, 21, 3.6, 7.0, Color(0.22, 0.12, 0.16))
-	_rect(img, 11, 13, 2, 8, BLOOD_D)                         # raie centrale
-	# Pectoral / armure.
+	_rect(img, 11, 13, 2, 8, BLOOD_D)
 	_rect(img, 8, 13, 8, 3, Color(0.30, 0.16, 0.20))
-	_disc_o(img, 12, 14, 2.0, GOLD, GOLD_D)                   # gemme de poitrine
+	_glow(img, 12, 14, 2.6, GOLD, 0.65)
+	_disc_o(img, 12, 14, 2.0, GOLD, GOLD_D)
 	_px(img, 12, 13, GOLD_L)
-	# Tête cornue.
 	_disc_o(img, 12, 7, 4.6, INK_SOFT, INK)
 	_disc(img, 12, 7, 3.8, Color(0.26, 0.16, 0.20))
-	_tri_up(img, 6, 6, 2, 6, BONE_D)                          # corne G
+	_tri_up(img, 6, 6, 2, 6, BONE_D)
 	_tri_up(img, 18, 6, 2, 6, BONE_D)
 	_px(img, 6, 0, BONE); _px(img, 18, 0, BONE)
-	_glow_eyes(img, 12, 7, EMBER, 3)                          # regard de braise
+	_glow_eyes(img, 12, 7, EMBER, 3)
 	_px(img, 9, 7, GOLD_L); _px(img, 15, 7, GOLD_L)
-	_rect(img, 10, 10, 5, 1, INK)                             # rictus
+	_rect(img, 10, 10, 5, 1, INK)
 
 # --- Butin --------------------------------------------------------------------
 func _gen_weapon() -> Image:
 	var img := _new(false)
-	# Épée droite, lame d'acier à arête, garde dorée.
-	_rect(img, 10, 3, 4, 13, INK)                  # contour lame
+	_rect(img, 10, 3, 4, 13, INK)
 	_rect(img, 11, 4, 2, 11, STEEL)
-	_rect(img, 11, 4, 1, 11, STEEL_L)              # tranchant éclairé
-	_tri_up(img, 12, 4, 1, 2, STEEL_L)             # pointe
-	_rect(img, 7, 15, 10, 2, GOLD_D)               # garde (contour)
+	_rect(img, 11, 4, 1, 11, STEEL_L)
+	_tri_up(img, 12, 4, 1, 2, STEEL_L)
+	_glow(img, 12, 9, 4.0, CYAN, 0.30)
+	_rect(img, 7, 15, 10, 2, GOLD_D)
 	_rect(img, 7, 15, 10, 1, GOLD)
 	_px(img, 6, 15, GOLD); _px(img, 17, 15, GOLD)
-	_rect(img, 11, 17, 2, 4, Color(0.40, 0.27, 0.18))   # poignée
-	_disc_o(img, 12, 21, 1.6, GOLD, GOLD_D)        # pommeau
+	_rect(img, 11, 17, 2, 4, Color(0.40, 0.27, 0.18))
+	_disc_o(img, 12, 21, 1.6, GOLD, GOLD_D)
 	_px(img, 12, 20, GOLD_L)
 	return img
 
 func _gen_armor() -> Image:
 	var img := _new(false)
-	# Bouclier héraldique en acier, umbo central + rivets.
-	_trapezoid(img, 12, 3, 12, 7.0, 8.0, STEEL_D)  # haut (contour large)
+	_trapezoid(img, 12, 3, 12, 7.0, 8.0, STEEL_D)
 	_trapezoid(img, 12, 4, 12, 6.0, 7.0, STEEL)
 	for y in range(12, 22):
 		var w := int(round(8.0 * (1.0 - float(y - 12) / 9.5)))
-		_rect(img, 12 - w, y, 1, 1, STEEL_D)        # bords pointe (contour)
+		_rect(img, 12 - w, y, 1, 1, STEEL_D)
 		_rect(img, 12 + w, y, 1, 1, STEEL_D)
 		if w > 1:
 			_rect(img, 12 - w + 1, y, (w - 1) * 2, 1, STEEL)
-	_rect(img, 8, 5, 2, 8, STEEL_L)                 # reflet vertical
-	_disc_o(img, 12, 10, 2.4, ARCANE, INK_SOFT)     # umbo arcanique
+	_rect(img, 8, 5, 2, 8, STEEL_L)
+	_glow(img, 12, 10, 3.0, ARCANE, 0.5)
+	_disc_o(img, 12, 10, 2.4, ARCANE, INK_SOFT)
 	_disc(img, 12, 10, 1.3, ARCANE_L)
 	for ry in [5, 9, 13]:
 		_px(img, 6, ry, STEEL_L)
@@ -622,146 +596,137 @@ func _gen_armor() -> Image:
 
 func _gen_relic() -> Image:
 	var img := _new(false)
-	# Amulette : anneau d'or + gemme cyan rayonnante.
 	_disc_o(img, 12, 15, 6.0, GOLD, GOLD_D)
-	_disc(img, 12, 15, 3.0, Color(0, 0, 0, 0))      # évidement
-	_px(img, 9, 12, GOLD_L)                          # reflet anneau
-	_disc_o(img, 12, 6, 3.0, CYAN, INK_SOFT)         # gemme suspendue
+	_disc(img, 12, 15, 3.0, Color(0, 0, 0, 0))
+	_px(img, 9, 12, GOLD_L)
+	_glow(img, 12, 6, 3.4, CYAN, 0.7)
+	_disc_o(img, 12, 6, 3.0, CYAN, INK_SOFT)
 	_disc(img, 12, 6, 1.7, CYAN_L)
 	_px(img, 11, 5, Color(1, 1, 1))
-	# Éclats de lumière.
 	_px(img, 12, 2, CYAN_L); _px(img, 8, 6, CYAN_L); _px(img, 16, 6, CYAN_L)
 	return img
 
 func _gen_artifact() -> Image:
 	var img := _new(false)
-	# Étoile arcanique à 4 branches sur halo.
-	_disc(img, 12, 12, 8.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.28))   # halo
+	_glow(img, 12, 12, 9.0, ARCANE, 0.45)
+	_disc(img, 12, 12, 8.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.28))
 	_disc(img, 12, 12, 5.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.30))
 	for i in range(10):
 		var w := int(round(3.5 * (1.0 - float(i) / 10.0)))
-		_rect(img, 12 - w, 12 - i, w * 2 + 1, 1, ARCANE)       # haut
-		_rect(img, 12 - w, 12 + i, w * 2 + 1, 1, ARCANE)       # bas
-		_rect(img, 12 - i, 12 - w, 1, w * 2 + 1, ARCANE)       # gauche
-		_rect(img, 12 + i, 12 - w, 1, w * 2 + 1, ARCANE)       # droite
-	_disc(img, 12, 12, 2.4, ARCANE_L)                          # cœur
+		_rect(img, 12 - w, 12 - i, w * 2 + 1, 1, ARCANE)
+		_rect(img, 12 - w, 12 + i, w * 2 + 1, 1, ARCANE)
+		_rect(img, 12 - i, 12 - w, 1, w * 2 + 1, ARCANE)
+		_rect(img, 12 + i, 12 - w, 1, w * 2 + 1, ARCANE)
+	_disc(img, 12, 12, 2.4, ARCANE_L)
 	_disc(img, 12, 12, 1.1, Color(1, 1, 1))
 	return img
 
+func _gen_potion() -> Image:
+	var img := _new(false)
+	_rect(img, 10, 3, 4, 2, Color(0.40, 0.28, 0.18))
+	_rect(img, 10, 5, 4, 3, STEEL_D)
+	_disc_o(img, 12, 15, 6.0, INK_SOFT, INK)
+	_disc(img, 12, 15, 5.2, Color(0.55, 0.78, 0.88))
+	_glow(img, 12, 16, 4.4, BLOOD, 0.45)
+	_ellipse(img, 12, 17, 4.4, 3.6, BLOOD)
+	_ellipse(img, 12, 17, 3.4, 2.6, BLOOD.lightened(0.14))
+	_rect(img, 9, 12, 1, 6, Color(1, 1, 1, 0.7))
+	_px(img, 14, 11, Color(1, 1, 1, 0.6))
+	return img
+
 # --- Icônes de nœud de carte (palette "Les Strates", fond transparent) ---------
-# Nœud COMBAT : deux épées croisées.
 func _gen_node_combat() -> Image:
 	var img := _new(false)
-	# Lame A : poignée bas-gauche -> pointe haut-droite.
 	_line(img, 5, 19, 18, 5, INK); _line(img, 6, 19, 19, 5, INK)
 	_line(img, 5, 18, 17, 5, STEEL); _line(img, 6, 18, 18, 5, STEEL_L)
-	_px(img, 19, 4, STEEL_L)                          # éclat de pointe
-	# Lame B : poignée bas-droite -> pointe haut-gauche.
+	_px(img, 19, 4, STEEL_L)
 	_line(img, 19, 19, 6, 5, INK); _line(img, 18, 19, 5, 5, INK)
 	_line(img, 19, 18, 7, 5, STEEL); _line(img, 18, 18, 6, 5, STEEL_L)
 	_px(img, 4, 4, STEEL_L)
-	# Gardes dorées + pommeaux (en bas, près des poignées).
 	_line(img, 3, 17, 8, 20, GOLD); _line(img, 21, 17, 16, 20, GOLD)
 	_disc_o(img, 5, 20, 1.4, GOLD, GOLD_D)
 	_disc_o(img, 19, 20, 1.4, GOLD, GOLD_D)
-	# Étincelle de choc au croisement.
+	_glow(img, 12, 12, 2.4, CYAN_L, 0.7)
 	_px(img, 12, 12, Color(1, 1, 1)); _px(img, 12, 11, CYAN_L); _px(img, 13, 12, CYAN_L)
 	return img
 
-# Nœud GARDIEN (boss) : couronne cornue à gemme de braise.
 func _gen_node_boss() -> Image:
 	var img := _new(false)
-	# Cornes d'os recourbées de part et d'autre.
 	_line(img, 5, 14, 3, 7, BONE_D); _line(img, 6, 14, 4, 7, BONE)
 	_px(img, 3, 6, BONE); _px(img, 4, 5, BONE)
 	_line(img, 19, 14, 21, 7, BONE_D); _line(img, 18, 14, 20, 7, BONE)
 	_px(img, 21, 6, BONE); _px(img, 20, 5, BONE)
-	# Bandeau de couronne.
 	_rect(img, 6, 14, 13, 5, GOLD_D)
 	_rect(img, 6, 14, 13, 1, GOLD_L)
 	_rect(img, 7, 15, 11, 3, GOLD)
-	# Trois pointes de couronne.
 	_tri_up(img, 8, 14, 2, 4, GOLD); _tri_up(img, 12, 14, 2, 6, GOLD); _tri_up(img, 16, 14, 2, 4, GOLD)
 	_px(img, 8, 10, GOLD_L); _px(img, 16, 10, GOLD_L)
-	# Gemme de braise au front + reflet.
+	_glow(img, 12, 8, 2.6, EMBER, 0.75)
 	_diamond(img, 12, 8, 2, EMBER.darkened(0.2))
 	_diamond(img, 12, 8, 1, EMBER)
 	_px(img, 12, 7, GOLD_L)
-	# Gemme centrale du bandeau.
 	_diamond(img, 12, 16, 1, EMBER); _px(img, 12, 16, GOLD_L)
 	return img
 
-# Nœud ÉLITE : crâne cornu aux orbites de braise (combat renforcé).
 func _gen_node_elite() -> Image:
 	var img := _new(false)
-	# Petites cornes.
 	_tri_up(img, 6, 7, 1, 4, BONE_D); _tri_up(img, 18, 7, 1, 4, BONE_D)
 	_px(img, 6, 3, BONE); _px(img, 18, 3, BONE)
-	# Crâne.
 	_disc_o(img, 12, 10, 6.0, BONE_D, INK)
 	_disc(img, 12, 9, 5.2, BONE)
 	_ellipse(img, 9, 6, 1.6, 1.3, Color(1, 1, 0.95))
-	# Orbites + lueur de braise.
 	_rect(img, 8, 8, 3, 3, INK); _rect(img, 14, 8, 3, 3, INK)
+	_glow(img, 9.5, 9.5, 1.8, EMBER, 0.7); _glow(img, 15.5, 9.5, 1.8, EMBER, 0.7)
 	_px(img, 9, 9, EMBER); _px(img, 15, 9, EMBER)
 	_px(img, 9, 8, GOLD_L); _px(img, 15, 8, GOLD_L)
-	_px(img, 12, 12, INK)                              # nasale
-	# Mâchoire + dents.
+	_px(img, 12, 12, INK)
 	_rect(img, 8, 15, 9, 3, BONE_D); _rect(img, 8, 15, 9, 1, BONE)
 	for tx in range(9, 17, 2):
 		_rect(img, tx, 15, 1, 3, INK)
 	return img
 
-# Nœud BOUTIQUE : bourse de cuir, ficelle dorée, pièce qui dépasse.
 func _gen_node_shop() -> Image:
 	var img := _new(false)
 	var leather := Color(0.45, 0.32, 0.22)
 	var leather_d := leather.darkened(0.35)
-	# Pièce d'or qui dépasse du col.
+	_glow(img, 12, 6, 2.4, GOLD, 0.55)
 	_disc_o(img, 12, 6, 2.3, GOLD, GOLD_D); _px(img, 11, 5, GOLD_L)
-	# Corps de la bourse.
 	_disc_o(img, 12, 15, 7.0, leather_d, INK)
 	_disc(img, 12, 15, 6.0, leather)
 	_ellipse(img, 9, 12, 2.3, 1.6, leather.lightened(0.22))
-	# Col plissé + ficelle.
 	_rect(img, 8, 8, 8, 2, leather_d)
 	_rect(img, 7, 10, 10, 1, GOLD_D); _rect(img, 7, 9, 10, 1, GOLD)
-	# Marque d'or sur la bourse.
 	_diamond(img, 12, 16, 2, GOLD); _px(img, 12, 16, GOLD_L)
 	return img
 
-# Nœud ÉVÉNEMENT : sigille arcanique avec point d'interrogation lumineux.
 func _gen_node_event() -> Image:
 	var img := _new(false)
-	_disc(img, 12, 12, 8.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.25))   # halo
+	_glow(img, 12, 12, 8.5, ARCANE, 0.45)
+	_disc(img, 12, 12, 8.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.25))
 	_diamond(img, 12, 12, 7, ARCANE.darkened(0.35))
 	_diamond(img, 12, 12, 6, ARCANE)
 	_diamond(img, 12, 12, 4, ARCANE.darkened(0.45))
-	# Point d'interrogation (cyan).
 	_rect(img, 10, 8, 4, 1, CYAN_L)
 	_px(img, 13, 9, CYAN_L); _px(img, 13, 10, CYAN_L)
 	_px(img, 12, 11, CYAN_L); _px(img, 12, 12, CYAN_L)
 	_px(img, 12, 13, CYAN_L)
-	_px(img, 12, 15, Color(1, 1, 1))                  # point
+	_glow(img, 12, 15, 1.4, Color(1, 1, 1), 0.8); _px(img, 12, 15, Color(1, 1, 1))
 	return img
 
-# Nœud REPOS : feu de camp (bûches + flamme).
 func _gen_node_rest() -> Image:
 	var img := _new(false)
 	var wood := Color(0.45, 0.32, 0.21)
 	var wood_l := Color(0.55, 0.40, 0.27)
-	# Bûches croisées.
 	_line(img, 5, 19, 16, 15, INK); _line(img, 19, 19, 8, 15, INK)
 	_line(img, 5, 18, 16, 14, wood); _line(img, 6, 18, 17, 14, wood_l)
 	_line(img, 19, 18, 8, 14, wood); _line(img, 18, 18, 7, 14, wood_l)
 	_px(img, 5, 18, wood_l); _px(img, 19, 18, wood_l)
-	# Flamme.
+	_glow(img, 12, 12, 5.0, EMBER, 0.55)
 	_tri_up(img, 12, 15, 4, 10, EMBER.darkened(0.25))
 	_tri_up(img, 12, 15, 3, 8, EMBER)
 	_tri_up(img, 12, 14, 2, 6, GOLD)
 	_px(img, 12, 8, GOLD_L)
-	_px(img, 10, 13, EMBER.lightened(0.1)); _px(img, 14, 13, EMBER)   # langues de feu
-	# Braises au sol.
+	_px(img, 10, 13, EMBER.lightened(0.1)); _px(img, 14, 13, EMBER)
 	_px(img, 9, 18, EMBER); _px(img, 15, 18, GOLD)
 	return img
 
@@ -769,39 +734,35 @@ func _gen_node_rest() -> Image:
 func _gen_ground(a: Color, b: Color) -> Image:
 	var img := _new(true)
 	img.fill(a)
-	# Joints de dalle : bordure extérieure et subdivision centrale à px 12.
-	var joint_outer := a.darkened(0.35).lerp(INK, 0.5)
-	var joint_inner := a.darkened(0.18).lerp(INK_SOFT, 0.3)
+	var joint_outer := a.darkened(0.42).lerp(INK, 0.55)
+	var joint_inner := a.darkened(0.22).lerp(INK_SOFT, 0.35)
 	for i in TILE:
 		_px(img, i, 0, joint_outer);  _px(img, 0, i, joint_outer)
 		_px(img, i, 12, joint_inner); _px(img, 12, i, joint_inner)
-	# Liseré lumineux juste après chaque joint (rangées 1 et 13).
 	for i in TILE:
-		_px(img, i, 1,  a.lightened(0.09)); _px(img, 1,  i, a.lightened(0.09))
+		_px(img, i, 1,  a.lightened(0.10)); _px(img, 1,  i, a.lightened(0.10))
 		_px(img, i, 13, a.lightened(0.06)); _px(img, 13, i, a.lightened(0.06))
-	# Ombre douce avant le joint intérieur (rangée 11).
 	for i in TILE:
-		_px(img, i, 11, a.darkened(0.12)); _px(img, 11, i, a.darkened(0.12))
-	# Grain peu bruité : touches claires éparses + micro-taches sombres.
+		_px(img, i, 11, a.darkened(0.16)); _px(img, 11, i, a.darkened(0.16))
+	# Grain tramé (Bayer) : transitions douces sans bruit criard.
 	for y in TILE:
 		for x in TILE:
+			var thr := (BAYER4[y & 3][x & 3] + 0.5) / 16.0
 			var r := rng.randf()
-			if r > 0.90:
+			if r > 0.90 and 0.5 > thr:
 				_px(img, x, y, b)
 			elif r < 0.06:
-				_px(img, x, y, a.darkened(0.18))
+				_px(img, x, y, a.darkened(0.22))
 			elif (x * 5 + y * 3) % 17 == 0:
-				_px(img, x, y, a.lightened(0.05))
-	# Rehauts de coin (lumière en haut-gauche de chaque quartile).
-	_px(img, 2,  2,  b.lightened(0.12)); _px(img, 14, 2,  b.lightened(0.12))
-	_px(img, 2,  14, b.lightened(0.12)); _px(img, 14, 14, b.lightened(0.12))
-	# Profondeur : coin haut-gauche éclairé, assombrissement vers le bas-droite.
+				_px(img, x, y, a.lightened(0.06))
+	for p in [Vector2i(2, 2), Vector2i(14, 2), Vector2i(2, 14), Vector2i(14, 14)]:
+		_px(img, p.x, p.y, b.lightened(0.14))
 	for i in range(7):
-		_px(img, i, 0, a.lightened(0.08)); _px(img, 0, i, a.lightened(0.06))
-	# Liseré d'ombre froide (délimite la case sans casser l'ambiance).
+		_px(img, i, 0, a.lightened(0.09)); _px(img, 0, i, a.lightened(0.07))
+	var edge := a.darkened(0.40).lerp(INK_SOFT, 0.5)
 	for i in TILE:
-		_px(img, i, TILE - 1, a.darkened(0.32).lerp(INK_SOFT, 0.4))
-		_px(img, TILE - 1, i, a.darkened(0.32).lerp(INK_SOFT, 0.4))
+		_px(img, i, TILE - 1, edge)
+		_px(img, TILE - 1, i, edge)
 	return img
 
 func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
@@ -810,23 +771,24 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 		"round":
 			_rect(img, 11, 15, 2, 7, trunk.darkened(0.2))
 			_rect(img, 11, 15, 1, 7, trunk)
-			_disc_o(img, 12, 10, 7.0, leaf.darkened(0.35), INK_SOFT)
+			_disc_o(img, 12, 10, 7.0, leaf.darkened(0.40), INK_SOFT)
 			_disc(img, 12, 10, 6.0, leaf)
-			_disc(img, 9, 7, 2.4, leaf.lightened(0.25))      # masse éclairée
+			_disc(img, 9, 7, 2.4, leaf.lightened(0.28))
+			_px(img, 8, 6, leaf.lightened(0.45))
 		"pine":
 			_rect(img, 11, 18, 2, 4, trunk)
-			_tri_up(img, 12, 19, 7, 8, leaf.darkened(0.35))
+			_tri_up(img, 12, 19, 7, 8, leaf.darkened(0.40))
 			_tri_up(img, 12, 19, 6, 7, leaf)
-			_tri_up(img, 12, 14, 5, 6, leaf.darkened(0.15))
-			_tri_up(img, 12, 10, 4, 5, leaf.lightened(0.15))
+			_tri_up(img, 12, 14, 5, 6, leaf.darkened(0.16))
+			_tri_up(img, 12, 10, 4, 5, leaf.lightened(0.18))
 		"cactus":
-			_rect(img, 10, 5, 4, 17, leaf.darkened(0.3))
+			_rect(img, 10, 5, 4, 17, leaf.darkened(0.32))
 			_rect(img, 11, 5, 3, 17, leaf)
-			_rect(img, 11, 5, 1, 17, leaf.lightened(0.2))
+			_rect(img, 11, 5, 1, 17, leaf.lightened(0.22))
 			_rect(img, 6, 9, 2, 6, leaf); _rect(img, 6, 13, 3, 2, leaf)
 			_rect(img, 16, 11, 2, 6, leaf); _rect(img, 15, 15, 3, 2, leaf)
 			for yy in range(7, 21, 3):
-				_px(img, 12, yy, leaf.lightened(0.35))
+				_px(img, 12, yy, leaf.lightened(0.38))
 		"dead":
 			_rect(img, 11, 5, 2, 17, trunk.darkened(0.2))
 			_rect(img, 11, 5, 1, 17, trunk)
@@ -840,44 +802,37 @@ func _gen_tree(trunk: Color, leaf: Color, style: String) -> Image:
 
 func _gen_rock(c: Color) -> Image:
 	var img := _new(false)
-	_ellipse(img, 12, 15, 8.5, 6.5, INK_SOFT)        # contour
+	_ellipse(img, 12, 15, 8.5, 6.5, INK_SOFT)
 	_ellipse(img, 12, 15, 7.5, 5.5, c)
-	_ellipse(img, 9, 12, 2.8, 2.0, c.lightened(0.30))   # facette éclairée
-	_rect(img, 13, 11, 1, 8, c.darkened(0.4))        # fissure
-	_rect(img, 13, 14, 4, 1, c.darkened(0.4))
-	_rect(img, 6, 18, 11, 1, c.darkened(0.3))        # base ombrée
+	_ellipse(img, 9, 12, 2.8, 2.0, c.lightened(0.32))
+	_rect(img, 13, 11, 1, 8, c.darkened(0.42))
+	_rect(img, 13, 14, 4, 1, c.darkened(0.42))
+	_rect(img, 6, 18, 11, 1, c.darkened(0.32))
 	return img
 
 func _gen_water(c: Color) -> Image:
 	var img := _new(true)
-	var base := c.darkened(0.40)
+	var base := c.darkened(0.45)
 	img.fill(base)
-	var trough := c.darkened(0.30)
-	var mid    := c.lightened(0.05)
-	var crest  := c.lightened(0.35)
-	# 3 couches de vagues : creux sombre, corps intermédiaire, crête lumineuse.
+	var trough := c.darkened(0.32)
+	var mid    := c.lightened(0.06)
+	var crest  := c.lightened(0.40)
 	for y in range(1, TILE, 4):
 		var off := (y / 4) % 3
 		for x in TILE:
 			var phase := (x + off * 5) % 12
-			# creux (bas de vague)
 			var ty := y + (phase / 6)
 			if ty < TILE: _px(img, x, ty, trough)
-			# corps de vague
 			var my := y + 1 + (phase / 8)
 			if my < TILE: _px(img, x, my, mid)
-			# crête lumineuse
 			if phase == 0 or phase == 6:
 				var cy := y + 1
 				if cy < TILE: _px(img, x, cy, crest)
-				# Mousse : pixels blanc/brillant aux crêtes
 				if cy - 1 >= 0: _px(img, x, cy - 1, Color(1.0, 1.0, 1.0, 0.55))
-	# Reflets diagonaux épars.
 	for y in TILE:
 		for x in TILE:
 			if (x * 3 + y * 7) % 23 == 0:
-				_px(img, x, y, crest.lightened(0.15))
-	# Coins sombres profonds (bas-droite).
+				_px(img, x, y, crest.lightened(0.18))
 	for i in TILE:
 		_px(img, i, TILE - 1, base.darkened(0.35))
 		_px(img, TILE - 1, i, base.darkened(0.35))
@@ -889,10 +844,12 @@ func _gen_decor(c: Color, style: String) -> Image:
 	match style:
 		"flower":
 			_rect(img, 12, 14, 1, 6, POISON.darkened(0.2))
+			_glow(img, 12, 12, 2.2, c, 0.45)
 			_disc_o(img, 12, 12, 2.4, c, INK_SOFT)
 			_px(img, 12, 12, GOLD_L)
 		"mushroom":
 			_rect(img, 12, 16, 2, 4, BONE)
+			_glow(img, 13, 13, 3.0, c, 0.35)
 			_ellipse(img, 13, 14, 4.2, 2.8, c.darkened(0.25))
 			_ellipse(img, 13, 13, 3.4, 2.0, c)
 			_px(img, 11, 13, Color(1, 1, 1)); _px(img, 14, 14, Color(1, 1, 1))
@@ -901,15 +858,17 @@ func _gen_decor(c: Color, style: String) -> Image:
 			_rect(img, 8, 15, 1, 3, BONE); _rect(img, 15, 15, 1, 3, BONE)
 			_px(img, 7, 15, BONE_D); _px(img, 16, 15, BONE_D)
 		"crystal":
+			_glow(img, 12, 13, 4.0, c, 0.6)
 			_diamond(img, 12, 14, 4, c.darkened(0.3))
 			_diamond(img, 12, 14, 3, c)
-			_rect(img, 12, 11, 1, 6, c.lightened(0.45))
+			_rect(img, 12, 11, 1, 6, c.lightened(0.48))
 			_px(img, 11, 12, Color(1, 1, 1))
 		"reed":
 			for sx in [9, 12, 15]:
 				_rect(img, sx, 11, 1, 9, c.darkened(0.15))
 				_ellipse(img, sx, 10, 1.4, 2.4, c.darkened(0.3))
 		"ember":
+			_glow(img, 12, 16, 4.0, EMBER, 0.6)
 			_ellipse(img, 12, 17, 3.4, 2.0, INK_SOFT)
 			_ellipse(img, 12, 16, 2.4, 1.6, EMBER.darkened(0.2))
 			_ellipse(img, 12, 16, 1.4, 1.0, EMBER)
@@ -920,7 +879,7 @@ func _gen_decor(c: Color, style: String) -> Image:
 
 func _gen_road() -> Image:
 	var img := _new(true)
-	var dirt := Color(0.26, 0.22, 0.20)
+	var dirt := Color(0.24, 0.20, 0.18)
 	img.fill(dirt)
 	for i in 60:
 		var x := rng.randi_range(0, TILE - 1)
@@ -929,19 +888,6 @@ func _gen_road() -> Image:
 	for i in 7:
 		var x := rng.randi_range(2, TILE - 3)
 		var y := rng.randi_range(2, TILE - 3)
-		_ellipse(img, x, y, 1.4, 1.1, Color(0.40, 0.36, 0.33))   # pavés usés
+		_ellipse(img, x, y, 1.4, 1.1, Color(0.40, 0.36, 0.33))
 		_px(img, x - 1, y - 1, Color(0.50, 0.46, 0.42))
-	return img
-
-func _gen_potion() -> Image:
-	var img := _new(false)
-	# Fiole arrondie, verre froid, liquide rouge, reflet net.
-	_rect(img, 10, 3, 4, 2, Color(0.40, 0.28, 0.18))    # bouchon
-	_rect(img, 10, 5, 4, 3, STEEL_D)                     # col
-	_disc_o(img, 12, 15, 6.0, INK_SOFT, INK)             # contour corps
-	_disc(img, 12, 15, 5.2, Color(0.55, 0.78, 0.88))     # verre
-	_ellipse(img, 12, 17, 4.4, 3.6, BLOOD)               # liquide
-	_ellipse(img, 12, 17, 3.4, 2.6, BLOOD.lightened(0.12))
-	_rect(img, 9, 12, 1, 6, Color(1, 1, 1, 0.7))         # reflet
-	_px(img, 14, 11, Color(1, 1, 1, 0.6))
 	return img

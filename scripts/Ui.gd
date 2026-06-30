@@ -78,9 +78,15 @@ static func panel_style(bg: Color) -> StyleBoxFlat:
 	s.bg_color = bg
 	s.set_corner_radius_all(8)
 	s.set_content_margin_all(14)
+	# Liseré arcanique discret + ombre portée : un peu de relief façon Moonring.
+	s.set_border_width_all(1)
+	s.border_color = Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.22)
+	s.shadow_color = Color(0.0, 0.0, 0.0, 0.45)
+	s.shadow_size = 8
+	s.shadow_offset = Vector2(0, 3)
 	return s
 
-## Style de « carte » (sélection de héros, panneaux d'écran) : fond + liseré.
+## Style de « carte » (sélection de héros, panneaux d'écran) : fond + liseré + ombre.
 static func card_style(bg: Color, border: Color, radius: int = 10) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg
@@ -88,6 +94,9 @@ static func card_style(bg: Color, border: Color, radius: int = 10) -> StyleBoxFl
 	s.set_border_width_all(2)
 	s.border_color = border
 	s.set_content_margin_all(18)
+	s.shadow_color = Color(0.0, 0.0, 0.0, 0.5)
+	s.shadow_size = 10
+	s.shadow_offset = Vector2(0, 4)
 	return s
 
 static func bar_style(bg: Color, radius: int = 4) -> StyleBoxFlat:

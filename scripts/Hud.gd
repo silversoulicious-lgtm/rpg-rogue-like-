@@ -104,7 +104,7 @@ func _build_sidebar() -> void:
 	var panel := PanelContainer.new()
 	panel.position = Vector2(VIEW.x - SIDEBAR_W, 0)
 	panel.size = Vector2(SIDEBAR_W, VIEW.y)
-	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.09, 0.08, 0.13)))
+	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.072, 0.065, 0.115)))
 	hud_layer.add_child(panel)
 
 	var scroll := ScrollContainer.new()
@@ -230,7 +230,7 @@ func _build_menu() -> void:
 	menu_layer = CanvasLayer.new()
 	menu_layer.layer = 2
 	add_child(menu_layer)
-	menu_bg = Ui.gradient_bg(Color(0.11, 0.08, 0.17), Color(0.02, 0.02, 0.05))
+	menu_bg = Ui.gradient_bg(Color(0.105, 0.075, 0.165), Color(0.012, 0.010, 0.028))
 	menu_layer.add_child(menu_bg)
 	menu_root = Control.new()
 	menu_root.set_anchors_preset(Control.PRESET_FULL_RECT)

@@ -87,6 +87,32 @@ logique/affichage/données : `Main.gd` (logique), `Hud.gd` (affichage),
   intégrées dans `Hud.gd` (`_node_icon()`, cache, fallback texte si texture
   manquante).
 
+### Refonte visuelle med-fantasy NÉON (2e passe Moonring)
+- **Recherche** sur l'identité de Moonring (palette restreinte ~4 couleurs
+  dérivée du cercle HSV, sprites néon vifs sur fonds quasi-noirs, glow/bloom,
+  palette qui change selon le lieu/les lunes) → traduite ici en **palettes de
+  biome restreintes** : sols TRÈS sombres/désaturés sur lesquels les accents
+  néon (feuillage, eau, décor) ressortent. `Data.BIOMES` retravaillé en ce sens.
+- Palette d'identité de `_assets_gen.gd` poussée : contour `INK` quasi-noir,
+  accents (GOLD/BLOOD/ARCANE/CYAN/POISON/EMBER) plus vifs.
+- Nouvelles primitives de rendu d'assets : **`_glow`** (halo néon additif/bloom
+  appliqué aux yeux, gemmes, escalier, lave, braises, cristaux, butin magique)
+  et **dithering Bayer 4×4** sur les sols (grain doux, fini rétro). Tous les
+  PNG de `assets/` ont été régénérés en conséquence.
+- **Ambiance en jeu** (`MapView.gd`, totalement nouvelle) : **pool de torche**
+  + **halo chaud** centrés sur l'héroïne et **vignette** de bord, dessinés en
+  surimpression à la fin de `_draw()` à partir de textures radiales générées
+  une fois (`_make_pool`, `_make_radial`, `_make_vignette`). Brouillard
+  (`COLOR_FOG`/`COLOR_MEMORY`) assombri vers le quasi-noir. Le pool s'estompe à
+  0 sur son anneau extérieur (pas de bord carré visible).
+- **UI** (`Ui.gd`/`Hud.gd`) : panneaux et cartes dotés d'un liseré arcanique
+  discret + ombre portée (relief), fonds de menu/sidebar approfondis pour
+  coller à la palette assombrie.
+- Note d'outillage : le binaire Godot n'étant pas exécutable dans cet
+  environnement, les PNG ont été régénérés par un **moteur de rendu Python
+  fidèle** (mêmes primitives/logique que `_assets_gen.gd`) ; les deux doivent
+  rester cohérents. `_assets_gen.gd` reste la source canonique côté Godot.
+
 ### Outillage / validation
 - Godot 4.3 headless utilisé pour valider réellement les changements
   (rendu de sprites en image, exécution de `_smoketest.gd` via
