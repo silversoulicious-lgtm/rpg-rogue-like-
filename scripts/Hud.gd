@@ -1035,8 +1035,12 @@ func _rebuild_synergies() -> void:
 const STATUS_LABEL := {
 	"poison": ["☠ Poison", Color(0.62, 0.85, 0.4)],
 	"burn": ["🔥 Brûlure", Color(1.0, 0.55, 0.3)],
+	"bleed": ["🩸 Saignement", Color(0.85, 0.25, 0.3)],
+	"disease": ["🤢 Maladie", Color(0.55, 0.7, 0.35)],
 	"slow": ["🐌 Ralenti", Color(0.6, 0.8, 1.0)],
 	"stun": ["💫 Paralysé", Color(0.8, 0.75, 1.0)],
+	"weaken": ["🛡 Défense ↓", Color(0.9, 0.65, 0.5)],
+	"confusion": ["💫 Confusion", Color(0.85, 0.6, 1.0)],
 }
 
 func _rebuild_statuses() -> void:
@@ -1051,7 +1055,7 @@ func _rebuild_statuses() -> void:
 		var meta: Array = STATUS_LABEL.get(id, [id, Color.WHITE])
 		var txt: String = str(meta[0])
 		var stacks: int = int(s.get("stacks", 1))
-		if (id == "poison" or id == "burn") and stacks > 1:
+		if (id == "poison" or id == "burn" or id == "bleed" or id == "disease") and stacks > 1:
 			txt += " ×%d" % stacks
 		txt += "  (%d t)" % int(s["turns"])
 		status_box.add_child(Ui.label(txt, 14, meta[1]))

@@ -18,6 +18,15 @@ var is_legendary: bool = false    # spawn rare : stats boostées, lâche un pouv
 var facing: Vector2i = Vector2i(0, 1)   # orientation (sprites directionnels) : bas par défaut
 var enraged: bool = false        # boss : passe en rage sous 50% PV (dégâts accrus)
 var shard_value: int = 0
+# IA / traits d'ENNEMI (data-driven, réutilisable). Vide pour le héros et les
+# ennemis simples (comportement "melee" par défaut). Clés possibles : behavior,
+# resist_phys, resist_magic, weak_fire, on_hit {id,turns,value}, lifesteal,
+# atk_count, summon, summon_max, flee_hp, pack, explode {radius,mult,status},
+# disease_aura, teleport, ambush, ranged_range, drops_trap, copy_player...
+var ai: Dictionary = {}
+var ai_cd: int = 0               # recharge interne d'une capacité d'ennemi
+var spawned_count: int = 0       # invocations déjà produites (plafond summon_max)
+var revealed: bool = false       # mimic : démasqué une fois le joueur proche
 
 # --- Stats EFFECTIVES (base + équipement + artefacts + talents) ---
 var max_hp: int = 10
@@ -145,7 +154,7 @@ func tick_statuses() -> int:
 	var keep: Array = []
 	for s in statuses:
 		var id: String = s["id"]
-		if id == "poison" or id == "burn":
+		if id == "poison" or id == "burn" or id == "bleed" or id == "disease":
 			dot += int(round(float(s["value"]) * int(s.get("stacks", 1))))
 		s["turns"] = int(s["turns"]) - 1
 		if int(s["turns"]) > 0:

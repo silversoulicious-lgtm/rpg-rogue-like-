@@ -7,6 +7,7 @@ enum State { TITLE, LOADOUT, META, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, GAM
 
 const MAX_LOG := 8
 const INV_CAP := 16
+const NO_TILE := Vector2i(-9999, -9999)   # sentinelle "aucune case trouvée"
 
 var state: int = State.TITLE
 var rng := RandomNumberGenerator.new()
@@ -15,6 +16,7 @@ var rng := RandomNumberGenerator.new()
 var player: Entity = null
 var enemies: Array = []          # Array[Entity]
 var loot: Array = []             # Array[dict] : { pos, kind, glyph, sprite, color, data }
+var hazards: Array = []          # pièges au sol : Array[{ pos, glyph, color, status:{id,turns,value}, dmg }]
 var dungeon: Dungeon = null
 var floor_num: int = 1
 var run_shards: int = 0
@@ -34,6 +36,7 @@ var first_strike_used: bool = false   # pour le proc d'objet unique "premier_cou
 # Compétences (Phase 2)
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
 var last_dir: Vector2i = Vector2i(1, 0)   # dernière direction de déplacement (visée auto)
+var _attack_dmg_type: String = "phys"  # contexte de type de dégâts (phys/magic) pour les résistances
 const SKILL_DROP_CHANCE := 0.06       # chance qu'un monstre lâche une compétence
 const LEGENDARY_CHANCE := 0.025       # chance qu'un monstre soit légendaire (lâche un pouvoir)
 
@@ -360,6 +363,7 @@ func generate_floor(node_type: String = "combat") -> void:
 
 	enemies.clear()
 	loot.clear()
+	hazards.clear()
 	var occupied: Array = [dungeon.start, dungeon.stairs]
 	var is_boss: bool = node_type == "boss"
 	# Serment d'Élite : tout combat hors boss devient une salle d'élite.
@@ -442,8 +446,21 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false
 	e.x = p.x
 	e.y = p.y
 	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
+	# IA / traits data-driven (copie profonde : chaque ennemi a son propre état).
+	e.ai = def.get("ai", {}).duplicate(true)
+	e.hp_regen = int(def.get("hp_regen", 0))
+	# Drake : souffle de feu en zone chaude (volcan/désert), d'acide ailleurs.
+	if e.ai.get("elemental", false):
+		var bid: String = str(dungeon.biome.get("id", "plaine")) if dungeon != null else "plaine"
+		if bid == "volcan" or bid == "desert":
+			e.ai["on_hit"] = { "id": "burn", "turns": 3, "value": maxf(2.0, e.atk * 0.4) }
+		else:
+			e.ai["on_hit"] = { "id": "weaken", "turns": 3, "value": 3.0 }
+	# Mimic : déguisé en coffre jusqu'à ce que l'héroïne approche.
+	if e.ai.get("behavior", "") == "ambush":
+		e.sprite = "coffre"
 	if is_boss:
-		e.hp_regen = 3          # le Gardien se régénère : combat d'usure distinctif
+		e.hp_regen = maxi(e.hp_regen, 3)   # le Gardien se régénère : combat d'usure
 		e.enraged = false
 	return e
 
@@ -548,6 +565,13 @@ func try_move(dx: int, dy: int) -> void:
 		return
 	if _player_stunned():
 		return
+	# Confusion (Fée corrompue) : une fois sur deux, le mouvement part de travers.
+	if (dx != 0 or dy != 0) and player.has_status("confusion") and rng.randf() < 0.5:
+		var dirs := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+		var nd: Vector2i = dirs[rng.randi_range(0, 3)]
+		dx = nd.x
+		dy = nd.y
+		add_message("[color=#d9a8ff]Désorientée, tu pars de travers ![/color]")
 	if dx != 0 or dy != 0:
 		player.facing = Vector2i(dx, dy)        # oriente le sprite (attaque ou déplacement)
 	var nx: int = player.x + dx
@@ -570,6 +594,10 @@ func try_move(dx: int, dy: int) -> void:
 		player.y = ny
 		last_dir = Vector2i(dx, dy)
 		_pickup_loot_at(player.pos())
+		_trigger_hazard_at(player.pos())
+		if not player.is_alive():
+			game_over()
+			return
 		_player_acted()
 	# sinon : mur → aucun tour consommé
 
@@ -593,7 +621,11 @@ func use_ability() -> void:
 		add_message("[color=#888888]Compétence en recharge (%d tour(s)).[/color]" % player.ability_cd)
 		refresh()
 		return
-	if not _cast_skill(Data.SKILLS[player.ability_id]):
+	var skill: Dictionary = Data.SKILLS[player.ability_id]
+	_attack_dmg_type = "magic" if String(skill.get("wtype", "melee")) == "magic" else "phys"
+	var cast_ok: bool = _cast_skill(skill)
+	_attack_dmg_type = "phys"
+	if not cast_ok:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
 		return
@@ -790,7 +822,13 @@ func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: i
 	target.add_status("poison", turns, dmg_per_turn, max_stacks)
 
 func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
-	target.add_status("burn", turns, dmg_per_turn, max_stacks)
+	if not target.ai.is_empty() and target.ai.get("immune_fire", false):
+		return                                   # Élémentaire de feu : insensible au feu
+	var v: float = dmg_per_turn
+	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
+	if wf > 0.0:
+		v *= 1.0 + wf
+	target.add_status("burn", turns, v, max_stacks)
 
 func apply_slow(target: Entity, turns: int, pct: float) -> void:
 	target.add_status("slow", turns, pct)
@@ -798,11 +836,54 @@ func apply_slow(target: Entity, turns: int, pct: float) -> void:
 func apply_stun(target: Entity, turns: int) -> void:
 	target.add_status("stun", turns)
 
+func apply_bleed(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 8) -> void:
+	target.add_status("bleed", turns, dmg_per_turn, max_stacks)
+
+func apply_disease(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 6) -> void:
+	target.add_status("disease", turns, dmg_per_turn, max_stacks)
+
+func apply_weaken(target: Entity, turns: int, amount: float) -> void:
+	target.add_status("weaken", turns, amount)
+
+func apply_confuse(target: Entity, turns: int) -> void:
+	target.add_status("confusion", turns)
+
+## Défense effective du joueur (réduite par le statut "weaken" des ennemis).
+func _player_def() -> int:
+	var d: int = player.defense
+	if player.has_status("weaken"):
+		d -= int(round(player.status_value("weaken")))
+	return maxi(0, d)
+
+## Applique au joueur le statut "au contact" déclaré par un ennemi (def ai.on_hit).
+func _apply_enemy_on_hit(attacker: Entity) -> void:
+	var oh: Dictionary = attacker.ai.get("on_hit", {})
+	if oh.is_empty() or not player.is_alive():
+		return
+	var id: String = String(oh.get("id", ""))
+	var turns: int = int(oh.get("turns", 2))
+	var val: float = float(oh.get("value", 1.0))
+	match id:
+		"poison": apply_poison(player, turns, maxf(1.0, val)); add_message("[color=#9fdf6a]Tu es empoisonné.[/color]")
+		"bleed": apply_bleed(player, turns, maxf(1.0, val)); add_message("[color=#ff7a8a]Tu saignes.[/color]")
+		"disease": apply_disease(player, turns, maxf(1.0, val)); add_message("[color=#9fdf6a]La maladie te ronge.[/color]")
+		"burn": apply_burn(player, turns, maxf(1.0, val)); add_message("[color=#ff9a5a]Tu prends feu.[/color]")
+		"slow": apply_slow(player, turns, val); add_message("[color=#9fdfff]Tu es ralenti.[/color]")
+		"weaken": apply_weaken(player, turns, val); add_message("[color=#ffb98a]Ta défense faiblit.[/color]")
+		"confusion": apply_confuse(player, turns); add_message("[color=#d9a8ff]Tu es désorienté.[/color]")
+		"stun": apply_stun(player, turns); add_message("[color=#cdb8ff]Tu es paralysé.[/color]")
+
 # --- Combat -------------------------------------------------------------------
 ## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie,
 ## et les procs d'objets uniques (exécution, frénésie, premier coup, frappe double).
 func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: bool = false) -> void:
 	var raw: float = float(base_raw)
+	# Résistances de l'ennemi (data-driven via ai.resist_phys / resist_magic ;
+	# une valeur négative = vulnérabilité, ex. le Golem face aux sorts).
+	if not target.ai.is_empty():
+		var resist: float = float(target.ai.get("resist_magic", 0.0)) if _attack_dmg_type == "magic" else float(target.ai.get("resist_phys", 0.0))
+		if resist != 0.0:
+			raw *= clampf(1.0 - resist, 0.05, 2.5)
 	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
 		raw *= 1.0 + player.proc_value("frenesie")
@@ -815,6 +896,9 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 	if crit:
 		raw *= 2.0
 	var def: int = 0 if ignore_def else target.defense
+	if map_view != null:
+		map_view.fx_attack(player, target.pos())
+		map_view.fx_hit(target)
 	var dealt: int = target.take_damage(max(1, int(round(raw)) - def))
 	run_best_hit = max(run_best_hit, dealt)
 	var flair := ""
@@ -845,19 +929,41 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		if not target.is_alive():
 			on_enemy_killed(target)
 
-## Attaque d'un ENNEMI vers le joueur : gère esquive, défense, épines, résurrection.
+## Attaque d'un ENNEMI vers le joueur : gère esquive, défense (réduite par weaken),
+## coups multiples (ai.atk_count), vol de vie (ai.lifesteal), statut au contact
+## (ai.on_hit), épines et résurrection.
 func _enemy_attack_player(attacker: Entity) -> void:
+	var hits: int = maxi(1, int(attacker.ai.get("atk_count", 1)))
+	for i in hits:
+		if not attacker.is_alive() or not player.is_alive():
+			return
+		if not _enemy_hit_player(attacker):
+			continue
+	# Le statut au contact ne s'applique qu'une fois par séquence d'attaque.
+	_apply_enemy_on_hit(attacker)
+
+## Un coup unique d'ennemi vers le joueur. Renvoie true si le coup a porté.
+func _enemy_hit_player(attacker: Entity) -> bool:
 	if rng.randf() < player.dodge_chance:
 		add_message("[color=#b3a8e0]Tu esquives %s ![/color]" % attacker.display_name)
-		return
-	player.take_damage(max(1, attacker.atk - player.defense))
-	add_message("[color=#ff8a8a]%s te frappe.[/color]" % attacker.display_name)
+		return false
+	if map_view != null:
+		map_view.fx_attack(attacker, player.pos())
+		map_view.fx_hit(player)
+	var dealt: int = player.take_damage(max(1, _enemy_atk(attacker) - _player_def()))
+	add_message("[color=#ff8a8a]%s te frappe (-%d).[/color]" % [attacker.display_name, dealt])
+	var ls: float = float(attacker.ai.get("lifesteal", 0.0))
+	if ls > 0.0 and dealt > 0:
+		var drained: int = maxi(1, int(round(dealt * ls)))
+		attacker.heal(drained)
+		add_message("[color=#ff7a8a]%s te draine (+%d PV).[/color]" % [attacker.display_name, drained])
 	if player.thorns_flat > 0:
 		var d2: int = attacker.take_damage(player.thorns_flat)
 		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
 		if not attacker.is_alive():
 			on_enemy_killed(attacker)
 	_check_revive()
+	return true
 
 func _check_revive() -> void:
 	if player.hp <= 0 and player.revive_available():
@@ -882,7 +988,19 @@ func on_enemy_killed(e: Entity) -> void:
 			add_message("[color=#7cfc9a]Soif de sang : +%d PV.[/color]" % heal_amt)
 	var death_pos: Vector2i = e.pos()
 	var was_legendary: bool = e.is_legendary
+	if map_view != null:
+		map_view.fx_death(e)
 	enemies.erase(e)
+	# Explosion à la mort (Élémentaire de feu) : zone de dégâts + brûlure.
+	var exp: Dictionary = e.ai.get("explode", {}) if not e.ai.is_empty() else {}
+	if not exp.is_empty():
+		add_message("[color=#ff8a4a]✹ %s explose en mourant ![/color]" % e.display_name)
+		if _chebyshev(death_pos, player.pos()) <= int(exp.get("radius", 1)):
+			var ed: int = maxi(1, int(round(e.atk * float(exp.get("mult", 1.3)))) - _player_def())
+			player.take_damage(ed)
+			add_message("[color=#ff8a8a]Le souffle ardent te frappe (-%d).[/color]" % ed)
+			apply_burn(player, 3, maxf(1.0, e.atk * 0.3))
+			_check_revive()
 	if player.has_power("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
 		var boom: int = maxi(2, player.atk / 2 + player.ability_power)
 		var hits: int = aoe_attack(death_pos, 1, boom, "Détonation frappe")
@@ -1187,6 +1305,9 @@ func advance_world() -> void:
 			var stunned: bool = _begin_turn(e)
 			if not e.is_alive():        # un DoT (poison/brûlure) l'a achevé
 				on_enemy_killed(e)
+				if not player.is_alive():   # explosion à la mort peut tuer le joueur
+					game_over()
+					return
 				continue
 			if stunned:
 				add_message("[color=#b3a8e0]%s est paralysé.[/color]" % e.display_name)
@@ -1202,40 +1323,305 @@ func _begin_turn(e: Entity) -> bool:
 	if not e.is_alive():
 		return false
 	var stunned: bool = e.has_status("stun")
-	if e.hp_regen > 0:
+	# La régénération est suspendue tant que l'entité brûle (clé du Troll : l'enflammer).
+	if e.hp_regen > 0 and not e.has_status("burn"):
 		e.heal(e.hp_regen)
 	var dot: int = e.tick_statuses()
 	if dot > 0:
 		if e.faction == Entity.Faction.PLAYER:
-			add_message("[color=#9fdf6a]Tu subis %d dégâts (poison/brûlure).[/color]" % dot)
+			add_message("[color=#9fdf6a]Tu subis %d dégâts (poison/saignement/feu).[/color]" % dot)
 		else:
-			add_message("[color=#9fdf6a]%s subit %d (poison/brûlure).[/color]" % [e.display_name, dot])
+			add_message("[color=#9fdf6a]%s subit %d (poison/saignement/feu).[/color]" % [e.display_name, dot])
 	return stunned
 
+## Tour d'un ennemi : applique les traits passifs (rage/berserk, copie, aura,
+## piège) puis route vers le comportement data-driven (ai.behavior).
 func _enemy_act(e: Entity) -> void:
+	if e.ai_cd > 0:
+		e.ai_cd -= 1
+	# Rage : Gardien (boss) ET berserkers (ai.berserk), sous un seuil de PV.
 	var rage_at: float = 0.8 if has_oath("glas") else 0.5
-	if e.is_boss and not e.enraged and e.hp <= e.max_hp * rage_at:
+	if (e.is_boss or e.ai.get("berserk", false)) and not e.enraged and e.hp <= e.max_hp * float(e.ai.get("berserk_at", rage_at)):
 		e.enraged = true
-		e.atk = int(round(e.atk * 1.4))
-		add_message("[color=#ff4040]⚡ Le Gardien entre en RAGE ! Ses coups redoublent.[/color]")
-	if _manhattan(e.pos(), player.pos()) == 1:
-		_enemy_attack_player(e)
+		e.atk = int(round(e.atk * float(e.ai.get("berserk_mult", 1.4))))
+		if e.is_boss:
+			add_message("[color=#ff4040]⚡ Le Gardien entre en RAGE ! Ses coups redoublent.[/color]")
+		else:
+			add_message("[color=#ff6a40]⚡ %s entre en furie berserk ![/color]" % e.display_name)
+	# Revenant : copie la puissance offensive de l'héroïne.
+	if e.ai.get("copy_player", false):
+		e.atk = maxi(e.atk, int(round(player.atk * float(e.ai.get("copy_ratio", 0.85)))))
+	# Aura de maladie (Zombie) : contamine au contact sans consommer l'action.
+	if e.ai.get("disease_aura", false) and _chebyshev(e.pos(), player.pos()) <= 1 and player.is_alive():
+		apply_disease(player, 4, maxf(1.0, e.atk * 0.3))
+		add_message("[color=#9fdf6a]L'aura putride de %s te contamine.[/color]" % e.display_name)
+	# Pose de piège (Brigand, Kobold) : à moyenne distance, parfois, au lieu d'agir.
+	var pdist: int = _chebyshev(e.pos(), player.pos())
+	if e.ai.get("drops_trap", false) and e.ai_cd <= 0 and pdist >= 2 and pdist <= 6 and rng.randf() < 0.3:
+		_drop_trap(e.pos())
+		e.ai_cd = 5
 		return
-	var dx: int = signi(player.x - e.x)
-	var dy: int = signi(player.y - e.y)
+	match String(e.ai.get("behavior", "melee")):
+		"charger": _enemy_act_charger(e)
+		"ranged": _enemy_act_ranged(e)
+		"caster": _enemy_act_caster(e)
+		"fleer": _enemy_act_fleer(e)
+		"teleporter": _enemy_act_teleporter(e)
+		"ambush": _enemy_act_ambush(e)
+		_: _enemy_act_melee(e)
+
+# --- Briques de déplacement réutilisables -------------------------------------
+## Avance d'une case vers `target` (axe dominant d'abord). Renvoie true si bougé.
+func _enemy_step_toward(e: Entity, target: Vector2i) -> bool:
+	var dx: int = signi(target.x - e.x)
+	var dy: int = signi(target.y - e.y)
 	var tries: Array
-	if abs(player.x - e.x) >= abs(player.y - e.y):
+	if abs(target.x - e.x) >= abs(target.y - e.y):
 		tries = [Vector2i(dx, 0), Vector2i(0, dy)]
 	else:
 		tries = [Vector2i(0, dy), Vector2i(dx, 0)]
 	for t in tries:
 		if t == Vector2i.ZERO:
 			continue
-		var nx: int = e.x + t.x
-		var ny: int = e.y + t.y
-		if dungeon.is_walkable(nx, ny) and enemy_at(nx, ny) == null and player.pos() != Vector2i(nx, ny):
-			e.x = nx
-			e.y = ny
+		var np: Vector2i = e.pos() + t
+		if dungeon.is_walkable(np.x, np.y) and enemy_at(np.x, np.y) == null and player.pos() != np:
+			e.x = np.x; e.y = np.y; e.facing = t
+			return true
+	return false
+
+## S'éloigne d'une case de `from`. Renvoie true si bougé.
+func _enemy_step_away(e: Entity, from: Vector2i) -> bool:
+	var dx: int = signi(e.x - from.x)
+	var dy: int = signi(e.y - from.y)
+	for t in [Vector2i(dx, 0), Vector2i(0, dy), Vector2i(dx, dy)]:
+		if t == Vector2i.ZERO:
+			continue
+		var np: Vector2i = e.pos() + t
+		if dungeon.is_walkable(np.x, np.y) and enemy_at(np.x, np.y) == null and player.pos() != np:
+			e.x = np.x; e.y = np.y; e.facing = t
+			return true
+	return false
+
+func _count_allies_near(e: Entity, r: int) -> int:
+	var n: int = 0
+	for o in enemies:
+		if o != e and o.is_alive() and _chebyshev(e.pos(), o.pos()) <= r:
+			n += 1
+	return n
+
+## Attaque effective d'un ennemi (bonus de meute pour ai.pack).
+func _enemy_atk(e: Entity) -> int:
+	var a: int = e.atk
+	if e.ai.get("pack", false):
+		var allies: int = _count_allies_near(e, 2)
+		a += int(round(float(e.ai.get("pack_bonus", 2)) * float(mini(allies, 3))))
+	return a
+
+func _free_adjacent(p: Vector2i) -> Vector2i:
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+		var np: Vector2i = p + d
+		if dungeon.is_walkable(np.x, np.y) and enemy_at(np.x, np.y) == null and player.pos() != np:
+			return np
+	return NO_TILE
+
+func _random_walkable_near(center: Vector2i, radius: int) -> Vector2i:
+	for attempt in 16:
+		var np: Vector2i = Vector2i(center.x + rng.randi_range(-radius, radius), center.y + rng.randi_range(-radius, radius))
+		if np != player.pos() and dungeon.is_walkable(np.x, np.y) and enemy_at(np.x, np.y) == null:
+			return np
+	return NO_TILE
+
+# --- Comportements ------------------------------------------------------------
+func _enemy_act_melee(e: Entity) -> void:
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_act_charger(e: Entity) -> void:
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	# Aligné en ligne droite -> charge dévastatrice jusqu'au contact.
+	var dir: Vector2i = Vector2i.ZERO
+	if e.x == player.x:
+		dir = Vector2i(0, signi(player.y - e.y))
+	elif e.y == player.y:
+		dir = Vector2i(signi(player.x - e.x), 0)
+	if dir != Vector2i.ZERO:
+		var p: Vector2i = e.pos()
+		var steps: int = 0
+		while steps < 6:
+			var np: Vector2i = p + dir
+			if np == player.pos():
+				e.x = p.x; e.y = p.y; e.facing = dir
+				var saved: int = e.atk
+				e.atk = int(round(e.atk * 1.6))
+				add_message("[color=#ff9a64]%s charge en trombe ![/color]" % e.display_name)
+				_enemy_attack_player(e)
+				e.atk = saved
+				return
+			if not dungeon.is_walkable(np.x, np.y) or enemy_at(np.x, np.y) != null:
+				break
+			p = np
+			steps += 1
+		if steps > 0:
+			e.x = p.x; e.y = p.y; e.facing = dir
+			return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_act_ranged(e: Entity) -> void:
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	var dist: int = _chebyshev(e.pos(), player.pos())
+	if dist <= int(e.ai.get("ranged_range", 5)) and e.ai_cd <= 0:
+		_enemy_ranged_attack(e)
+		e.ai_cd = int(e.ai.get("cooldown", 1))
+		return
+	if dist < int(e.ai.get("kite_at", 2)) and _enemy_step_away(e, player.pos()):
+		return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_ranged_attack(e: Entity) -> void:
+	add_message("[color=#ffb86a]%s t'attaque à distance.[/color]" % e.display_name)
+	if rng.randf() < player.dodge_chance:
+		add_message("[color=#b3a8e0]Tu esquives le tir de %s ![/color]" % e.display_name)
+		return
+	var dealt: int = player.take_damage(max(1, _enemy_atk(e) - _player_def()))
+	add_message("[color=#ff8a8a]%s te touche (-%d).[/color]" % [e.display_name, dealt])
+	_apply_enemy_on_hit(e)
+	_check_revive()
+
+func _enemy_act_caster(e: Entity) -> void:
+	if e.ai.get("sacrifice", false) and e.hp <= e.max_hp * 0.35:
+		_enemy_sacrifice(e)
+		return
+	var dist: int = _chebyshev(e.pos(), player.pos())
+	if e.ai_cd <= 0 and dist <= int(e.ai.get("cast_range", 6)):
+		_enemy_cast(e)
+		e.ai_cd = int(e.ai.get("cooldown", 3))
+		return
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	if dist < int(e.ai.get("kite_at", 3)) and _enemy_step_away(e, player.pos()):
+		return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_cast(e: Entity) -> void:
+	match String(e.ai.get("cast", "summon")):
+		"scream":
+			add_message("[color=#d9b8ff]%s pousse un cri déchirant ![/color]" % e.display_name)
+			apply_stun(player, int(e.ai.get("stun_turns", 1)))
+			apply_weaken(player, int(e.ai.get("weaken_turns", 4)), float(e.ai.get("weaken_val", 3.0)))
+			add_message("[color=#cdb8ff]Tu es paralysée et ta défense s'effondre ![/color]")
+		_:
+			_enemy_summon(e)
+
+func _enemy_summon(e: Entity) -> void:
+	if e.spawned_count >= int(e.ai.get("summon_max", 3)):
+		_enemy_step_toward(e, player.pos())
+		return
+	var spot: Vector2i = _free_adjacent(e.pos())
+	if spot == NO_TILE:
+		_enemy_step_toward(e, player.pos())
+		return
+	var def: Dictionary = _enemy_def_by_sprite(String(e.ai.get("summon", "squelette")))
+	if def.is_empty():
+		return
+	var m: Entity = _make_enemy(def, floor_num, spot)
+	m.energy = 0
+	enemies.append(m)
+	e.spawned_count += 1
+	add_message("[color=#c8b0ff]%s invoque un(e) %s ![/color]" % [e.display_name, m.display_name])
+
+func _enemy_sacrifice(e: Entity) -> void:
+	add_message("[color=#ff6a6a]%s se sacrifie dans une déflagration ![/color]" % e.display_name)
+	if _chebyshev(e.pos(), player.pos()) <= int(e.ai.get("sac_radius", 2)):
+		var dmg: int = maxi(1, int(round(e.atk * float(e.ai.get("sac_mult", 1.6)))) - _player_def())
+		player.take_damage(dmg)
+		add_message("[color=#ff8a8a]L'explosion te frappe (-%d).[/color]" % dmg)
+		apply_burn(player, 2, maxf(1.0, e.atk * 0.3))
+		_check_revive()
+	e.hp = 0
+	on_enemy_killed(e)
+
+func _enemy_act_fleer(e: Entity) -> void:
+	var allies: int = _count_allies_near(e, 3)
+	if _manhattan(e.pos(), player.pos()) == 1:
+		if (e.hp <= e.max_hp * 0.5 or allies == 0) and _enemy_step_away(e, player.pos()):
+			return
+		_enemy_attack_player(e)
+		return
+	if (e.hp <= e.max_hp * 0.4 or allies == 0) and _enemy_step_away(e, player.pos()):
+		return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_act_teleporter(e: Entity) -> void:
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	if rng.randf() < float(e.ai.get("teleport_chance", 0.7)):
+		var spot: Vector2i = _random_walkable_near(player.pos(), int(e.ai.get("teleport_range", 3)))
+		if spot != NO_TILE:
+			e.x = spot.x
+			e.y = spot.y
+			return
+	_enemy_step_toward(e, player.pos())
+
+func _enemy_act_ambush(e: Entity) -> void:
+	if not e.revealed:
+		if _chebyshev(e.pos(), player.pos()) <= 1:
+			e.revealed = true
+			e.sprite = "mimic"
+			add_message("[color=#ff6464]Le coffre était un MIMIC ![/color]")
+			var saved: int = e.atk
+			e.atk = int(round(e.atk * 1.6))
+			_enemy_attack_player(e)
+			e.atk = saved
+		return                              # reste immobile et masqué
+	if _manhattan(e.pos(), player.pos()) == 1:
+		_enemy_attack_player(e)
+		return
+	_enemy_step_toward(e, player.pos())
+
+## Cherche une définition d'ennemi par nom de sprite (pour les invocations).
+func _enemy_def_by_sprite(id: String) -> Dictionary:
+	for d in Data.ENEMIES:
+		if String(d.get("sprite", "")) == id:
+			return d
+	return {}
+
+# --- Pièges au sol ------------------------------------------------------------
+func _drop_trap(p: Vector2i) -> void:
+	if p == player.pos():
+		return
+	for h in hazards:
+		if h["pos"] == p:
+			return
+	hazards.append({
+		"pos": p, "glyph": "^", "color": Color(0.95, 0.55, 0.45),
+		"dmg": 2 + int(floor_num / 3),
+		"status": { "id": "slow", "turns": 3, "value": 0.45 },
+	})
+	add_message("[color=#caa07a]%s dissimule un piège.[/color]" % "Un ennemi")
+
+func _trigger_hazard_at(p: Vector2i) -> void:
+	for h in hazards.duplicate():
+		if h["pos"] == p:
+			hazards.erase(h)
+			add_message("[color=#ff9a6a]Tu déclenches un piège ![/color]")
+			var dmg: int = int(h.get("dmg", 0))
+			if dmg > 0:
+				player.take_damage(maxi(1, dmg - _player_def()))
+			var st: Dictionary = h.get("status", {})
+			match String(st.get("id", "")):
+				"slow": apply_slow(player, int(st.get("turns", 3)), float(st.get("value", 0.4)))
+				"bleed": apply_bleed(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+				"poison": apply_poison(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+				"weaken": apply_weaken(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+			_check_revive()
 			return
 
 # --- Boutique -----------------------------------------------------------------
@@ -1468,7 +1854,7 @@ func refresh() -> void:
 	if dungeon != null and player != null:
 		dungeon.reveal(player.pos(), player.vision)
 		_update_camera()
-	map_view.refresh(dungeon, [player] + enemies, loot)
+	map_view.refresh(dungeon, [player] + enemies, loot, hazards)
 	hud.refresh()
 
 func add_message(msg: String) -> void:

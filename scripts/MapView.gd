@@ -22,6 +22,7 @@ const VIGNETTE_MAX_A := 0.55
 var dungeon: Dungeon = null
 var entities: Array = []
 var loot: Array = []
+var hazards: Array = []            # pièges au sol (dessinés comme glyphes discrets)
 var reveal_loot: bool = false      # Œil du Devin : montre le butin à travers le brouillard
 var tex: Dictionary = {}
 var view_size: Vector2 = Vector2(896, 570)        # zone de jeu visible (réglée par Main)
@@ -30,6 +31,18 @@ var _font_size := 18
 var _pool_tex: ImageTexture = null
 var _glow_tex: ImageTexture = null
 var _vignette_tex: ImageTexture = null
+
+# --- Couche d'animation/feedback (idle / attack / death) ----------------------
+# Découplée de la logique : Main appelle fx_attack/fx_hit/fx_death ; le rendu lit
+# ces effets transitoires dans _draw, animés par _process. Aucune incidence
+# sur l'état de jeu — purement cosmétique.
+const FX_ATTACK_DUR := 0.18
+const FX_HIT_DUR := 0.22
+const FX_DEATH_DUR := 0.38
+const IDLE_AMP := 1.1
+var _anim_t: float = 0.0
+var _fx: Dictionary = {}        # instance_id -> { attack:{t,dir}, hit:{t} }
+var _dying: Array = []          # [{ name, flip, glyph, color, x, y, t }] (fondus de mort)
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
@@ -66,7 +79,12 @@ func _alpha(c: Color, a: float) -> Color:
 func _load_textures() -> void:
 	var names := ["stairs", "aria", "aria_back", "aria_side", "knight", "mage", "ranger",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
-		"arme", "armure", "relique", "artifact", "potion", "road"]
+		"arme", "armure", "relique", "artifact", "potion", "road",
+		# Nouveaux monstres (Pass 1)
+		"araignee", "sanglier", "chauvesouris", "serpent", "ours",
+		"zombie", "dullahan", "liche", "banshee", "revenant",
+		"brigand", "gnoll", "troll", "kobold", "cultiste",
+		"elementaire_feu", "golem", "fee", "drake", "mimic", "coffre"]
 	for b in Data.BIOMES:
 		for role in ["ground", "tree", "rock", "water", "decor"]:
 			names.append(Data.biome_sprite(b["id"], role))
@@ -75,11 +93,79 @@ func _load_textures() -> void:
 		if ResourceLoader.exists(path):
 			tex[n] = load(path)
 
-func refresh(d: Dungeon, ents: Array, loot_items: Array) -> void:
+func refresh(d: Dungeon, ents: Array, loot_items: Array, hazard_items: Array = []) -> void:
 	dungeon = d
 	entities = ents
 	loot = loot_items
+	hazards = hazard_items
 	queue_redraw()
+
+# --- Animation/feedback : pilotage temps réel ---------------------------------
+func _process(delta: float) -> void:
+	if dungeon == null:
+		return
+	_anim_t += delta
+	# Purge des effets transitoires expirés.
+	for k in _fx.keys():
+		var f: Dictionary = _fx[k]
+		if f.has("attack") and _anim_t - float(f["attack"]["t"]) > FX_ATTACK_DUR:
+			f.erase("attack")
+		if f.has("hit") and _anim_t - float(f["hit"]["t"]) > FX_HIT_DUR:
+			f.erase("hit")
+		if f.is_empty():
+			_fx.erase(k)
+	var kept: Array = []
+	for d in _dying:
+		if _anim_t - float(d["t"]) <= FX_DEATH_DUR:
+			kept.append(d)
+	_dying = kept
+	queue_redraw()
+
+## Petit bond d'attaque vers la cible.
+func fx_attack(e, target_pos: Vector2i) -> void:
+	if e == null:
+		return
+	var dir := Vector2.ZERO
+	var d: Vector2i = target_pos - e.pos()
+	if d != Vector2i.ZERO:
+		dir = Vector2(d).normalized()
+	_fx_for(e.get_instance_id())["attack"] = { "t": _anim_t, "dir": dir }
+
+## Flash blanc « touché ».
+func fx_hit(e) -> void:
+	if e == null:
+		return
+	_fx_for(e.get_instance_id())["hit"] = { "t": _anim_t }
+
+## Capture l'entité mourante pour un fondu indépendant (elle quitte la liste).
+func fx_death(e) -> void:
+	if e == null:
+		return
+	var dv: Dictionary = _directional_sprite(e)
+	_dying.append({ "name": dv["name"], "flip": dv["flip"], "glyph": e.glyph,
+		"color": e.color, "x": e.x, "y": e.y, "t": _anim_t })
+
+func _fx_for(id: int) -> Dictionary:
+	if not _fx.has(id):
+		_fx[id] = {}
+	return _fx[id]
+
+## Décalage visuel d'une entité : bob d'idle + bond d'attaque.
+func _entity_offset(e) -> Vector2:
+	var off := Vector2(0.0, sin(_anim_t * 3.2 + float(e.x * 7 + e.y * 13)) * IDLE_AMP)
+	var f: Dictionary = _fx.get(e.get_instance_id(), {})
+	if f.has("attack"):
+		var p: float = clampf((_anim_t - float(f["attack"]["t"])) / FX_ATTACK_DUR, 0.0, 1.0)
+		var dir: Vector2 = f["attack"]["dir"]
+		off += dir * (sin(p * PI) * CELL * 0.34)
+	return off
+
+## Intensité du flash « touché » (0 = aucun).
+func _entity_flash(e) -> float:
+	var f: Dictionary = _fx.get(e.get_instance_id(), {})
+	if f.has("hit"):
+		return 1.0 - clampf((_anim_t - float(f["hit"]["t"])) / FX_HIT_DUR, 0.0, 1.0)
+	return 0.0
 
 # --- Dessin -------------------------------------------------------------------
 func _draw() -> void:
@@ -132,6 +218,12 @@ func _draw() -> void:
 				elif dist <= 3:
 					draw_rect(ecell, Color(0.9, 0.55, 0.15, 0.08), true)
 
+	# Pièges au sol : visibles uniquement dans le champ de vision actuel.
+	for hz in hazards:
+		var hp: Vector2i = hz["pos"]
+		if dungeon.is_visible(hp.x, hp.y):
+			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), hz.get("color", Color(0.95, 0.55, 0.45)))
+
 	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:
 		var p: Vector2i = item["pos"]
@@ -142,11 +234,27 @@ func _draw() -> void:
 				_draw_glyph(p.x, p.y, item["glyph"], item["color"])
 			if not seen:
 				draw_rect(_cell_rect(p.x, p.y), COLOR_MEMORY, true)
+	# Fondus de mort (entités déjà retirées de la liste, animées indépendamment).
+	for d in _dying:
+		if not dungeon.is_visible(int(d["x"]), int(d["y"])):
+			continue
+		var dp: float = clampf((_anim_t - float(d["t"])) / FX_DEATH_DUR, 0.0, 1.0)
+		var dr: Rect2 = _cell_rect(int(d["x"]), int(d["y"]))
+		dr.position.y -= dp * CELL * 0.4
+		if tex.has(d["name"]):
+			if d["flip"]:
+				dr = Rect2(dr.position.x + dr.size.x, dr.position.y, -dr.size.x, dr.size.y)
+			draw_texture_rect(tex[d["name"]], dr, false, Color(1, 1, 1, 1.0 - dp))
+
 	for e in entities:
 		if e.is_alive() and dungeon.is_visible(e.x, e.y):
 			var dv: Dictionary = _directional_sprite(e)
-			if not _blit_ex(dv["name"], e.x, e.y, dv["flip"]):
+			var off: Vector2 = _entity_offset(e)
+			if not _blit_ex_off(dv["name"], e.x, e.y, dv["flip"], off):
 				_draw_glyph(e.x, e.y, e.glyph, e.color)
+			var flash: float = _entity_flash(e)
+			if flash > 0.0:
+				draw_rect(_cell_rect(e.x, e.y), Color(1, 1, 1, 0.55 * flash), true)
 			_draw_hp_pip(e)
 
 	_draw_atmosphere()
@@ -251,6 +359,17 @@ func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
 	var r: Rect2 = _cell_rect(gx, gy)
 	if flip:
 		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)   # largeur négative = miroir
+	draw_texture_rect(tex[name], r, false)
+	return true
+
+## Variante de _blit_ex avec décalage visuel (bob d'idle / bond d'attaque).
+func _blit_ex_off(name: String, gx: int, gy: int, flip: bool, off: Vector2) -> bool:
+	if name == "" or not tex.has(name):
+		return false
+	var r: Rect2 = _cell_rect(gx, gy)
+	r.position += off
+	if flip:
+		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)
 	draw_texture_rect(tex[name], r, false)
 	return true
 

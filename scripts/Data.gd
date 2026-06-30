@@ -193,6 +193,55 @@ const ENEMIES := [
 	{ "name": "Squelette","glyph": "s", "sprite": "squelette", "color": Color(0.9, 0.9, 0.85),"max_hp": 14, "atk": 5, "defense": 2, "speed": 100, "shards": 4, "min_floor": 3 },
 	{ "name": "Orc",      "glyph": "o", "sprite": "orc",       "color": Color(0.4, 0.7, 0.4), "max_hp": 20, "atk": 7, "defense": 3, "speed": 90,  "shards": 6, "min_floor": 5 },
 	{ "name": "Spectre",  "glyph": "S", "sprite": "spectre",   "color": Color(0.7, 0.5, 1.0), "max_hp": 18, "atk": 9, "defense": 1, "speed": 115, "shards": 8, "min_floor": 7 },
+
+	# --- Nouveaux monstres (data-driven : champ "ai" = comportement + traits) ---
+	# Bêtes & créatures naturelles
+	{ "name": "Araignée géante", "glyph": "a", "sprite": "araignee", "color": Color(0.55, 0.85, 0.45), "max_hp": 12, "atk": 4, "defense": 0, "speed": 110, "shards": 4, "min_floor": 2,
+	  "ai": { "behavior": "melee", "on_hit": { "id": "poison", "turns": 3, "value": 3.0 }, "drops_trap": true } },
+	{ "name": "Sanglier maudit", "glyph": "p", "sprite": "sanglier", "color": Color(0.55, 0.42, 0.35), "max_hp": 22, "atk": 6, "defense": 2, "speed": 120, "shards": 5, "min_floor": 3,
+	  "ai": { "behavior": "charger", "resist_phys": 0.4 } },
+	{ "name": "Chauve-souris vampire", "glyph": "v", "sprite": "chauvesouris", "color": Color(0.7, 0.4, 0.6), "max_hp": 9, "atk": 4, "defense": 0, "speed": 150, "shards": 4, "min_floor": 2,
+	  "ai": { "behavior": "melee", "lifesteal": 0.6 } },
+	{ "name": "Serpent des marais", "glyph": "n", "sprite": "serpent", "color": Color(0.4, 0.7, 0.4), "max_hp": 12, "atk": 3, "defense": 0, "speed": 140, "shards": 5, "min_floor": 4,
+	  "ai": { "behavior": "melee", "atk_count": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 3.0 } } },
+	{ "name": "Ours corrompu", "glyph": "B", "sprite": "ours", "color": Color(0.45, 0.35, 0.3), "max_hp": 34, "atk": 7, "defense": 2, "speed": 90, "shards": 8, "min_floor": 6,
+	  "ai": { "behavior": "melee", "berserk": true, "berserk_at": 0.4, "berserk_mult": 1.6 } },
+
+	# Morts-vivants & spectral
+	{ "name": "Zombie pestilentiel", "glyph": "z", "sprite": "zombie", "color": Color(0.5, 0.65, 0.4), "max_hp": 22, "atk": 5, "defense": 1, "speed": 70, "shards": 5, "min_floor": 4,
+	  "ai": { "behavior": "melee", "disease_aura": true, "on_hit": { "id": "disease", "turns": 4, "value": 3.0 } } },
+	{ "name": "Chevalier sans tête", "glyph": "D", "sprite": "dullahan", "color": Color(0.7, 0.72, 0.82), "max_hp": 40, "atk": 9, "defense": 3, "speed": 100, "shards": 14, "min_floor": 8,
+	  "ai": { "behavior": "ranged", "ranged_range": 4, "cooldown": 1, "on_hit": { "id": "bleed", "turns": 2, "value": 3.0 } } },
+	{ "name": "Liche", "glyph": "L", "sprite": "liche", "color": Color(0.6, 0.45, 0.95), "max_hp": 26, "atk": 6, "defense": 1, "speed": 100, "shards": 12, "min_floor": 9,
+	  "ai": { "behavior": "caster", "cast": "summon", "summon": "squelette", "summon_max": 4, "cast_range": 7, "cooldown": 3, "kite_at": 4 } },
+	{ "name": "Banshee", "glyph": "h", "sprite": "banshee", "color": Color(0.65, 0.8, 0.95), "max_hp": 20, "atk": 6, "defense": 0, "speed": 120, "shards": 10, "min_floor": 8,
+	  "ai": { "behavior": "caster", "cast": "scream", "cast_range": 6, "cooldown": 4, "stun_turns": 1, "weaken_turns": 4, "weaken_val": 3.0, "kite_at": 3 } },
+	{ "name": "Revenant", "glyph": "r", "sprite": "revenant", "color": Color(0.6, 0.6, 0.7), "max_hp": 22, "atk": 6, "defense": 1, "speed": 105, "shards": 9, "min_floor": 7,
+	  "ai": { "behavior": "melee", "copy_player": true, "copy_ratio": 0.85 } },
+
+	# Humanoïdes & factions
+	{ "name": "Brigand maudit", "glyph": "b", "sprite": "brigand", "color": Color(0.7, 0.55, 0.4), "max_hp": 16, "atk": 6, "defense": 1, "speed": 110, "shards": 6, "min_floor": 5,
+	  "ai": { "behavior": "ranged", "ranged_range": 4, "cooldown": 2, "drops_trap": true, "on_hit": { "id": "bleed", "turns": 2, "value": 2.0 } } },
+	{ "name": "Gnoll", "glyph": "G", "sprite": "gnoll", "color": Color(0.7, 0.6, 0.35), "max_hp": 16, "atk": 5, "defense": 1, "speed": 115, "shards": 5, "min_floor": 4,
+	  "ai": { "behavior": "melee", "pack": true, "pack_bonus": 2 } },
+	{ "name": "Troll des cavernes", "glyph": "T", "sprite": "troll", "color": Color(0.45, 0.6, 0.45), "max_hp": 40, "atk": 7, "defense": 2, "speed": 85, "shards": 9, "min_floor": 7, "hp_regen": 4,
+	  "ai": { "behavior": "melee", "weak_fire": 1.0 } },
+	{ "name": "Kobold", "glyph": "k", "sprite": "kobold", "color": Color(0.8, 0.5, 0.35), "max_hp": 7, "atk": 3, "defense": 0, "speed": 125, "shards": 3, "min_floor": 2,
+	  "ai": { "behavior": "fleer", "pack": true, "pack_bonus": 1, "drops_trap": true } },
+	{ "name": "Cultiste", "glyph": "c", "sprite": "cultiste", "color": Color(0.75, 0.4, 0.5), "max_hp": 18, "atk": 5, "defense": 0, "speed": 100, "shards": 8, "min_floor": 6,
+	  "ai": { "behavior": "caster", "cast": "summon", "summon": "kobold", "summon_max": 3, "cast_range": 6, "cooldown": 3, "sacrifice": true, "sac_radius": 2, "sac_mult": 1.6, "kite_at": 3 } },
+
+	# Élémentaires & magiques
+	{ "name": "Élémentaire de feu", "glyph": "f", "sprite": "elementaire_feu", "color": Color(1.0, 0.55, 0.25), "max_hp": 20, "atk": 8, "defense": 1, "speed": 105, "shards": 10, "min_floor": 8,
+	  "ai": { "behavior": "melee", "immune_fire": true, "on_hit": { "id": "burn", "turns": 3, "value": 3.0 }, "explode": { "radius": 2, "mult": 1.4 } } },
+	{ "name": "Golem de pierre", "glyph": "O", "sprite": "golem", "color": Color(0.6, 0.6, 0.66), "max_hp": 55, "atk": 8, "defense": 5, "speed": 60, "shards": 14, "min_floor": 9,
+	  "ai": { "behavior": "melee", "resist_phys": 0.6, "resist_magic": -0.6 } },
+	{ "name": "Fée corrompue", "glyph": "y", "sprite": "fee", "color": Color(0.8, 0.6, 1.0), "max_hp": 12, "atk": 5, "defense": 0, "speed": 140, "shards": 8, "min_floor": 6,
+	  "ai": { "behavior": "teleporter", "teleport_chance": 0.7, "teleport_range": 4, "on_hit": { "id": "confusion", "turns": 3, "value": 0.0 } } },
+	{ "name": "Drake", "glyph": "k", "sprite": "drake", "color": Color(0.8, 0.5, 0.4), "max_hp": 30, "atk": 9, "defense": 2, "speed": 110, "shards": 12, "min_floor": 10,
+	  "ai": { "behavior": "ranged", "ranged_range": 5, "cooldown": 2, "elemental": true } },
+	{ "name": "Mimic", "glyph": "m", "sprite": "mimic", "color": Color(0.8, 0.6, 0.3), "max_hp": 24, "atk": 8, "defense": 2, "speed": 100, "shards": 12, "min_floor": 5,
+	  "ai": { "behavior": "ambush" } },
 ]
 
 const BOSS := {

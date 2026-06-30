@@ -71,6 +71,13 @@ func _init() -> void:
 	_save(_gen_creature("spectre"), "spectre")
 	_save(_gen_creature("boss"), "boss")
 
+	# --- Nouveaux monstres (Pass 1) ---
+	for k in ["araignee", "sanglier", "chauvesouris", "serpent", "ours",
+			"zombie", "dullahan", "liche", "banshee", "revenant",
+			"brigand", "gnoll", "troll", "kobold", "cultiste",
+			"elementaire_feu", "golem", "fee", "drake", "coffre", "mimic"]:
+		_save(_gen_creature(k), k)
+
 	# --- Butin ---
 	_save(_gen_weapon(), "arme")
 	_save(_gen_armor(), "armure")
@@ -307,6 +314,27 @@ func _gen_creature(kind: String) -> Image:
 		"orc":     _fig_orc(img)
 		"spectre": _fig_spectre(img)
 		"boss":    _fig_boss(img)
+		"araignee": _fig_araignee(img)
+		"sanglier": _fig_sanglier(img)
+		"chauvesouris": _fig_chauvesouris(img)
+		"serpent": _fig_serpent(img)
+		"ours":    _fig_ours(img)
+		"zombie":  _fig_zombie(img)
+		"dullahan": _fig_dullahan(img)
+		"liche":   _fig_liche(img)
+		"banshee": _fig_banshee(img)
+		"revenant": _fig_revenant(img)
+		"brigand": _fig_brigand(img)
+		"gnoll":   _fig_gnoll(img)
+		"troll":   _fig_troll(img)
+		"kobold":  _fig_kobold(img)
+		"cultiste": _fig_cultiste(img)
+		"elementaire_feu": _fig_elementaire_feu(img)
+		"golem":   _fig_golem(img)
+		"fee":     _fig_fee(img)
+		"drake":   _fig_drake(img)
+		"coffre":  _fig_coffre(img)
+		"mimic":   _fig_mimic(img)
 		_:         _fig_knight(img)
 	return img
 
@@ -558,6 +586,267 @@ func _fig_boss(img: Image) -> void:
 	_glow_eyes(img, 12, 7, EMBER, 3)
 	_px(img, 9, 7, GOLD_L); _px(img, 15, 7, GOLD_L)
 	_rect(img, 10, 10, 5, 1, INK)
+
+# --- Nouveaux monstres (Pass 1) ----------------------------------------------
+func _fig_araignee(img: Image) -> void:
+	_ground_shadow(img)
+	var leg: Color = POISON.darkened(0.5)
+	for ey in [10, 13, 16]:
+		_line(img, 8, 14, 1, ey, leg); _line(img, 8, 15, 2, ey + 1, leg)
+		_line(img, 16, 14, 23, ey, leg); _line(img, 16, 15, 22, ey + 1, leg)
+	_disc_o(img, 12, 15, 5.0, POISON.darkened(0.45), INK)
+	_disc(img, 12, 15, 4.0, POISON.darkened(0.12))
+	_ellipse(img, 10, 13, 1.6, 1.2, POISON.lightened(0.22))
+	_disc_o(img, 12, 9, 3.0, POISON.darkened(0.32), INK)
+	_disc(img, 12, 9, 2.2, POISON.darkened(0.05))
+	_glow_eyes(img, 12, 8, BLOOD, 2)
+
+func _fig_sanglier(img: Image) -> void:
+	_ground_shadow(img)
+	var fur: Color = Color(0.50, 0.40, 0.34)
+	var fur_d: Color = fur.darkened(0.4)
+	_ellipse(img, 13, 15, 8.0, 5.0, fur_d); _ellipse(img, 13, 15, 7.0, 4.2, fur)
+	_ellipse(img, 15, 12, 3.0, 2.2, fur.lightened(0.18))
+	for sx in [10, 13, 16]:
+		_line(img, sx, 11, sx - 1, 7, INK)
+	_rect(img, 8, 18, 2, 3, fur_d); _rect(img, 16, 18, 2, 3, fur_d)
+	_disc_o(img, 5, 14, 3.2, fur_d, INK); _disc(img, 5, 14, 2.5, fur)
+	_rect(img, 1, 14, 4, 2, fur.lightened(0.1)); _px(img, 1, 14, INK)
+	_tri_up(img, 3, 17, 1, 3, BONE); _tri_up(img, 6, 17, 1, 3, BONE)
+	_glow_eyes(img, 5, 12, EMBER, 1)
+
+func _fig_chauvesouris(img: Image) -> void:
+	_ground_shadow(img)
+	var body: Color = Color(0.45, 0.30, 0.42)
+	_trapezoid(img, 4, 8, 15, 0.5, 4.0, body.darkened(0.4))
+	_trapezoid(img, 20, 8, 15, 0.5, 4.0, body.darkened(0.4))
+	_line(img, 7, 9, 3, 7, body.darkened(0.2)); _line(img, 17, 9, 21, 7, body.darkened(0.2))
+	_disc_o(img, 12, 12, 3.0, body.darkened(0.3), INK); _disc(img, 12, 12, 2.3, body)
+	_tri_up(img, 10, 9, 1, 3, body.darkened(0.2)); _tri_up(img, 14, 9, 1, 3, body.darkened(0.2))
+	_glow_eyes(img, 12, 11, BLOOD, 1)
+	_px(img, 11, 14, BONE); _px(img, 13, 14, BONE)
+
+func _fig_serpent(img: Image) -> void:
+	_ground_shadow(img)
+	var sk: Color = Color(0.36, 0.62, 0.40)
+	var sk_d: Color = sk.darkened(0.4)
+	for i in range(14):
+		var t: float = i / 13.0
+		var x: int = int(7 + 7 * abs(sin(t * PI * 1.5)))
+		var y: int = 20 - i
+		_disc(img, x, y, 2.0, sk_d); _disc(img, x, y, 1.3, sk)
+	_disc_o(img, 14, 7, 2.6, sk_d, INK); _disc(img, 14, 7, 1.9, sk)
+	_glow_eyes(img, 14, 6, GOLD_L, 1)
+	_line(img, 16, 8, 18, 9, BLOOD); _px(img, 18, 9, BLOOD); _px(img, 19, 8, BLOOD)
+
+func _fig_ours(img: Image) -> void:
+	_ground_shadow(img)
+	var fur: Color = Color(0.46, 0.36, 0.31)
+	var fur_d: Color = fur.darkened(0.42)
+	_trapezoid_o(img, 12, 10, 21, 5.0, 7.0, fur_d)
+	_trapezoid(img, 12, 11, 20, 4.0, 5.5, fur)
+	_rect(img, 8, 15, 8, 3, fur.lightened(0.12))
+	_disc_o(img, 12, 7, 4.4, fur_d, INK); _disc(img, 12, 7, 3.6, fur)
+	_disc(img, 6, 4, 1.6, fur_d); _disc(img, 18, 4, 1.6, fur_d)
+	_disc(img, 6, 4, 1.0, fur); _disc(img, 18, 4, 1.0, fur)
+	_ellipse(img, 12, 9, 1.8, 1.3, fur.lightened(0.2)); _px(img, 12, 9, INK)
+	_glow_eyes(img, 12, 6, EMBER, 2)
+	_tri_up(img, 10, 16, 1, 3, BONE); _tri_up(img, 14, 16, 1, 3, BONE)
+
+func _fig_zombie(img: Image) -> void:
+	_ground_shadow(img)
+	var sk: Color = Color(0.48, 0.62, 0.40)
+	var sk_d: Color = sk.darkened(0.4)
+	_glow(img, 12, 13, 6.0, POISON, 0.22)
+	_trapezoid_o(img, 11, 11, 21, 2.8, 4.5, sk_d)
+	_trapezoid(img, 11, 12, 20, 2.0, 3.5, sk)
+	_rect(img, 9, 13, 5, 2, sk_d); _rect(img, 15, 12, 3, 2, sk); _rect(img, 18, 12, 2, 4, sk_d)
+	_disc_o(img, 11, 7, 3.6, sk_d, INK); _disc(img, 11, 7, 2.9, sk)
+	_ellipse(img, 9, 5, 1.2, 1.0, sk.lightened(0.2))
+	_px(img, 10, 7, INK); _rect(img, 12, 7, 2, 1, INK)
+	_glow(img, 10, 7, 1.2, POISON, 0.6); _rect(img, 10, 10, 3, 1, INK)
+
+func _fig_dullahan(img: Image) -> void:
+	_ground_shadow(img)
+	_trapezoid_o(img, 12, 7, 21, 3.2, 6.0, STEEL_D)
+	_trapezoid(img, 12, 8, 20, 2.4, 4.5, STEEL)
+	_rect(img, 10, 9, 5, 5, STEEL_L); _rect(img, 11, 10, 1, 3, Color(1, 1, 1, 0.5))
+	_disc_o(img, 8, 6, 1.7, STEEL, STEEL_D); _disc_o(img, 16, 6, 1.7, STEEL, STEEL_D)
+	_px(img, 12, 6, BLOOD); _rect(img, 11, 6, 3, 1, BLOOD_D)
+	_glow(img, 19, 14, 3.0, ARCANE, 0.4)
+	_disc_o(img, 19, 14, 2.6, STEEL_D, INK); _disc(img, 19, 14, 1.9, BONE)
+	_glow_eyes(img, 19, 13, EMBER, 1)
+	_rect(img, 4, 9, 1, 10, STEEL_L)
+
+func _fig_liche(img: Image) -> void:
+	_ground_shadow(img)
+	_trapezoid_o(img, 12, 11, 21, 2.0, 6.0, ARCANE.darkened(0.5))
+	_trapezoid(img, 12, 12, 20, 1.2, 4.6, ARCANE.darkened(0.25))
+	_rect(img, 11, 14, 2, 6, ARCANE_L.darkened(0.1))
+	_disc_o(img, 12, 8, 3.4, BONE_D, INK); _disc(img, 12, 7, 2.7, BONE)
+	_rect(img, 10, 7, 2, 2, INK); _rect(img, 13, 7, 2, 2, INK)
+	_glow(img, 10.5, 7.5, 1.4, ARCANE_L, 0.7); _glow(img, 14.5, 7.5, 1.4, ARCANE_L, 0.7)
+	_px(img, 10, 7, ARCANE_L); _px(img, 14, 7, ARCANE_L)
+	_rect(img, 9, 4, 6, 1, GOLD)
+	_tri_up(img, 9, 4, 1, 2, GOLD); _tri_up(img, 12, 4, 1, 2, GOLD); _tri_up(img, 15, 4, 1, 2, GOLD)
+	_rect(img, 6, 7, 1, 13, GOLD_D)
+	_glow(img, 6, 6, 2.6, ARCANE, 0.7); _disc_o(img, 6, 6, 1.8, ARCANE, INK); _px(img, 6, 5, ARCANE_L)
+
+func _fig_banshee(img: Image) -> void:
+	_glow(img, 12, 10, 7.0, CYAN, 0.35)
+	_disc_o(img, 12, 8, 4.2, CYAN.darkened(0.4), INK_SOFT); _disc(img, 12, 8, 3.4, CYAN.darkened(0.12))
+	for sx in [7, 9, 15, 17]:
+		_line(img, sx, 8, sx + (2 if sx < 12 else -2), 18, CYAN.darkened(0.2))
+	_trapezoid(img, 12, 11, 21, 3.5, 6.0, CYAN.darkened(0.18))
+	for x in range(6, 19):
+		var cut: int = 21 - (x % 3)
+		for y in range(cut, TILE):
+			_px(img, x, y, Color(0, 0, 0, 0))
+	_ellipse(img, 12, 8, 2.4, 2.0, Color(0.05, 0.08, 0.10))
+	_glow_eyes(img, 12, 7, Color(1, 1, 1), 2)
+	_ellipse(img, 12, 11, 1.0, 1.6, Color(0.9, 1, 1, 0.8))
+	_fade(img, 0.82)
+
+func _fig_revenant(img: Image) -> void:
+	_ground_shadow(img)
+	var arm: Color = Color(0.30, 0.30, 0.38)
+	_trapezoid_o(img, 12, 10, 21, 3.0, 5.5, arm.darkened(0.4))
+	_trapezoid(img, 12, 11, 20, 2.2, 4.2, arm)
+	_rect(img, 10, 13, 5, 3, arm.lightened(0.18))
+	_disc_o(img, 12, 7, 3.8, arm.darkened(0.4), INK); _disc(img, 12, 7, 3.0, arm)
+	_rect(img, 9, 7, 6, 1, INK)
+	_glow_eyes(img, 12, 7, BLOOD, 2)
+	_tri_up(img, 12, 3, 1, 3, BLOOD)
+	_rect(img, 18, 8, 1, 11, STEEL_L); _rect(img, 5, 8, 1, 11, STEEL_L)
+
+func _fig_brigand(img: Image) -> void:
+	_ground_shadow(img)
+	var cloth: Color = Color(0.40, 0.32, 0.26)
+	_trapezoid_o(img, 12, 11, 21, 2.6, 5.5, cloth.darkened(0.4))
+	_trapezoid(img, 12, 12, 20, 1.8, 4.2, cloth)
+	_disc_o(img, 12, 7, 3.8, cloth.darkened(0.45), INK)
+	_ellipse(img, 12, 8, 2.4, 2.0, Color(0.08, 0.07, 0.10))
+	_glow_eyes(img, 12, 8, ARCANE_L, 1)
+	_rect(img, 16, 13, 1, 5, STEEL_L); _rect(img, 15, 17, 3, 1, GOLD)
+	_glow(img, 12, 12, 3.0, ARCANE, 0.18)
+
+func _fig_gnoll(img: Image) -> void:
+	_ground_shadow(img)
+	var fur: Color = Color(0.68, 0.58, 0.34)
+	var fur_d: Color = fur.darkened(0.4)
+	_trapezoid_o(img, 12, 11, 21, 2.6, 5.0, fur_d)
+	_trapezoid(img, 12, 12, 20, 1.8, 3.8, fur)
+	_rect(img, 9, 14, 6, 2, Color(0.4, 0.3, 0.2))
+	_disc_o(img, 12, 7, 3.6, fur_d, INK); _disc(img, 12, 7, 2.9, fur)
+	_tri_up(img, 8, 5, 1, 3, fur_d); _tri_up(img, 16, 5, 1, 3, fur_d)
+	_rect(img, 10, 8, 4, 2, fur.lightened(0.12))
+	_px(img, 10, 9, INK); _px(img, 13, 9, INK); _px(img, 11, 9, BONE)
+	_glow_eyes(img, 12, 7, GOLD_L, 1)
+	_rect(img, 17, 10, 1, 8, STEEL_L)
+
+func _fig_troll(img: Image) -> void:
+	_ground_shadow(img)
+	var sk: Color = Color(0.45, 0.60, 0.45)
+	var sk_d: Color = sk.darkened(0.42)
+	_trapezoid_o(img, 11, 9, 21, 5.5, 7.5, sk_d)
+	_trapezoid(img, 11, 10, 20, 4.5, 6.0, sk)
+	_rect(img, 7, 14, 9, 3, sk.lightened(0.12))
+	for rp in [Vector2i(8, 16), Vector2i(13, 13), Vector2i(15, 18)]:
+		_glow(img, rp.x, rp.y, 1.6, CYAN, 0.5); _px(img, rp.x, rp.y, CYAN_L)
+	_disc_o(img, 11, 7, 4.2, sk_d, INK); _disc(img, 11, 7, 3.4, sk)
+	_rect(img, 7, 8, 9, 1, INK)
+	_glow_eyes(img, 11, 8, EMBER, 2)
+	_tri_up(img, 9, 12, 1, 3, BONE); _tri_up(img, 13, 12, 1, 3, BONE)
+
+func _fig_kobold(img: Image) -> void:
+	_ground_shadow(img)
+	var sk: Color = Color(0.80, 0.50, 0.35)
+	var sk_d: Color = sk.darkened(0.4)
+	_trapezoid_o(img, 12, 14, 21, 2.4, 3.8, sk_d)
+	_trapezoid(img, 12, 15, 20, 1.6, 2.8, sk)
+	_disc_o(img, 12, 10, 3.2, sk_d, INK); _disc(img, 12, 10, 2.5, sk)
+	_rect(img, 11, 11, 4, 2, sk.lightened(0.1))
+	_tri_up(img, 8, 9, 1, 4, sk_d); _tri_up(img, 16, 9, 1, 4, sk_d)
+	_glow_eyes(img, 12, 9, GOLD_L, 1)
+	_rect(img, 17, 12, 1, 5, STEEL_L); _tri_up(img, 13, 9, 1, 3, BONE)
+
+func _fig_cultiste(img: Image) -> void:
+	_ground_shadow(img)
+	var robe: Color = Color(0.45, 0.25, 0.34)
+	_trapezoid_o(img, 12, 8, 22, 2.0, 6.5, robe.darkened(0.45))
+	_trapezoid(img, 12, 9, 21, 1.4, 5.2, robe)
+	_disc_o(img, 12, 7, 3.4, robe.darkened(0.5), INK)
+	_tri_up(img, 12, 6, 2, 4, robe.darkened(0.35))
+	_ellipse(img, 12, 8, 2.0, 1.7, Color(0.06, 0.05, 0.08))
+	_glow_eyes(img, 12, 8, BLOOD, 1)
+	_glow(img, 12, 17, 3.2, BLOOD, 0.45)
+	_diamond(img, 12, 17, 2, BLOOD.darkened(0.2)); _px(img, 12, 17, GOLD_L)
+
+func _fig_elementaire_feu(img: Image) -> void:
+	_glow(img, 12, 13, 9.0, EMBER, 0.5)
+	_tri_up(img, 12, 21, 7, 16, EMBER.darkened(0.3))
+	_tri_up(img, 12, 21, 5, 14, EMBER)
+	_tri_up(img, 9, 19, 2, 7, EMBER.darkened(0.1)); _tri_up(img, 15, 19, 2, 7, EMBER.darkened(0.1))
+	_tri_up(img, 12, 19, 3, 11, GOLD); _tri_up(img, 12, 16, 2, 7, GOLD_L)
+	_glow_eyes(img, 12, 12, Color(1, 1, 1), 2); _px(img, 12, 5, GOLD_L)
+
+func _fig_golem(img: Image) -> void:
+	_ground_shadow(img)
+	var st: Color = Color(0.58, 0.58, 0.64)
+	var st_d: Color = st.darkened(0.4)
+	var st_l: Color = st.lightened(0.16)
+	_rect(img, 5, 9, 14, 13, INK)
+	_rect(img, 6, 10, 12, 11, st_d); _rect(img, 7, 11, 10, 9, st); _rect(img, 7, 11, 10, 2, st_l)
+	_rect(img, 8, 6, 8, 4, st_d); _rect(img, 9, 6, 6, 3, st)
+	_rect(img, 3, 11, 2, 7, st_d); _rect(img, 19, 11, 2, 7, st_d)
+	_glow(img, 10, 8, 1.4, ARCANE, 0.5); _glow(img, 14, 8, 1.4, ARCANE, 0.5)
+	_px(img, 10, 8, ARCANE_L); _px(img, 14, 8, ARCANE_L)
+	_line(img, 9, 13, 11, 17, st_d); _line(img, 14, 12, 13, 18, st_d)
+
+func _fig_fee(img: Image) -> void:
+	_glow(img, 12, 12, 7.0, ARCANE, 0.4)
+	_ellipse(img, 7, 10, 3.0, 4.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
+	_ellipse(img, 17, 10, 3.0, 4.0, Color(ARCANE.r, ARCANE.g, ARCANE.b, 0.45))
+	_ellipse(img, 7, 10, 2.0, 2.8, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
+	_ellipse(img, 17, 10, 2.0, 2.8, Color(ARCANE_L.r, ARCANE_L.g, ARCANE_L.b, 0.5))
+	_trapezoid_o(img, 12, 11, 18, 1.2, 2.4, ARCANE.darkened(0.2))
+	_disc_o(img, 12, 8, 2.2, ROSE_D, INK); _ellipse(img, 12, 8, 1.5, 1.7, SKIN)
+	_px(img, 11, 8, INK); _px(img, 13, 8, INK)
+	_glow(img, 12, 8, 1.6, CYAN_L, 0.5)
+	_px(img, 12, 4, GOLD_L); _px(img, 9, 6, CYAN_L); _px(img, 15, 6, CYAN_L)
+
+func _fig_drake(img: Image) -> void:
+	_ground_shadow(img)
+	var sc: Color = Color(0.55, 0.40, 0.40)
+	var sc_d: Color = sc.darkened(0.42)
+	_ellipse(img, 12, 16, 7.0, 4.0, sc_d); _ellipse(img, 12, 16, 6.0, 3.2, sc)
+	_ellipse(img, 16, 14, 3.0, 2.4, sc.lightened(0.12))
+	_line(img, 18, 17, 23, 20, sc_d)
+	_disc_o(img, 8, 9, 3.4, sc_d, INK); _disc(img, 8, 9, 2.7, sc)
+	_rect(img, 3, 9, 5, 2, sc.lightened(0.1))
+	_tri_up(img, 9, 7, 1, 3, sc_d); _tri_up(img, 7, 7, 1, 2, sc_d)
+	_glow_eyes(img, 8, 8, GOLD_L, 1)
+	_glow(img, 2, 10, 2.6, EMBER, 0.6)
+	_px(img, 2, 10, EMBER_L); _px(img, 1, 9, GOLD_L); _px(img, 1, 11, EMBER)
+
+func _fig_coffre(img: Image) -> void:
+	_ground_shadow(img)
+	var wood: Color = Color(0.45, 0.32, 0.20)
+	var wood_d: Color = wood.darkened(0.4)
+	_rect(img, 5, 12, 14, 9, INK)
+	_rect(img, 6, 13, 12, 7, wood)
+	_rect(img, 6, 8, 12, 5, wood_d); _rect(img, 6, 8, 12, 1, wood.lightened(0.15))
+	_rect(img, 5, 12, 14, 1, GOLD_D); _rect(img, 11, 11, 2, 4, GOLD)
+	_px(img, 11, 12, GOLD_L); _px(img, 12, 13, INK); _px(img, 7, 9, wood.lightened(0.2))
+
+func _fig_mimic(img: Image) -> void:
+	_fig_coffre(img)
+	_rect(img, 6, 12, 12, 3, Color(0.10, 0.04, 0.06))
+	for tx in range(6, 18, 2):
+		_tri_up(img, tx + 1, 12, 1, 2, BONE)
+		_px(img, tx + 1, 14, BONE); _px(img, tx + 1, 13, BONE)
+	_ellipse(img, 12, 15, 2.2, 1.2, BLOOD)
+	_glow_eyes(img, 12, 9, EMBER, 3)
 
 # --- Butin --------------------------------------------------------------------
 func _gen_weapon() -> Image:

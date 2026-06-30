@@ -539,5 +539,65 @@ func _ready() -> void:
 	assert(main.player.facing == Vector2i(0, -1), "une action oriente le sprite de l'héroïne")
 	print("OK sprites directionnels: face/dos/profil + miroir, orientation par l'action")
 
+	# --- Nouveaux monstres : spawn + exécution de chaque comportement (Pass 1) -----
+	main.start_run("melee")
+	main.choose_map_node(main.reachable_indices()[0])
+	var new_count := 0
+	for edef in Data.ENEMIES:
+		if not edef.has("ai"):
+			continue                              # ignore les 5 ennemis d'origine
+		new_count += 1
+		main.enemies.clear()
+		main.hazards.clear()
+		main.player.max_hp = 9999
+		main.player.hp = 9999
+		main.player.atk = 60
+		var spot: Vector2i = _find_spot(main, main.player.pos())
+		var mon = main._make_enemy(edef, 8, spot)
+		assert(mon.ai.has("behavior"), "%s a un comportement" % edef["name"])
+		main.enemies.append(mon)
+		for _t in 14:                             # laisse le monde tourner : le monstre agit
+			if main.state != main.State.PLAYING:
+				break
+			main.pass_turn()
+		assert(main.state == main.State.PLAYING or main.state == main.State.GAMEOVER, "combat stable avec %s" % edef["name"])
+		main.state = main.State.PLAYING
+	assert(new_count == 20, "20 nouveaux monstres définis (vu %d)" % new_count)
+	print("OK nouveaux monstres: %d comportements exécutés sans crash" % new_count)
+
+	# --- Nouveaux statuts : saignement, maladie, weaken, confusion ----------------
+	main.enemies.clear()
+	main.player.max_hp = 200
+	main.player.hp = 200
+	main.apply_bleed(main.player, 3, 5.0)
+	main.apply_disease(main.player, 3, 4.0)
+	var hp_before_dot := main.player.hp
+	main.player.tick_statuses()
+	assert(main.player.hp < hp_before_dot, "saignement + maladie infligent des dégâts par tour")
+	var base_def := main.player.defense
+	main.apply_weaken(main.player, 3, 4.0)
+	assert(main._player_def() <= maxi(0, base_def - 4), "weaken réduit la défense effective")
+	main.apply_confuse(main.player, 3)
+	assert(main.player.has_status("confusion"), "confusion appliquée")
+	print("OK nouveaux statuts: saignement, maladie, défense réduite, confusion")
+
+	# --- Résistances, immunité feu, pièges ----------------------------------------
+	assert(not main._enemy_def_by_sprite("golem").is_empty(), "définition golem trouvée")
+	var fire_el = main._make_enemy(main._enemy_def_by_sprite("elementaire_feu"), 8, main.player.pos() + Vector2i(2, 0))
+	main.apply_burn(fire_el, 3, 9.0)
+	assert(not fire_el.has_status("burn"), "élémentaire de feu insensible au feu")
+	main.hazards.clear()
+	main._drop_trap(main.player.pos() + Vector2i(1, 0))
+	assert(main.hazards.size() == 1, "piège posé au sol")
+	print("OK résistances/immunité/pièges")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
+
+## Trouve une case marchable proche de `from` pour y poser un monstre de test.
+func _find_spot(main, from: Vector2i) -> Vector2i:
+	for d in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2), Vector2i(3, 0), Vector2i(0, 3), Vector2i(1, 0)]:
+		var p: Vector2i = from + d
+		if main.dungeon.is_walkable(p.x, p.y) and main.enemy_at(p.x, p.y) == null and p != from:
+			return p
+	return from + Vector2i(1, 0)
