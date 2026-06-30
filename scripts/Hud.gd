@@ -42,6 +42,7 @@ var hp_bar: ProgressBar
 var hp_text: Label
 var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
+var equip_panel: Control
 var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
 var power_box: VBoxContainer
@@ -135,6 +136,9 @@ func _build_sidebar() -> void:
 	v.add_child(_section("ÉTATS"))
 	status_box = Ui.vbox(3); v.add_child(status_box)
 	v.add_child(_section("ÉQUIPEMENT"))
+	equip_panel = load("res://scripts/EquipPanel.gd").new()
+	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 155)
+	v.add_child(equip_panel)
 	equip_box = Ui.vbox(6); v.add_child(equip_box)
 	v.add_child(_section("ARTEFACTS"))
 	artifact_box = Ui.vbox(6); v.add_child(artifact_box)
@@ -935,16 +939,7 @@ func refresh() -> void:
 func _rebuild_equip() -> void:
 	for c in equip_box.get_children():
 		c.queue_free()
-	for slot in Data.SLOTS:
-		equip_box.add_child(Ui.label("%s %s" % [Data.SLOT_GLYPH[slot], Data.SLOT_NAMES[slot]], 13, Data.SLOT_COLOR[slot]))
-		if game.player.equipment.has(slot):
-			var it: Dictionary = game.player.equipment[slot]
-			equip_box.add_child(Ui.label("%s  (%s)" % [it["name"], Data.bonus_summary(it["bonus"])], 14,
-				it.get("rarity_color", Color(0.92, 0.95, 1.0)), false, true, SIDEBAR_W - 60))
-			if it.get("desc", "") != "":
-				equip_box.add_child(Ui.label("✦ " + it["desc"], 11, Color(0.85, 0.7, 0.35), false, true, SIDEBAR_W - 60))
-		else:
-			equip_box.add_child(Ui.label("— vide —", 14, Color(0.5, 0.5, 0.58)))
+	equip_panel.refresh(game.player.equipment)
 
 func _rebuild_artifacts() -> void:
 	for c in artifact_box.get_children():

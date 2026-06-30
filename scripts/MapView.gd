@@ -70,6 +70,28 @@ func _draw() -> void:
 		if not dungeon.visible[st.y][st.x]:
 			draw_rect(_cell_rect(st.x, st.y), COLOR_MEMORY, true)
 
+	# --- Surbrillances de combat ---
+	var player_entity = null
+	for e in entities:
+		if e.faction == Entity.Faction.PLAYER and e.is_alive():
+			player_entity = e
+			break
+	if player_entity != null and dungeon.is_visible(player_entity.x, player_entity.y):
+		var pcell := _cell_rect(player_entity.x, player_entity.y)
+		draw_rect(pcell, Color(0.4, 0.8, 1.0, 0.12), true)
+		draw_rect(pcell, Color(0.4, 0.9, 1.0, 0.45), false)
+		for e in entities:
+			if e.faction == Entity.Faction.ENEMY and e.is_alive() and dungeon.is_visible(e.x, e.y):
+				var dx := absi(e.x - player_entity.x)
+				var dy := absi(e.y - player_entity.y)
+				var dist := maxi(dx, dy)
+				var ecell := _cell_rect(e.x, e.y)
+				if dist == 1:
+					draw_rect(ecell, Color(1.0, 0.25, 0.15, 0.22), true)
+					draw_rect(ecell, Color(1.0, 0.35, 0.2, 0.75), false)
+				elif dist <= 3:
+					draw_rect(ecell, Color(0.9, 0.55, 0.15, 0.08), true)
+
 	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:
 		var p: Vector2i = item["pos"]
@@ -166,7 +188,9 @@ func _draw_hp_pip(e: Entity) -> void:
 	var ratio: float = clampf(float(e.hp) / float(e.max_hp), 0.0, 1.0)
 	var bar_w := float(CELL - 6)
 	var bx := e.x * CELL + 3.0
-	var by := e.y * CELL + CELL - 3.0
-	draw_rect(Rect2(Vector2(bx, by), Vector2(bar_w, 3)), Color(0.15, 0.03, 0.03), true)
+	var by := e.y * CELL + CELL - 4.0
+	# Séparateur sombre 1px au-dessus de la barre.
+	draw_rect(Rect2(Vector2(bx, by - 1), Vector2(bar_w, 1)), Color(0.0, 0.0, 0.0, 0.6), true)
+	draw_rect(Rect2(Vector2(bx, by), Vector2(bar_w, 4)), Color(0.15, 0.03, 0.03), true)
 	var col := Color(0.3, 0.85, 0.3) if e.faction == Entity.Faction.PLAYER else Color(0.85, 0.3, 0.3)
-	draw_rect(Rect2(Vector2(bx, by), Vector2(bar_w * ratio, 3)), col, true)
+	draw_rect(Rect2(Vector2(bx, by), Vector2(bar_w * ratio, 4)), col, true)

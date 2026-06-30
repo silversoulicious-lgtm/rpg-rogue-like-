@@ -218,27 +218,39 @@ func _gen_wall() -> Image:
 	var brick_w := 8
 	var row := 0
 	for by in range(0, TILE, brick_h):
+		# Joints horizontaux épais (2px) et liseré lumineux dessous.
 		for x in TILE:
-			_px(img, x, by, INK)                  # joint horizontal sombre
-			_px(img, x, by + 1, STONE_L)          # liseré éclairé sous le joint
+			_px(img, x, by,     INK)
+			_px(img, x, by + 1, INK.lerp(STONE_D, 0.4))  # 2e px du joint
+			if by + 2 < TILE:
+				_px(img, x, by + 2, STONE_L)              # liseré éclairé
 		var off := (brick_w / 2) if (row % 2 == 1) else 0
 		var bx := -off
 		while bx <= TILE:
-			for yy in range(by, by + brick_h):
-				_px(img, bx, yy, INK)             # joint vertical
-			# ombrage interne de la brique (bas-droite)
+			# Joints verticaux épais (2px).
+			for yy in range(by + 2, by + brick_h):
+				_px(img, bx,     yy, INK)
+				_px(img, bx + 1, yy, INK.lerp(STONE_D, 0.4))
+			# Variation subtile par rangée de brique (alternance clair/sombre).
+			var face_col := STONE_L if (row % 2 == 0) else STONE
+			for yy in range(by + 3, by + brick_h - 1):
+				for xx in range(bx + 2, bx + brick_w - 1):
+					if xx >= 0 and xx < TILE and yy >= 0 and yy < TILE:
+						_px(img, xx, yy, face_col)
+			# Ombrage interne (bas-droite de chaque brique).
 			for yy in range(by + 2, by + brick_h):
 				_px(img, bx + brick_w - 1, yy, STONE_D)
 			bx += brick_w
 		row += 1
-	# Grain + rares cristaux arcaniques incrustés (identité de la Tour).
-	for i in 26:
+	# Grain subtil.
+	for i in 18:
 		_px(img, rng.randi_range(0, TILE - 1), rng.randi_range(0, TILE - 1), STONE_D)
-	for i in 2:
-		var cx := rng.randi_range(4, TILE - 5)
-		var cy := rng.randi_range(4, TILE - 5)
-		_px(img, cx, cy, ARCANE)
-		_px(img, cx, cy - 1, ARCANE_L)
+	# Cristaux arcaniques en positions fixes (cohérence entre tiles).
+	var crystal_pos := [Vector2i(5, 4), Vector2i(17, 10), Vector2i(3, 16), Vector2i(19, 3)]
+	for cp in crystal_pos:
+		_px(img, cp.x,     cp.y,     ARCANE)
+		_px(img, cp.x,     cp.y - 1, ARCANE_L)
+		_px(img, cp.x - 1, cp.y,     ARCANE.darkened(0.3))
 	return img
 
 func _gen_stairs() -> Image:
@@ -757,6 +769,19 @@ func _gen_node_rest() -> Image:
 func _gen_ground(a: Color, b: Color) -> Image:
 	var img := _new(true)
 	img.fill(a)
+	# Joints de dalle : bordure extérieure et subdivision centrale à px 12.
+	var joint_outer := a.darkened(0.35).lerp(INK, 0.5)
+	var joint_inner := a.darkened(0.18).lerp(INK_SOFT, 0.3)
+	for i in TILE:
+		_px(img, i, 0, joint_outer);  _px(img, 0, i, joint_outer)
+		_px(img, i, 12, joint_inner); _px(img, 12, i, joint_inner)
+	# Liseré lumineux juste après chaque joint (rangées 1 et 13).
+	for i in TILE:
+		_px(img, i, 1,  a.lightened(0.09)); _px(img, 1,  i, a.lightened(0.09))
+		_px(img, i, 13, a.lightened(0.06)); _px(img, 13, i, a.lightened(0.06))
+	# Ombre douce avant le joint intérieur (rangée 11).
+	for i in TILE:
+		_px(img, i, 11, a.darkened(0.12)); _px(img, 11, i, a.darkened(0.12))
 	# Grain peu bruité : touches claires éparses + micro-taches sombres.
 	for y in TILE:
 		for x in TILE:
@@ -767,11 +792,12 @@ func _gen_ground(a: Color, b: Color) -> Image:
 				_px(img, x, y, a.darkened(0.18))
 			elif (x * 5 + y * 3) % 17 == 0:
 				_px(img, x, y, a.lightened(0.05))
+	# Rehauts de coin (lumière en haut-gauche de chaque quartile).
+	_px(img, 2,  2,  b.lightened(0.12)); _px(img, 14, 2,  b.lightened(0.12))
+	_px(img, 2,  14, b.lightened(0.12)); _px(img, 14, 14, b.lightened(0.12))
 	# Profondeur : coin haut-gauche éclairé, assombrissement vers le bas-droite.
 	for i in range(7):
 		_px(img, i, 0, a.lightened(0.08)); _px(img, 0, i, a.lightened(0.06))
-	for c in [Vector2i(TILE - 1, TILE - 2), Vector2i(TILE - 2, TILE - 1), Vector2i(TILE - 1, TILE - 3)]:
-		_px(img, c.x, c.y, a.darkened(0.22))
 	# Liseré d'ombre froide (délimite la case sans casser l'ambiance).
 	for i in TILE:
 		_px(img, i, TILE - 1, a.darkened(0.32).lerp(INK_SOFT, 0.4))
@@ -824,23 +850,38 @@ func _gen_rock(c: Color) -> Image:
 
 func _gen_water(c: Color) -> Image:
 	var img := _new(true)
-	var base := c.darkened(0.28)
+	var base := c.darkened(0.40)
 	img.fill(base)
-	var mid := c.lightened(0.04)
-	var hi := c.lightened(0.30)
-	# Vagues horizontales stylisées (décalées d'une rangée à l'autre).
-	for y in range(2, TILE, 4):
+	var trough := c.darkened(0.30)
+	var mid    := c.lightened(0.05)
+	var crest  := c.lightened(0.35)
+	# 3 couches de vagues : creux sombre, corps intermédiaire, crête lumineuse.
+	for y in range(1, TILE, 4):
 		var off := (y / 4) % 3
 		for x in TILE:
-			var yy := y + ((x + off) / 3) % 2
-			if yy < TILE:
-				_px(img, x, yy, mid)
-				if (x + off) % 6 == 0:
-					_px(img, x, yy, hi)              # crête éclairée
-	# Liseré d'ombre (cohérent avec le sol).
+			var phase := (x + off * 5) % 12
+			# creux (bas de vague)
+			var ty := y + (phase / 6)
+			if ty < TILE: _px(img, x, ty, trough)
+			# corps de vague
+			var my := y + 1 + (phase / 8)
+			if my < TILE: _px(img, x, my, mid)
+			# crête lumineuse
+			if phase == 0 or phase == 6:
+				var cy := y + 1
+				if cy < TILE: _px(img, x, cy, crest)
+				# Mousse : pixels blanc/brillant aux crêtes
+				if cy - 1 >= 0: _px(img, x, cy - 1, Color(1.0, 1.0, 1.0, 0.55))
+	# Reflets diagonaux épars.
+	for y in TILE:
+		for x in TILE:
+			if (x * 3 + y * 7) % 23 == 0:
+				_px(img, x, y, crest.lightened(0.15))
+	# Coins sombres profonds (bas-droite).
 	for i in TILE:
 		_px(img, i, TILE - 1, base.darkened(0.35))
 		_px(img, TILE - 1, i, base.darkened(0.35))
+	_px(img, TILE - 1, TILE - 1, base.darkened(0.50))
 	return img
 
 func _gen_decor(c: Color, style: String) -> Image:
