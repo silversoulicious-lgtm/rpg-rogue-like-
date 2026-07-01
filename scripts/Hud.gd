@@ -51,7 +51,6 @@ var hp_text: Label
 var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
 var equip_panel: Control
-var equip_box: VBoxContainer
 var artifact_box: VBoxContainer
 var power_box: VBoxContainer
 var synergy_box: VBoxContainer
@@ -159,7 +158,6 @@ func _build_sidebar() -> void:
 	v.add_child(_section("ÉQUIPEMENT"))
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
 	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
-	equip_box = Ui.vbox(0)   # conservé pour compatibilité _rebuild_equip
 	v.add_child(equip_panel)
 	v.add_child(_section("ARTEFACTS"))
 	artifact_box = Ui.vbox(5); v.add_child(artifact_box)
@@ -480,6 +478,28 @@ func show_rest() -> void:
 		var b3 := Ui.button("Forger   (renforce une pièce d'équipement)", 46, 17)
 		b3.pressed.connect(game.rest_choice.bind("forge"))
 		overlay_content.add_child(b3)
+
+## Forge Itinérante (Phase 5) : choisir la pièce d'équipement à renforcer
+## (~30% de bonus supplémentaires) plutôt qu'un choix aléatoire silencieux.
+func show_forge(equipment: Dictionary) -> void:
+	map_layer.visible = false
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("⚒ FORGE ITINÉRANTE", Color(1.0, 0.75, 0.35))
+	_overlay_label("Choisis la pièce à renforcer : ses bonus actuels augmentent d'environ 30%.", Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	for slot in Data.SLOTS:
+		if not equipment.has(slot):
+			continue
+		var it: Dictionary = equipment[slot]
+		var btn := Ui.button("%s : %s  (%s)" % [Data.SLOT_NAMES[slot], it["name"], Data.bonus_summary(it["bonus"])], 46, 15)
+		btn.add_theme_color_override("font_color", it.get("rarity_color", Color.WHITE))
+		btn.pressed.connect(game.forge_choice.bind(slot))
+		overlay_content.add_child(btn)
+	overlay_content.add_child(HSeparator.new())
+	var back := Ui.button("Renoncer", 40)
+	back.pressed.connect(game.forge_cancel)
+	overlay_content.add_child(back)
 
 # --- Écran-titre --------------------------------------------------------------
 func show_title() -> void:
@@ -997,8 +1017,6 @@ func refresh() -> void:
 	log_label.text = "\n".join(game.messages)
 
 func _rebuild_equip() -> void:
-	for c in equip_box.get_children():
-		c.queue_free()
 	equip_panel.refresh(game.player.equipment)
 
 func _rebuild_artifacts() -> void:

@@ -8,7 +8,12 @@ const ROWS := 8
 # nodes[row] = Array de nœuds { type, row, idx, edges:Array[int vers row+1], x_frac }
 var nodes: Array = []
 
-func _init(act: int, rng: RandomNumberGenerator) -> void:
+# Strate courante (0-indexée) : plus elle est élevée, plus la carte devient dure
+# (davantage d'Élite/Événement, au détriment du Combat simple, cf. _roll_type).
+var act: int = 0
+
+func _init(p_act: int, rng: RandomNumberGenerator) -> void:
+	act = p_act
 	_generate(rng)
 
 func _generate(rng: RandomNumberGenerator) -> void:
@@ -56,14 +61,22 @@ func _roll_type(r: int, rng: RandomNumberGenerator) -> String:
 		return "boss"
 	if r == ROWS - 2:
 		return "rest" if rng.randf() < 0.5 else "shop"
+	# Plus la strate (act) est élevée, plus Élite et Événement grignotent la part
+	# du Combat simple — plafonné pour ne jamais l'éliminer complètement.
+	var elite_bonus: float = minf(0.10, act * 0.015)
+	var event_bonus: float = minf(0.06, act * 0.01)
+	var combat_top: float = maxf(0.30, 0.50 - elite_bonus - event_bonus)
+	var elite_top: float = combat_top + 0.14 + elite_bonus
+	var shop_top: float = elite_top + 0.15
+	var event_top: float = shop_top + 0.15 + event_bonus
 	var roll: float = rng.randf()
-	if roll < 0.50:
+	if roll < combat_top:
 		return "combat"
-	elif roll < 0.64:
+	elif roll < elite_top:
 		return "elite"
-	elif roll < 0.79:
+	elif roll < shop_top:
 		return "shop"
-	elif roll < 0.94:
+	elif roll < event_top:
 		return "event"
 	return "rest"
 

@@ -471,7 +471,7 @@ func _ready() -> void:
 	assert(GameState.buy_knowledge_node("forge"), "achat du nœud Forge")
 	main.start_run("melee")
 	main.player.equipment = { "armure": { "kind": "equip", "name": "Plastron", "slot": "armure", "salvage": 5, "bonus": { "defense": 4 } } }
-	main._forge_equipment()
+	main.forge_choice("armure")
 	assert(int(main.player.equipment["armure"]["bonus"]["defense"]) > 4, "Forge renforce le bonus d'une pièce")
 	# Œil du Devin : révèle le butin au début d'étage.
 	assert(GameState.buy_knowledge_node("oeil_du_devin"), "achat du nœud Œil du Devin")

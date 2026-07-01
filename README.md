@@ -45,13 +45,20 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 
 Se déplacer **dans** un ennemi l'attaque. Marcher sur l'escalier `>` monte d'un étage.
 
-## 🦸 Héros
+## 🦸 Héroïne
 
-| Héros | Style | Capacité |
+Une **héroïne unique, Aria**. Son style de combat n'est pas figé par une
+classe : il dépend de l'**arme équipée** (mêlée / distance / magie), qui
+détermine sa compétence active de base et sa passive de type.
+
+| Type d'arme | Style | Capacité de base |
 |---|---|---|
-| **Chevalier** | Robuste, corps-à-corps | *Tourbillon d'acier* — frappe tous les ennemis adjacents |
-| **Mage** | Fragile, distance | *Éclair foudroyant* — foudroie l'ennemi le plus proche |
-| **Rôdeur** | Polyvalent | *Tir précis* — flèche puissante à distance |
+| **Mêlée** | Robuste, corps-à-corps | *Tourbillon d'acier* — frappe tous les ennemis adjacents |
+| **Magie** | Fragile, distance | *Éclair foudroyant* — foudroie l'ennemi le plus proche |
+| **Distance** | Polyvalent | *Tir précis* — flèche puissante à distance |
+
+D'autres compétences (Commune/Rare/Épique) se droppent en jeu et remplacent
+la compétence active selon le type d'arme porté.
 
 ## 🛡️ Équipement & Artefacts
 
@@ -142,14 +149,13 @@ Doit afficher `=== SMOKETEST PASSED ===`.
 
 ## 🗺️ Pistes suivantes
 
-- Objets/équipement à ramasser pendant le run (armes, armures, sorts).
-- Plus d'archétypes d'ennemis et de comportements d'IA (à distance, fuite, invocation).
-- Intentions ennemies télégraphiées + variété d'IA (archers, invocateurs) — façon *Into the Breach*.
-- Effets de statut & éléments (poison, brûlure, gel, étourdissement).
-- Davantage de synergies, sets d'équipement, davantage de biomes.
+- **Dialogues / PNJ** : système de dialogue aux nœuds événement/boutique/repos, portraits, choix simples liés aux Serments/Connaissances.
+- **Lore + fins multiples** : texte de lore distillé par étages/découvertes du Codex, plusieurs fins selon la progression, les Serments actifs et le % de Codex complété.
+- **Finition** : équilibrage final (courbes de dégâts/HP, taux de drop, coût des nœuds de l'arbre), polish UI/UX, sons/musique, écran titre/crédits.
+- Sprites directionnels pour les ennemis (actuellement seule Aria en a).
+- Variantes teintées pour les ennemis élite, sprite distinct pour le boss légendaire.
+- Représentation visuelle des pouvoirs actifs en combat (auras, particules, texte flottant).
 - Brouillard de guerre par **ligne de vue** (les arbres/rochers bloquent la vision) plutôt que par simple rayon.
-- Feedback visuel dédié par proc en combat (auras, particules, texte flottant).
-- Animations (déplacement, attaque, dégâts), sons et musique.
 
 ---
 

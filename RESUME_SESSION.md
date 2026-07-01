@@ -157,6 +157,33 @@ logique/affichage/données : `Main.gd` (logique), `Hud.gd` (affichage),
 
 ## Ce qui reste à faire
 
+### Revue de code (juillet 2026) — correctifs appliqués
+Audit complet du code (logique + rendu/UI) et des idées implémentées, mené
+via deux passes de relecture ciblées. Correctifs appliqués suite à l'audit :
+- **Bug** : `Main._enemy_attack_player` appliquait le statut « au contact »
+  (`ai.on_hit`) même quand tous les coups d'une séquence étaient esquivés
+  (le `continue` sur esquive jetait la valeur de retour). Corrigé : le
+  statut ne s'applique plus que si au moins un coup a réellement porté.
+- **Design gap** : `RunMap._init(act, ...)` ignorait son paramètre `act` —
+  la difficulté de carte (proportion Élite/Événement) était identique à
+  toute strate. `act` est maintenant utilisé dans `_roll_type()` pour
+  augmenter progressivement (plafonné) la part d'Élite/Événement au
+  détriment du Combat simple à mesure qu'on monte dans la tour.
+- **Feature incomplète** : la Forge (nœud de l'arbre de Connaissances)
+  choisissait au hasard une pièce d'équipement à renforcer, sans écran.
+  Remplacée par un vrai écran `Hud.show_forge()` : le joueur choisit
+  explicitement la pièce à renforcer (ou renonce). `Main._forge_equipment`
+  scindé en `open_forge()` (ouvre l'écran) / `forge_choice(slot)` (renforce)
+  / `forge_cancel()` (retour au feu de camp).
+- **Code mort** : `Hud.equip_box` (VBoxContainer jamais ajouté à l'arbre,
+  vestige d'une ancienne UI d'équipement texte) supprimé.
+- **Doc obsolète** : README.md décrivait encore 3 héros nommés
+  (Chevalier/Mage/Rôdeur) alors que le jeu suit une héroïne unique (Aria)
+  dont le style dépend de l'arme équipée ; section et tableau réécrits.
+  La liste « Pistes suivantes » de README.md (loot/statuts/variété
+  d'ennemis) était elle aussi obsolète — remplacée par un résumé aligné sur
+  les Phases 6/7/8 ci-dessous.
+
 ### Phase 6 — Dialogues / PNJ
 - Système de dialogue (PNJ aux nœuds événement/boutique/repos), portraits,
   arbres de choix simples liés aux Serments/Connaissances.

@@ -1068,13 +1068,16 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 ## (ai.on_hit), épines et résurrection.
 func _enemy_attack_player(attacker: Entity) -> void:
 	var hits: int = maxi(1, int(attacker.ai.get("atk_count", 1)))
+	var connected: bool = false
 	for i in hits:
 		if not attacker.is_alive() or not player.is_alive():
 			return
-		if not _enemy_hit_player(attacker):
-			continue
-	# Le statut au contact ne s'applique qu'une fois par séquence d'attaque.
-	_apply_enemy_on_hit(attacker)
+		if _enemy_hit_player(attacker):
+			connected = true
+	# Le statut au contact ne s'applique qu'une fois par séquence d'attaque,
+	# et seulement si au moins un coup a réellement porté (pas d'esquive totale).
+	if connected:
+		_apply_enemy_on_hit(attacker)
 
 ## Un coup unique d'ennemi vers le joueur. Renvoie true si le coup a porté.
 func _enemy_hit_player(attacker: Entity) -> bool:
@@ -1892,21 +1895,30 @@ func rest_choice(kind: String) -> void:
 			var amt: int = int(player.max_hp * 0.4)
 			player.heal(amt)
 			add_message("Repos : +%d PV." % amt)
+			_back_to_map()
 		"forge":
-			_forge_equipment()
+			open_forge()
 		_:
 			player.base_atk += 3
 			player.recompute_stats()
 			add_message("Entraînement : +3 ATK (ce run).")
-	_back_to_map()
+			_back_to_map()
 
-## Forge Itinérante : renforce de ~30% les bonus d'une pièce d'équipement portée.
-func _forge_equipment() -> void:
-	var slots: Array = player.equipment.keys()
-	if slots.is_empty():
+## Forge Itinérante (rest_choice "forge") : ouvre l'écran de choix de la pièce
+## d'équipement à renforcer plutôt que d'en tirer une au hasard en silence.
+func open_forge() -> void:
+	if player.equipment.is_empty():
 		add_message("La forge reste froide : aucune pièce à renforcer.")
+		_back_to_map()
 		return
-	var slot: String = slots[rng.randi_range(0, slots.size() - 1)]
+	state = State.CHOICE
+	hud.show_forge(player.equipment)
+
+## Renforce de ~30% les bonus de la pièce d'équipement choisie à la Forge.
+func forge_choice(slot: String) -> void:
+	if not player.equipment.has(slot):
+		_back_to_map()
+		return
 	var it: Dictionary = player.equipment[slot]
 	var bonus: Dictionary = it.get("bonus", {})
 	var boosted := false
@@ -1924,6 +1936,11 @@ func _forge_equipment() -> void:
 	player.equipment[slot] = it
 	player.recompute_stats()
 	add_message("[color=#ffd24a]Forge : %s renforcé ![/color]" % it.get("name", "ton équipement"))
+	_back_to_map()
+
+## Annule le passage à la Forge et revient au choix du feu de camp.
+func forge_cancel() -> void:
+	open_rest()
 
 func game_over() -> void:
 	var stats := {
