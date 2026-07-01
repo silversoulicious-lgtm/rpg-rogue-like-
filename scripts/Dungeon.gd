@@ -150,7 +150,7 @@ func _lay(x: int, y: int, paint: int, force: bool) -> void:
 		tiles[y][x] = paint
 
 func _scatter_decor(rng: RandomNumberGenerator) -> void:
-	var name: String = Data.biome_sprite(biome["id"], "decor")
+	var styles: Array = biome.get("decor_styles", [Data.biome_sprite(biome["id"], "decor")])
 	var density: float = float(biome.get("decor_density", 0.08))
 	for y in height:
 		for x in width:
@@ -161,7 +161,8 @@ func _scatter_decor(rng: RandomNumberGenerator) -> void:
 			if rng.randf() < Data.WORLD_PROPS_DENSITY:
 				decor[y][x] = Data.weighted_pick(Data.WORLD_PROPS, rng)
 			elif rng.randf() < density:
-				decor[y][x] = name
+				var variant: int = rng.randi_range(0, styles.size() - 1)
+				decor[y][x] = Data.biome_decor_sprite(biome["id"], variant)
 
 ## Variante de sprite pour certaines cases ROCK (tronc abattu, colonne en ruine)
 ## à la place du rocher du biome — apporte de la variété au terrain bloquant,

@@ -72,32 +72,38 @@ BIOMES = [
      "ground_a": C(0.090, 0.135, 0.100), "ground_b": C(0.130, 0.190, 0.135),
      "trunk": C(0.30, 0.21, 0.13), "leaf": C(0.36, 0.72, 0.40), "tree_style": "round",
      "rock": C(0.36, 0.40, 0.50), "water": C(0.18, 0.55, 0.66),
-     "decor": C(1.0, 0.83, 0.34), "decor_style": "flower"},
+     "decor": C(1.0, 0.83, 0.34), "decor_styles": ["flower", "tall_grass", "dandelion"],
+     "poi": {"structure": "standing_stone", "dressing": [0, 1]}},
     {"id": "foret",
      "ground_a": C(0.060, 0.120, 0.100), "ground_b": C(0.095, 0.175, 0.135),
      "trunk": C(0.26, 0.17, 0.11), "leaf": C(0.24, 0.66, 0.42), "tree_style": "pine",
      "rock": C(0.28, 0.37, 0.39), "water": C(0.13, 0.46, 0.52),
-     "decor": C(0.94, 0.27, 0.36), "decor_style": "mushroom"},
+     "decor": C(0.94, 0.27, 0.36), "decor_styles": ["mushroom", "fern", "spider_web"],
+     "poi": {"structure": "forest_altar", "dressing": [0, 1]}},
     {"id": "desert",
      "ground_a": C(0.205, 0.150, 0.085), "ground_b": C(0.290, 0.215, 0.120),
      "trunk": C(0.32, 0.42, 0.24), "leaf": C(0.42, 0.70, 0.34), "tree_style": "cactus",
      "rock": C(0.50, 0.40, 0.26), "water": C(0.20, 0.64, 0.66),
-     "decor": C(0.92, 0.88, 0.74), "decor_style": "bones"},
+     "decor": C(0.92, 0.88, 0.74), "decor_styles": ["bones", "tumbleweed", "cracked_earth"],
+     "poi": {"structure": "wagon_wheel", "dressing": [0, 1]}},
     {"id": "toundra",
      "ground_a": C(0.105, 0.140, 0.215), "ground_b": C(0.150, 0.205, 0.300),
      "trunk": C(0.30, 0.26, 0.24), "leaf": C(0.54, 0.78, 0.82), "tree_style": "pine",
      "rock": C(0.42, 0.50, 0.60), "water": C(0.36, 0.74, 0.90),
-     "decor": C(0.62, 0.90, 1.0), "decor_style": "crystal"},
+     "decor": C(0.62, 0.90, 1.0), "decor_styles": ["crystal", "icicle", "snow_drift"],
+     "poi": {"structure": "ice_cairn", "dressing": [0, 1]}},
     {"id": "marais",
      "ground_a": C(0.100, 0.130, 0.090), "ground_b": C(0.140, 0.180, 0.110),
      "trunk": C(0.20, 0.18, 0.13), "leaf": C(0.36, 0.50, 0.24), "tree_style": "dead",
      "rock": C(0.28, 0.33, 0.29), "water": C(0.22, 0.42, 0.27),
-     "decor": C(0.64, 0.86, 0.32), "decor_style": "reed"},
+     "decor": C(0.64, 0.86, 0.32), "decor_styles": ["reed", "lily_pad", "wisp"],
+     "poi": {"structure": "sunken_ruin", "dressing": [0, 1]}},
     {"id": "volcan",
      "ground_a": C(0.105, 0.072, 0.090), "ground_b": C(0.165, 0.100, 0.110),
      "trunk": C(0.16, 0.12, 0.12), "leaf": C(0.24, 0.17, 0.17), "tree_style": "dead",
      "rock": C(0.28, 0.21, 0.23), "water": C(1.0, 0.46, 0.16),
-     "decor": C(1.0, 0.58, 0.20), "decor_style": "ember"},
+     "decor": C(1.0, 0.58, 0.20), "decor_styles": ["ember", "obsidian_shard", "ash_pile"],
+     "poi": {"structure": "abandoned_anvil", "dressing": [0, 1]}},
 ]
 
 # --- RNG déterministe (LCG) pour un grain reproductible -----------------------
@@ -863,6 +869,11 @@ def _gen_water(c):
     _px(img, TILE-1, TILE-1, base.darkened(0.50))
     return img
 
+def _biome_decor_name(biome_id, variant):
+    if variant <= 0:
+        return "%s_decor" % biome_id
+    return "%s_decor%d" % (biome_id, variant + 1)
+
 def _gen_decor(c, style):
     img = _new(False)
     if style == "flower":
@@ -890,8 +901,218 @@ def _gen_decor(c, style):
         _ellipse(img, 16, 23, 4.5, 2.7, INK_SOFT)
         _ellipse(img, 16, 21, 3.2, 2.1, EMBER.darkened(0.2)); _ellipse(img, 16, 21, 1.9, 1.3, EMBER)
         _px(img, 16, 19, GOLD_L)
+    elif style == "tall_grass":
+        green = POISON.darkened(0.1); green_d = green.darkened(0.3); green_l = green.lightened(0.25)
+        for bx, h, lean in [(11, 11, -1), (14, 14, 0), (17, 13, 1), (20, 10, 0), (23, 12, -1)]:
+            for i in range(h):
+                t = i / float(h)
+                xx = bx + int(lean * t * 2)
+                col = green_d if i < h * 0.3 else green
+                _px(img, xx, 26 - i, col)
+            _px(img, bx + lean, 26 - h, green_l)
+        _px(img, 20, 14, c)
+    elif style == "dandelion":
+        stem = POISON.darkened(0.25)
+        _ellipse(img, 16, 27, 2.5, 1.0, C(INK.r, INK.g, INK.b, 0.25))
+        _rect(img, 16, 16, 1, 11, stem)
+        _line(img, 16, 16, 13, 13, stem)
+        puff = C(0.92, 0.92, 0.90)
+        _disc(img, 16, 11, 4.3, C(puff.r, puff.g, puff.b, 0.55))
+        for a in range(0, 360, 30):
+            rad = math.radians(a)
+            x = 16 + 4.0 * math.cos(rad); y = 11 + 4.0 * math.sin(rad)
+            _px(img, int(round(x)), int(round(y)), puff)
+        _disc(img, 16, 11, 1.6, puff.lightened(0.05))
+        _px(img, 13, 13, c)
+    elif style == "fern":
+        green = C(0.20, 0.46, 0.30); green_d = green.darkened(0.35); green_l = green.lightened(0.30)
+        _rect(img, 16, 14, 1, 13, green_d)
+        for i in range(7):
+            y = 16 + i * 1.6
+            w = 7 - i
+            if w <= 0: continue
+            _line(img, 16, int(y), 16 - w, int(y) - 1, green_d)
+            _line(img, 16, int(y), 16 - w + 1, int(y) - 1, green)
+            _line(img, 16, int(y), 16 + w, int(y) - 1, green_d)
+            _line(img, 16, int(y), 16 + w - 1, int(y) - 1, green)
+        _px(img, 16, 14, green_l)
+    elif style == "spider_web":
+        silk = C(0.85, 0.85, 0.90, 0.55)
+        cx, cy = 26, 6
+        for a in range(0, 91, 18):
+            rad = math.radians(a)
+            ex = cx - 22 * math.cos(rad); ey = cy + 22 * math.sin(rad)
+            _line(img, cx, cy, int(ex), int(ey), silk)
+        for r in (6, 11, 16):
+            pts = []
+            for a in range(0, 91, 10):
+                rad = math.radians(a)
+                pts.append((cx - r * math.cos(rad), cy + r * math.sin(rad)))
+            for i in range(len(pts) - 1):
+                _line(img, int(pts[i][0]), int(pts[i][1]), int(pts[i+1][0]), int(pts[i+1][1]), silk)
+        _px(img, 18, 11, C(1, 1, 1, 0.9))
+        _disc(img, 12, 9, 1.0, INK)
+    elif style == "tumbleweed":
+        dry = C(0.45, 0.36, 0.20); dry_d = dry.darkened(0.35); dry_l = dry.lightened(0.25)
+        _ellipse(img, 16, 27, 7.0, 1.6, C(INK.r, INK.g, INK.b, 0.25))
+        subcenters = [(14, 18), (18, 20), (16, 16), (12, 21), (20, 17)]
+        for scx, scy in subcenters:
+            for _i in range(5):
+                a = rng.randf() * 360.0
+                rad = math.radians(a)
+                length = 4.5 + rng.randf() * 3.0
+                ex = scx + length * math.cos(rad); ey = scy + length * 0.78 * math.sin(rad)
+                ex = max(6, min(26, ex)); ey = max(11, min(25, ey))
+                _line(img, scx, scy, int(round(ex)), int(round(ey)), dry_d if rng.randf() < 0.5 else dry)
+        _line(img, 11, 17, 21, 21, dry_d); _line(img, 21, 15, 12, 23, dry_d)
+        _line(img, 9, 20, 23, 18, dry.darkened(0.1))
+        _px(img, 13, 16, dry_l); _px(img, 19, 22, dry_l); _px(img, 16, 13, dry_l)
+    elif style == "cracked_earth":
+        base = C(0.42, 0.32, 0.18); crack = base.darkened(0.5); hi = base.lightened(0.18)
+        _ellipse(img, 16, 20, 11.0, 7.0, C(base.r, base.g, base.b, 0.55))
+        _line(img, 8, 16, 16, 20, crack); _line(img, 16, 20, 13, 26, crack)
+        _line(img, 16, 20, 24, 17, crack); _line(img, 24, 17, 26, 23, crack)
+        _line(img, 16, 20, 18, 14, crack)
+        _px(img, 10, 18, hi); _px(img, 21, 19, hi); _px(img, 15, 24, hi)
+    elif style == "icicle":
+        ice = c.darkened(0.1); ice_d = c.darkened(0.35); ice_l = C(1, 1, 1)
+        for cx, top, length in [(12, 8, 13), (16, 6, 17), (20, 9, 11)]:
+            for i in range(length):
+                t = i / float(length)
+                w = max(1, int(round((1.0 - t) * 2.2)))
+                yy = top + i
+                for xx in range(cx - w, cx + w + 1):
+                    _px(img, xx, yy, ice_d if (xx + yy) % 3 == 0 else ice)
+            _px(img, cx, top, ice_l)
+        _glow(img, 16.0, 14.0, 5.0, c, 0.25)
+    elif style == "snow_drift":
+        snow = C(0.92, 0.95, 1.0); snow_d = snow.darkened(0.12); snow_l = C(1, 1, 1)
+        _ellipse(img, 16, 24, 10.5, 4.5, snow_d)
+        _ellipse(img, 16, 22, 8.5, 3.6, snow)
+        _ellipse(img, 12, 20, 3.0, 1.8, snow_l)
+        _glow(img, 12.0, 19.0, 2.5, c, 0.35)
+        _px(img, 21, 21, c); _px(img, 9, 23, c)
+    elif style == "lily_pad":
+        pad = c.darkened(0.2); pad_d = pad.darkened(0.3); pad_l = pad.lightened(0.2)
+        _ellipse(img, 11, 21, 5.5, 2.6, pad_d); _ellipse(img, 11, 21, 4.6, 2.1, pad)
+        _line(img, 11, 21, 8, 20, pad_d)
+        _ellipse(img, 21, 18, 4.3, 2.0, pad_d); _ellipse(img, 21, 18, 3.5, 1.6, pad)
+        _line(img, 21, 18, 23, 17, pad_d)
+        _disc(img, 21, 17, 1.1, C(0.95, 0.55, 0.75)); _px(img, 21, 17, C(1, 0.8, 0.9))
+        _px(img, 9, 20, pad_l); _px(img, 19, 17, pad_l)
+    elif style == "wisp":
+        glow_c = C(0.55, 0.95, 0.55)
+        _glow(img, 16.0, 18.0, 8.0, glow_c, 0.5)
+        _disc(img, 16, 18, 2.6, C(glow_c.r, glow_c.g, glow_c.b, 0.7))
+        _disc(img, 16, 18, 1.3, C(1, 1, 1, 0.9))
+        _disc(img, 11, 13, 1.1, C(glow_c.r, glow_c.g, glow_c.b, 0.5))
+        _disc(img, 21, 11, 0.9, C(glow_c.r, glow_c.g, glow_c.b, 0.45))
+    elif style == "obsidian_shard":
+        glass = C(0.10, 0.08, 0.14); glass_l = C(0.30, 0.26, 0.36); glass_hi = C(0.55, 0.50, 0.65)
+        _ellipse(img, 16, 27, 6.5, 1.6, C(INK.r, INK.g, INK.b, 0.3))
+        _tri_up(img, 12, 26, 3, 14, glass); _tri_up(img, 12, 26, 2, 12, glass_l)
+        _tri_up(img, 18, 27, 2, 10, glass); _tri_up(img, 18, 27, 1, 8, glass_l)
+        _tri_up(img, 22, 25, 2, 8, glass.darkened(0.1))
+        _line(img, 11, 14, 12, 20, glass_hi); _line(img, 17, 19, 18, 23, glass_hi)
+        _px(img, 11, 14, c)
+    elif style == "ash_pile":
+        ash = C(0.30, 0.28, 0.28); ash_d = ash.darkened(0.42); ash_l = ash.lightened(0.22)
+        bone = BONE.darkened(0.15); bone_d = BONE_D
+        _ellipse(img, 16, 28, 8.5, 2.0, C(INK.r, INK.g, INK.b, 0.3))
+        _disc(img, 16, 24, 7.3, ash_d)
+        _disc(img, 13, 23, 5.0, ash); _disc(img, 19, 24, 4.6, ash)
+        _disc(img, 16, 21, 4.2, ash.lightened(0.06))
+        _disc(img, 12, 21, 1.6, ash_l)
+        _line(img, 9, 15, 14, 21, bone_d); _line(img, 10, 15, 15, 21, bone)
+        _disc(img, 9, 15, 1.3, bone); _disc(img, 14, 21, 1.1, bone_d)
+        _px(img, 9, 14, BONE)
+        _glow(img, 17.0, 21.0, 4.0, EMBER, 0.4)
+        _px(img, 17, 20, EMBER_L); _px(img, 20, 22, EMBER)
     else:
         _disc_o(img, 16, 19, 2.7, c, INK_SOFT)
+    return img
+
+# --- Structures de point d'intérêt (POI), une par biome -----------------------
+def _gen_standing_stone(c):
+    img = _new(False)
+    stone = C(0.42, 0.42, 0.46); stone_d = stone.darkened(0.4); stone_l = stone.lightened(0.22)
+    moss = C(0.40, 0.62, 0.30)
+    _ellipse(img, 16, 28, 6.5, 1.8, C(INK.r, INK.g, INK.b, 0.3))
+    _trapezoid_o(img, 16, 5, 27, 3.2, 5.3, stone_d, INK)
+    _trapezoid(img, 16, 6, 26, 2.4, 4.3, stone)
+    _rect(img, 16, 6, 1, 18, stone_l)
+    _rect(img, 11, 17, 3, 2, moss); _rect(img, 19, 21, 2, 2, moss.darkened(0.1))
+    _glow(img, 16.0, 12.0, 3.0, c, 0.4)
+    _rect(img, 15, 9, 2, 6, C(c.r, c.g, c.b, 0.7))
+    _px(img, 16, 9, c)
+    return img
+
+def _gen_forest_altar(c):
+    img = _new(False)
+    stone = C(0.38, 0.40, 0.38); stone_d = stone.darkened(0.4); stone_l = stone.lightened(0.2)
+    moss = C(0.30, 0.55, 0.28)
+    _ellipse(img, 16, 27, 10.0, 2.6, C(INK.r, INK.g, INK.b, 0.3))
+    _rect(img, 7, 19, 18, 6, stone_d); _rect(img, 8, 20, 16, 4, stone)
+    _rect(img, 8, 20, 16, 1, stone_l)
+    _rect(img, 9, 13, 4, 7, stone_d); _rect(img, 19, 13, 4, 7, stone_d)
+    for mx, my in [(9, 19), (14, 18), (20, 20), (17, 21)]:
+        _rect(img, mx, my, 2, 2, moss)
+    _glow(img, 16.0, 21.0, 4.0, c, 0.35)
+    _diamond(img, 16, 21, 2, C(c.r, c.g, c.b, 0.8))
+    return img
+
+def _gen_wagon_wheel(c):
+    img = _new(False)
+    wood = C(0.40, 0.28, 0.16); wood_d = wood.darkened(0.4); wood_l = wood.lightened(0.2)
+    _ellipse(img, 16, 27, 9.0, 2.2, C(INK.r, INK.g, INK.b, 0.3))
+    _disc_o(img, 16, 19, 9.5, wood_d, INK); _disc(img, 16, 19, 8.3, wood)
+    _disc_o(img, 16, 19, 2.3, wood_d, INK); _disc(img, 16, 19, 1.6, wood_l)
+    for a in range(0, 360, 45):
+        rad = math.radians(a)
+        ex = 16 + 8.0 * math.cos(rad); ey = 19 + 8.0 * math.sin(rad)
+        _line(img, 16, 19, int(ex), int(ey), wood_d)
+    _px(img, 11, 14, wood_l)
+    _ellipse(img, 8, 25, 2.5, 1.0, BONE_D)
+    return img
+
+def _gen_ice_cairn(c):
+    img = _new(False)
+    stone = C(0.55, 0.58, 0.64); stone_d = stone.darkened(0.35); stone_l = stone.lightened(0.25)
+    _ellipse(img, 16, 28, 6.5, 1.7, C(INK.r, INK.g, INK.b, 0.3))
+    _ellipse(img, 16, 25, 7.0, 3.0, stone_d); _ellipse(img, 16, 25, 6.0, 2.4, stone)
+    _ellipse(img, 16, 19, 5.5, 2.6, stone_d); _ellipse(img, 16, 19, 4.6, 2.0, stone)
+    _ellipse(img, 16, 13, 4.0, 2.0, stone_d); _ellipse(img, 16, 13, 3.2, 1.5, stone)
+    _ellipse(img, 16, 8, 2.6, 1.6, stone_l)
+    _glow(img, 16.0, 13.0, 5.0, c, 0.4)
+    _px(img, 13, 20, c); _px(img, 19, 14, c)
+    return img
+
+def _gen_sunken_ruin(c):
+    img = _new(False)
+    stone = C(0.36, 0.38, 0.36); stone_d = stone.darkened(0.4); stone_l = stone.lightened(0.18)
+    moss = C(0.40, 0.55, 0.25)
+    _ellipse(img, 16, 28, 10.0, 2.4, C(INK.r, INK.g, INK.b, 0.3))
+    _rect(img, 6, 10, 5, 17, stone_d); _rect(img, 7, 11, 3, 15, stone)
+    _rect(img, 21, 10, 5, 17, stone_d); _rect(img, 22, 11, 3, 15, stone)
+    _trapezoid(img, 16, 6, 11, 9.0, 6.0, stone_d)
+    _trapezoid(img, 16, 7, 10, 7.5, 5.0, stone)
+    for mx, my in [(7, 14), (23, 18), (12, 25), (19, 24)]:
+        _rect(img, mx, my, 2, 2, moss)
+    _ellipse(img, 16, 27, 9.0, 1.4, C(c.r, c.g, c.b, 0.35))
+    return img
+
+def _gen_abandoned_anvil(c):
+    img = _new(False)
+    iron = C(0.18, 0.17, 0.20); iron_d = iron.darkened(0.4); iron_l = C(0.40, 0.38, 0.42)
+    stone = C(0.32, 0.26, 0.24); stone_d = stone.darkened(0.4)
+    _ellipse(img, 16, 28, 8.5, 2.2, C(INK.r, INK.g, INK.b, 0.3))
+    _rect(img, 10, 21, 13, 7, stone_d); _rect(img, 11, 22, 11, 5, stone)
+    _trapezoid(img, 13, 14, 21, 2.0, 4.0, iron_d); _trapezoid(img, 13, 14, 20, 1.4, 3.2, iron)
+    _rect(img, 6, 12, 16, 4, iron_d); _rect(img, 6, 12, 16, 2, iron)
+    _rect(img, 6, 12, 16, 1, iron_l)
+    _tri_up(img, 22, 14, 3, 4, iron_d)
+    _glow(img, 16.0, 22.0, 4.0, EMBER, 0.35)
+    _px(img, 14, 22, EMBER); _px(img, 18, 23, EMBER_L)
     return img
 
 def _gen_road():
@@ -1086,12 +1307,20 @@ def main():
         _save(_gen_tree(bm["trunk"], bm["leaf"], bm["tree_style"]), "%s_tree" % i)
         _save(_gen_rock(bm["rock"]), "%s_rock" % i)
         _save(_gen_water(bm["water"]), "%s_water" % i)
-        _save(_gen_decor(bm["decor"], bm["decor_style"]), "%s_decor" % i)
+        for vi, dstyle in enumerate(bm["decor_styles"]):
+            _save(_gen_decor(bm["decor"], dstyle), _biome_decor_name(i, vi))
     _save(_gen_road(), "road")
     _save(_gen_campfire(), "campfire"); _save(_gen_crate(), "crate")
     _save(_gen_barrel(), "barrel"); _save(_gen_signpost(), "signpost")
     _save(_gen_lantern_post(), "lantern_post")
     _save(_gen_fallen_log(), "fallen_log"); _save(_gen_ruins_pillar(), "ruins_pillar")
+    # Structures de POI (une par biome, dressing rare avec coffre)
+    _save(_gen_standing_stone(C(1.0, 0.83, 0.34)), "standing_stone")
+    _save(_gen_forest_altar(C(0.94, 0.27, 0.36)), "forest_altar")
+    _save(_gen_wagon_wheel(C(0.92, 0.88, 0.74)), "wagon_wheel")
+    _save(_gen_ice_cairn(C(0.62, 0.90, 1.0)), "ice_cairn")
+    _save(_gen_sunken_ruin(C(0.64, 0.86, 0.32)), "sunken_ruin")
+    _save(_gen_abandoned_anvil(C(1.0, 0.58, 0.20)), "abandoned_anvil")
     print("=== ASSETS GENERATED ===", ASSETS)
 
 # === Nouveaux monstres (Pass 1) ==============================================

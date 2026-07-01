@@ -39,6 +39,7 @@ var last_dir: Vector2i = Vector2i(1, 0)   # dernière direction de déplacement 
 var _attack_dmg_type: String = "phys"  # contexte de type de dégâts (phys/magic) pour les résistances
 const SKILL_DROP_CHANCE := 0.06       # chance qu'un monstre lâche une compétence
 const LEGENDARY_CHANCE := 0.025       # chance qu'un monstre soit légendaire (lâche un pouvoir)
+const POI_CHANCE := 0.14              # chance qu'une structure de POI (coffre rare) apparaisse sur l'étage
 
 # Statistiques du run en cours (pour le journal de fin de run)
 var run_kills: int = 0
@@ -411,6 +412,8 @@ func generate_floor(node_type: String = "combat") -> void:
 		occupied.append(p)
 		_spawn_loot(p, is_elite)
 
+	_maybe_spawn_poi(occupied)
+
 	# Œil du Devin : dévoile l'emplacement du butin à travers le brouillard.
 	map_view.reveal_loot = GameState.reveals_loot()
 	if map_view.reveal_loot:
@@ -558,6 +561,55 @@ func _pick_artifact_def() -> Dictionary:
 	if pool.is_empty():
 		return {}
 	return pool[rng.randi_range(0, pool.size() - 1)]
+
+## Structure de point d'intérêt rare (une par biome) : dressing décoratif posé
+## sur un carré 2x2 praticable et libre, avec un coffre au butin garanti et
+## nettement meilleur en son sein. Purement additif — si aucun emplacement
+## valide n'est trouvé, on l'ignore simplement (c'est voulu rare).
+func _maybe_spawn_poi(occupied: Array) -> void:
+	var poi: Dictionary = dungeon.biome.get("poi", {})
+	if poi.is_empty() or rng.randf() >= POI_CHANCE:
+		return
+	var styles: Array = dungeon.biome.get("decor_styles", [])
+	if styles.is_empty():
+		return
+	for a in dungeon.random_floor_tiles(10, rng, occupied):
+		var cells: Array = [a, a + Vector2i(1, 0), a + Vector2i(0, 1), a + Vector2i(1, 1)]
+		var ok := true
+		for cp in cells:
+			if not dungeon.is_walkable(cp.x, cp.y) or occupied.has(cp) or dungeon.decor[cp.y][cp.x] != "":
+				ok = false
+				break
+		if not ok:
+			continue
+		dungeon.decor[a.y][a.x] = String(poi["structure"])
+		var dressing: Array = poi.get("dressing", [0, 1])
+		var d0: int = int(dressing[0])
+		var d1: int = int(dressing[1]) if dressing.size() > 1 else d0
+		dungeon.decor[cells[1].y][cells[1].x] = Data.biome_decor_sprite(dungeon.biome["id"], d0)
+		dungeon.decor[cells[2].y][cells[2].x] = Data.biome_decor_sprite(dungeon.biome["id"], d1)
+		for cp in cells:
+			occupied.append(cp)
+		_spawn_poi_chest(cells[3])
+		add_message("[color=#ffd24a]✦ %s repéré non loin…[/color]" % String(poi.get("name", "Un lieu mystérieux")))
+		return
+
+## Coffre de POI : butin garanti, nettement meilleur qu'un coffre normal
+## (niveau virtuel +6, chance d'artefact augmentée). Toujours affiché comme
+## un coffre au sol, ramassé en marchant dessus (cf. _pickup_loot_at).
+func _spawn_poi_chest(p: Vector2i) -> void:
+	var adef: Dictionary = {}
+	if rng.randf() < 0.25:
+		adef = _pick_artifact_def()
+	if not adef.is_empty():
+		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
+			"sprite": "coffre", "color": adef["color"], "data": adef })
+	else:
+		var lvl: int = floor_num + 6
+		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
+		var item: Dictionary = Data.generate_item(slot, lvl, rng)
+		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[slot],
+			"sprite": "coffre", "color": item["rarity_color"], "data": item })
 
 ## Caméra : suit le joueur (centré), bornée aux limites de la carte.
 func _update_camera() -> void:

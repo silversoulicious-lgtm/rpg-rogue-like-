@@ -91,10 +91,16 @@ func _load_textures() -> void:
 		"ame", "chaudron",
 		# Décor du monde ouvert : props globaux + variantes d'obstacles
 		"campfire", "crate", "barrel", "signpost", "lantern_post",
-		"fallen_log", "ruins_pillar"]
+		"fallen_log", "ruins_pillar",
+		# Structures de POI (une par biome, rares, dressing autour d'un coffre)
+		"standing_stone", "forest_altar", "wagon_wheel", "ice_cairn",
+		"sunken_ruin", "abandoned_anvil"]
 	for b in Data.BIOMES:
-		for role in ["ground", "tree", "rock", "water", "decor"]:
+		for role in ["ground", "tree", "rock", "water"]:
 			names.append(Data.biome_sprite(b["id"], role))
+		var n_styles: int = (b.get("decor_styles", []) as Array).size()
+		for vi in range(max(1, n_styles)):
+			names.append(Data.biome_decor_sprite(b["id"], vi))
 	for n in names:
 		var path := "res://assets/%s.png" % n
 		if ResourceLoader.exists(path):

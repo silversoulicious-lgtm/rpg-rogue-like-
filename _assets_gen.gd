@@ -103,7 +103,9 @@ func _init() -> void:
 		_save(_gen_tree(b["trunk"], b["leaf"], b["tree_style"]), "%s_tree" % id)
 		_save(_gen_rock(b["rock"]), "%s_rock" % id)
 		_save(_gen_water(b["water"]), "%s_water" % id)
-		_save(_gen_decor(b["decor"], b["decor_style"]), "%s_decor" % id)
+		var dstyles: Array = b["decor_styles"]
+		for vi in dstyles.size():
+			_save(_gen_decor(b["decor"], dstyles[vi]), DataClass.biome_decor_sprite(id, vi))
 	_save(_gen_road(), "road")
 
 	# --- Décor du monde ouvert (props globaux) ---
@@ -114,6 +116,14 @@ func _init() -> void:
 	_save(_gen_lantern_post(), "lantern_post")
 	_save(_gen_fallen_log(), "fallen_log")
 	_save(_gen_ruins_pillar(), "ruins_pillar")
+
+	# --- Structures de POI (une par biome, dressing rare autour d'un coffre) ---
+	_save(_gen_standing_stone(Color(1.0, 0.83, 0.34)), "standing_stone")
+	_save(_gen_forest_altar(Color(0.94, 0.27, 0.36)), "forest_altar")
+	_save(_gen_wagon_wheel(Color(0.92, 0.88, 0.74)), "wagon_wheel")
+	_save(_gen_ice_cairn(Color(0.62, 0.90, 1.0)), "ice_cairn")
+	_save(_gen_sunken_ruin(Color(0.64, 0.86, 0.32)), "sunken_ruin")
+	_save(_gen_abandoned_anvil(Color(1.0, 0.58, 0.20)), "abandoned_anvil")
 
 	print("=== ASSETS GENERATED ===")
 	quit()
@@ -1607,8 +1617,255 @@ func _gen_decor(c: Color, style: String) -> Image:
 			_ellipse(img, 16, 21, 3.2, 2.1, EMBER.darkened(0.2))
 			_ellipse(img, 16, 21, 1.9, 1.3, EMBER)
 			_px(img, 16, 19, GOLD_L)
+		"tall_grass":
+			var green := POISON.darkened(0.1)
+			var green_d := green.darkened(0.3)
+			var green_l := green.lightened(0.25)
+			var blades := [[11, 11, -1], [14, 14, 0], [17, 13, 1], [20, 10, 0], [23, 12, -1]]
+			for bd in blades:
+				var bx: int = bd[0]; var h: int = bd[1]; var lean: int = bd[2]
+				for i in range(h):
+					var t: float = float(i) / float(h)
+					var xx: int = bx + int(lean * t * 2)
+					var col: Color = green_d if i < h * 0.3 else green
+					_px(img, xx, 26 - i, col)
+				_px(img, bx + lean, 26 - h, green_l)
+			_px(img, 20, 14, c)
+		"dandelion":
+			var stem := POISON.darkened(0.25)
+			_ellipse(img, 16, 27, 2.5, 1.0, Color(INK.r, INK.g, INK.b, 0.25))
+			_rect(img, 16, 16, 1, 11, stem)
+			_line(img, 16, 16, 13, 13, stem)
+			var puff := Color(0.92, 0.92, 0.90)
+			_disc(img, 16, 11, 4.3, Color(puff.r, puff.g, puff.b, 0.55))
+			for a in range(0, 360, 30):
+				var rad: float = deg_to_rad(float(a))
+				var x: float = 16 + 4.0 * cos(rad); var y: float = 11 + 4.0 * sin(rad)
+				_px(img, int(round(x)), int(round(y)), puff)
+			_disc(img, 16, 11, 1.6, puff.lightened(0.05))
+			_px(img, 13, 13, c)
+		"fern":
+			var fgreen := Color(0.20, 0.46, 0.30)
+			var fgreen_d := fgreen.darkened(0.35)
+			var fgreen_l := fgreen.lightened(0.30)
+			_rect(img, 16, 14, 1, 13, fgreen_d)
+			for i in range(7):
+				var y: float = 16 + i * 1.6
+				var w: int = 7 - i
+				if w <= 0: continue
+				_line(img, 16, int(y), 16 - w, int(y) - 1, fgreen_d)
+				_line(img, 16, int(y), 16 - w + 1, int(y) - 1, fgreen)
+				_line(img, 16, int(y), 16 + w, int(y) - 1, fgreen_d)
+				_line(img, 16, int(y), 16 + w - 1, int(y) - 1, fgreen)
+			_px(img, 16, 14, fgreen_l)
+		"spider_web":
+			var silk := Color(0.85, 0.85, 0.90, 0.55)
+			var cx := 26; var cy := 6
+			for a in range(0, 91, 18):
+				var rad: float = deg_to_rad(float(a))
+				var ex: float = cx - 22 * cos(rad); var ey: float = cy + 22 * sin(rad)
+				_line(img, cx, cy, int(ex), int(ey), silk)
+			for r in [6, 11, 16]:
+				var pts: Array = []
+				for a in range(0, 91, 10):
+					var rad: float = deg_to_rad(float(a))
+					pts.append(Vector2(cx - r * cos(rad), cy + r * sin(rad)))
+				for i in range(pts.size() - 1):
+					_line(img, int(pts[i].x), int(pts[i].y), int(pts[i + 1].x), int(pts[i + 1].y), silk)
+			_px(img, 18, 11, Color(1, 1, 1, 0.9))
+			_disc(img, 12, 9, 1.0, INK)
+		"tumbleweed":
+			var dry := Color(0.45, 0.36, 0.20)
+			var dry_d := dry.darkened(0.35)
+			var dry_l := dry.lightened(0.25)
+			_ellipse(img, 16, 27, 7.0, 1.6, Color(INK.r, INK.g, INK.b, 0.25))
+			var subcenters := [Vector2i(14, 18), Vector2i(18, 20), Vector2i(16, 16), Vector2i(12, 21), Vector2i(20, 17)]
+			for sc in subcenters:
+				for i in range(5):
+					var a: float = rng.randf() * 360.0
+					var rad: float = deg_to_rad(a)
+					var length: float = 4.5 + rng.randf() * 3.0
+					var ex: float = clampf(sc.x + length * cos(rad), 6, 26)
+					var ey: float = clampf(sc.y + length * 0.78 * sin(rad), 11, 25)
+					_line(img, sc.x, sc.y, int(round(ex)), int(round(ey)), dry_d if rng.randf() < 0.5 else dry)
+			_line(img, 11, 17, 21, 21, dry_d); _line(img, 21, 15, 12, 23, dry_d)
+			_line(img, 9, 20, 23, 18, dry.darkened(0.1))
+			_px(img, 13, 16, dry_l); _px(img, 19, 22, dry_l); _px(img, 16, 13, dry_l)
+		"cracked_earth":
+			var base := Color(0.42, 0.32, 0.18)
+			var crack := base.darkened(0.5)
+			var hi := base.lightened(0.18)
+			_ellipse(img, 16, 20, 11.0, 7.0, Color(base.r, base.g, base.b, 0.55))
+			_line(img, 8, 16, 16, 20, crack); _line(img, 16, 20, 13, 26, crack)
+			_line(img, 16, 20, 24, 17, crack); _line(img, 24, 17, 26, 23, crack)
+			_line(img, 16, 20, 18, 14, crack)
+			_px(img, 10, 18, hi); _px(img, 21, 19, hi); _px(img, 15, 24, hi)
+		"icicle":
+			var ice := c.darkened(0.1)
+			var ice_d := c.darkened(0.35)
+			var ice_l := Color(1, 1, 1)
+			var spikes := [[12, 8, 13], [16, 6, 17], [20, 9, 11]]
+			for sp in spikes:
+				var scx: int = sp[0]; var top: int = sp[1]; var length: int = sp[2]
+				for i in range(length):
+					var t: float = float(i) / float(length)
+					var w: int = maxi(1, int(round((1.0 - t) * 2.2)))
+					var yy: int = top + i
+					for xx in range(scx - w, scx + w + 1):
+						_px(img, xx, yy, ice_d if (xx + yy) % 3 == 0 else ice)
+				_px(img, scx, top, ice_l)
+			_glow(img, 16.0, 14.0, 5.0, c, 0.25)
+		"snow_drift":
+			var snow := Color(0.92, 0.95, 1.0)
+			var snow_d := snow.darkened(0.12)
+			var snow_l := Color(1, 1, 1)
+			_ellipse(img, 16, 24, 10.5, 4.5, snow_d)
+			_ellipse(img, 16, 22, 8.5, 3.6, snow)
+			_ellipse(img, 12, 20, 3.0, 1.8, snow_l)
+			_glow(img, 12.0, 19.0, 2.5, c, 0.35)
+			_px(img, 21, 21, c); _px(img, 9, 23, c)
+		"lily_pad":
+			var pad := c.darkened(0.2)
+			var pad_d := pad.darkened(0.3)
+			var pad_l := pad.lightened(0.2)
+			_ellipse(img, 11, 21, 5.5, 2.6, pad_d); _ellipse(img, 11, 21, 4.6, 2.1, pad)
+			_line(img, 11, 21, 8, 20, pad_d)
+			_ellipse(img, 21, 18, 4.3, 2.0, pad_d); _ellipse(img, 21, 18, 3.5, 1.6, pad)
+			_line(img, 21, 18, 23, 17, pad_d)
+			_disc(img, 21, 17, 1.1, Color(0.95, 0.55, 0.75)); _px(img, 21, 17, Color(1, 0.8, 0.9))
+			_px(img, 9, 20, pad_l); _px(img, 19, 17, pad_l)
+		"wisp":
+			var glow_c := Color(0.55, 0.95, 0.55)
+			_glow(img, 16.0, 18.0, 8.0, glow_c, 0.5)
+			_disc(img, 16, 18, 2.6, Color(glow_c.r, glow_c.g, glow_c.b, 0.7))
+			_disc(img, 16, 18, 1.3, Color(1, 1, 1, 0.9))
+			_disc(img, 11, 13, 1.1, Color(glow_c.r, glow_c.g, glow_c.b, 0.5))
+			_disc(img, 21, 11, 0.9, Color(glow_c.r, glow_c.g, glow_c.b, 0.45))
+		"obsidian_shard":
+			var glass := Color(0.10, 0.08, 0.14)
+			var glass_l := Color(0.30, 0.26, 0.36)
+			var glass_hi := Color(0.55, 0.50, 0.65)
+			_ellipse(img, 16, 27, 6.5, 1.6, Color(INK.r, INK.g, INK.b, 0.3))
+			_tri_up(img, 12, 26, 3, 14, glass); _tri_up(img, 12, 26, 2, 12, glass_l)
+			_tri_up(img, 18, 27, 2, 10, glass); _tri_up(img, 18, 27, 1, 8, glass_l)
+			_tri_up(img, 22, 25, 2, 8, glass.darkened(0.1))
+			_line(img, 11, 14, 12, 20, glass_hi); _line(img, 17, 19, 18, 23, glass_hi)
+			_px(img, 11, 14, c)
+		"ash_pile":
+			var ash := Color(0.30, 0.28, 0.28)
+			var ash_d := ash.darkened(0.42)
+			var ash_l := ash.lightened(0.22)
+			var bone := BONE.darkened(0.15)
+			var bone_d := BONE_D
+			_ellipse(img, 16, 28, 8.5, 2.0, Color(INK.r, INK.g, INK.b, 0.3))
+			_disc(img, 16, 24, 7.3, ash_d)
+			_disc(img, 13, 23, 5.0, ash); _disc(img, 19, 24, 4.6, ash)
+			_disc(img, 16, 21, 4.2, ash.lightened(0.06))
+			_disc(img, 12, 21, 1.6, ash_l)
+			_line(img, 9, 15, 14, 21, bone_d); _line(img, 10, 15, 15, 21, bone)
+			_disc(img, 9, 15, 1.3, bone); _disc(img, 14, 21, 1.1, bone_d)
+			_px(img, 9, 14, BONE)
+			_glow(img, 17.0, 21.0, 4.0, EMBER, 0.4)
+			_px(img, 17, 20, EMBER_L); _px(img, 20, 22, EMBER)
 		_:
 			_disc_o(img, 16, 19, 2.7, c, INK_SOFT)
+	return img
+
+func _gen_standing_stone(c: Color) -> Image:
+	var img := _new(false)
+	var stone := Color(0.42, 0.42, 0.46)
+	var stone_d := stone.darkened(0.4)
+	var stone_l := stone.lightened(0.22)
+	var moss := Color(0.40, 0.62, 0.30)
+	_ellipse(img, 16, 28, 6.5, 1.8, Color(INK.r, INK.g, INK.b, 0.3))
+	_trapezoid_o(img, 16, 5, 27, 3.2, 5.3, stone_d, INK)
+	_trapezoid(img, 16, 6, 26, 2.4, 4.3, stone)
+	_rect(img, 16, 6, 1, 18, stone_l)
+	_rect(img, 11, 17, 3, 2, moss); _rect(img, 19, 21, 2, 2, moss.darkened(0.1))
+	_glow(img, 16.0, 12.0, 3.0, c, 0.4)
+	_rect(img, 15, 9, 2, 6, Color(c.r, c.g, c.b, 0.7))
+	_px(img, 16, 9, c)
+	return img
+
+func _gen_forest_altar(c: Color) -> Image:
+	var img := _new(false)
+	var stone := Color(0.38, 0.40, 0.38)
+	var stone_d := stone.darkened(0.4)
+	var stone_l := stone.lightened(0.2)
+	var moss := Color(0.30, 0.55, 0.28)
+	_ellipse(img, 16, 27, 10.0, 2.6, Color(INK.r, INK.g, INK.b, 0.3))
+	_rect(img, 7, 19, 18, 6, stone_d); _rect(img, 8, 20, 16, 4, stone)
+	_rect(img, 8, 20, 16, 1, stone_l)
+	_rect(img, 9, 13, 4, 7, stone_d); _rect(img, 19, 13, 4, 7, stone_d)
+	var mosses := [[9, 19], [14, 18], [20, 20], [17, 21]]
+	for m in mosses:
+		_rect(img, m[0], m[1], 2, 2, moss)
+	_glow(img, 16.0, 21.0, 4.0, c, 0.35)
+	_diamond(img, 16, 21, 2, Color(c.r, c.g, c.b, 0.8))
+	return img
+
+func _gen_wagon_wheel(c: Color) -> Image:
+	var img := _new(false)
+	var wood := Color(0.40, 0.28, 0.16)
+	var wood_d := wood.darkened(0.4)
+	var wood_l := wood.lightened(0.2)
+	_ellipse(img, 16, 27, 9.0, 2.2, Color(INK.r, INK.g, INK.b, 0.3))
+	_disc_o(img, 16, 19, 9.5, wood_d, INK); _disc(img, 16, 19, 8.3, wood)
+	_disc_o(img, 16, 19, 2.3, wood_d, INK); _disc(img, 16, 19, 1.6, wood_l)
+	for a in range(0, 360, 45):
+		var rad: float = deg_to_rad(float(a))
+		var ex: float = 16 + 8.0 * cos(rad); var ey: float = 19 + 8.0 * sin(rad)
+		_line(img, 16, 19, int(ex), int(ey), wood_d)
+	_px(img, 11, 14, wood_l)
+	_ellipse(img, 8, 25, 2.5, 1.0, BONE_D)
+	return img
+
+func _gen_ice_cairn(c: Color) -> Image:
+	var img := _new(false)
+	var stone := Color(0.55, 0.58, 0.64)
+	var stone_d := stone.darkened(0.35)
+	var stone_l := stone.lightened(0.25)
+	_ellipse(img, 16, 28, 6.5, 1.7, Color(INK.r, INK.g, INK.b, 0.3))
+	_ellipse(img, 16, 25, 7.0, 3.0, stone_d); _ellipse(img, 16, 25, 6.0, 2.4, stone)
+	_ellipse(img, 16, 19, 5.5, 2.6, stone_d); _ellipse(img, 16, 19, 4.6, 2.0, stone)
+	_ellipse(img, 16, 13, 4.0, 2.0, stone_d); _ellipse(img, 16, 13, 3.2, 1.5, stone)
+	_ellipse(img, 16, 8, 2.6, 1.6, stone_l)
+	_glow(img, 16.0, 13.0, 5.0, c, 0.4)
+	_px(img, 13, 20, c); _px(img, 19, 14, c)
+	return img
+
+func _gen_sunken_ruin(c: Color) -> Image:
+	var img := _new(false)
+	var stone := Color(0.36, 0.38, 0.36)
+	var stone_d := stone.darkened(0.4)
+	var stone_l := stone.lightened(0.18)
+	var moss := Color(0.40, 0.55, 0.25)
+	_ellipse(img, 16, 28, 10.0, 2.4, Color(INK.r, INK.g, INK.b, 0.3))
+	_rect(img, 6, 10, 5, 17, stone_d); _rect(img, 7, 11, 3, 15, stone)
+	_rect(img, 21, 10, 5, 17, stone_d); _rect(img, 22, 11, 3, 15, stone)
+	_trapezoid(img, 16, 6, 11, 9.0, 6.0, stone_d)
+	_trapezoid(img, 16, 7, 10, 7.5, 5.0, stone)
+	var mosses := [[7, 14], [23, 18], [12, 25], [19, 24]]
+	for m in mosses:
+		_rect(img, m[0], m[1], 2, 2, moss)
+	_ellipse(img, 16, 27, 9.0, 1.4, Color(c.r, c.g, c.b, 0.35))
+	return img
+
+func _gen_abandoned_anvil(c: Color) -> Image:
+	var img := _new(false)
+	var iron := Color(0.18, 0.17, 0.20)
+	var iron_d := iron.darkened(0.4)
+	var iron_l := Color(0.40, 0.38, 0.42)
+	var stone := Color(0.32, 0.26, 0.24)
+	var stone_d := stone.darkened(0.4)
+	_ellipse(img, 16, 28, 8.5, 2.2, Color(INK.r, INK.g, INK.b, 0.3))
+	_rect(img, 10, 21, 13, 7, stone_d); _rect(img, 11, 22, 11, 5, stone)
+	_trapezoid(img, 13, 14, 21, 2.0, 4.0, iron_d); _trapezoid(img, 13, 14, 20, 1.4, 3.2, iron)
+	_rect(img, 6, 12, 16, 4, iron_d); _rect(img, 6, 12, 16, 2, iron)
+	_rect(img, 6, 12, 16, 1, iron_l)
+	_tri_up(img, 22, 14, 3, 4, iron_d)
+	_glow(img, 16.0, 22.0, 4.0, EMBER, 0.35)
+	_px(img, 14, 22, EMBER); _px(img, 18, 23, EMBER_L)
 	return img
 
 func _gen_road() -> Image:
