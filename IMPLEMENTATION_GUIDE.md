@@ -501,6 +501,11 @@ sprites. Both are fixed in this phase.
 
 ### 8.A — Generator technique upgrades (resolution-independent, do first)
 
+> **Detailed spec**: `ART_GENERATOR_SPEC.md` gives the exact algorithms,
+> color math, naming conventions, MapView integration points, execution
+> order (checkpoints C1-C10) and known traps for everything in 8.A. Follow
+> that file when implementing; the subsections below are the summary.
+
 #### 8.A.1 Hue-shifted color ramps
 - Add a `_ramp(base: Color, n: int)` helper producing n-step ramps that
   hue-shift toward the palette's indigo (`INK`) in shadow and toward warm
