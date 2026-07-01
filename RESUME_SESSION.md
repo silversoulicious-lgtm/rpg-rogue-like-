@@ -1,180 +1,115 @@
-# Résumé de session — Liste des objets & refonte des raretés
+# Les Strates — Récapitulatif du projet (à jour)
 
-Ce document résume les deux sujets traités dans cette session : (1) l'inventaire
-détaillé de tous les items du jeu tel qu'il existait avant la session, et
-(2) la refonte des raretés Épique/Légendaire (demande, idée retenue,
-implémentation, vérifications). Il reflète l'état du code à la fin de la
-session (commit `2cb6330` sur la branche `claude/rpg-roguelike-autonomy-g1vxmt`).
+Roguelike au tour par tour en Godot 4.3 / GDScript. Une héroïne unique (Aria),
+build par arme, ascension linéaire d'une tour à étages (RNG, pas de carte à
+embranchements). Séparation stricte logique/affichage/données : `Main.gd`
+(logique), `Hud.gd` (affichage), `Data.gd` (registre de données), `Entity.gd`
+(modèle pur), `GameState.gd` (autoload, sauvegarde JSON `user://save.json`).
 
----
+## Ce qui est fait
 
-## 1. Demande : liste détaillée de tous les items du jeu
+- **Combat tour par tour** sur grille (énergie/vitesse, `Entity.ACTION_COST`),
+  statuts (poison, saignement, maladie, affaiblissement, confusion,
+  ralentissement, étourdissement, brûlure).
+- **Étages open-world procéduraux** (`Dungeon.gd`) : 6 biomes, brouillard de
+  guerre, tailles variables, décor/props/POI rares.
+- **Progression linéaire des étages** (`Main._roll_node_type()`/`_advance()`) :
+  Combat/Élite/Boutique/Événement/Repos tirés au sort à la suite (Boutique et
+  Événement rares, 8% chacun), Gardien garanti tous les `ACT_LENGTH` (5)
+  étages réels, pause Repos/Boutique garantie juste avant, 1er étage de
+  chaque strate forcé en Combat. Plus de carte à embranchements
+  (`RunMap.gd` supprimé, l'ancienne UI carte aussi).
+- **Build par arme** (mêlée/distance/magie) : compétences actives
+  data-driven (`Data.SKILLS`), talents de niveau (build à la Hades).
+- **Loot procédural** : Commun→Rare→Épique→Légendaire, 100+ objets uniques
+  nommés avec effet de combat (Épique/Légendaire), **6 préfixes de combat**
+  façon *Dungeonmans* sur objets Commun/Rare (`Data.PREFIXES` : Ardent,
+  Givre, Venimeux, Foudroyant côté arme ; Cuirasse, Renvoi côté armure).
+- **Pouvoirs passifs** cumulables (Drone, Tourelle, Cœur de Verre,
+  Détonation, Venin) + **synergies** inter-procs nommées.
+- **Méta-progression** : Sanctuaire (stats permanentes), Arbre de
+  Connaissances (2ᵉ monnaie, débloque des règles/systèmes en DAG avec
+  prérequis — pas de simples +stats), Serments (risque/récompense
+  optionnels), Codex (catalogue des découvertes), Forge in-run (renforce une
+  pièce d'équipement au feu de camp, débloquée par l'Arbre).
+- **Bestiaire** : 20 monstres + 10 boss (`Entity.ai`, comportements
+  data-driven : mêlée/charge/distance/invocateur/fuite/téléporteur/embuscade),
+  mécaniques boss variées (gardiens protecteurs, ponte, phases, charge,
+  souffle, copie du joueur...).
+- **Identité visuelle** "Les Strates" façon Moonring : palette néon
+  restreinte, glow/bloom, dithering Bayer, sprites 32×32 générés par code
+  (`_assets_gen.gd`, mirroré par `gen.py` en repli Python). Aria a des vues
+  directionnelles (face/dos/profil). Ambiance en jeu : pool de torche +
+  vignette (`MapView.gd`).
+- **Écran-titre refondu** : composition en couches (logo/menu/profil),
+  silhouette procédurale de repli (`TitleBg.gd`) tant que
+  `assets/title_bg.png` n'existe pas — bascule automatique sans code dès
+  que l'illustration finale sera ajoutée.
+- **Main Hub explorable** (Pied de la Tour) : `Town.gd` (disposition fixe,
+  6 bâtiments) + `TownView.gd` (rendu, sans brouillard/caméra de suivi),
+  Aria s'y déplace librement (WASD). Sprites de bâtiments dédiés générés
+  (`_gen_building_*`, 64×88, silhouette + détail par bâtiment : écusson,
+  lucarne, colonnes, cheminée, auvent, arche). Armurerie/Porte de la Tour →
+  Loadout, Bibliothèque → Connaissances, Sanctuaire → Sanctuaire (écrans
+  existants re-câblés) ; **Forge et Boutique en écran "bientôt disponible"**
+  (nouveaux systèmes pas encore conçus, cf. TODO). Écran-titre "Nouvelle
+  Ascension" → Hub ; "Retour" contextuel (Hub ou Titre selon la provenance)
+  via `Main.return_to_previous()`.
+- **`_smoketest.gd`** : couvre tous les systèmes ci-dessus (pouvoirs,
+  Connaissances, Serments, Codex, Forge, récompenses de fin d'étage, sprites
+  directionnels, 20 monstres + 10 boss, préfixes de combat, Hub).
 
-Demande initiale : *« fais moi une liste détaillée de tous les items du jeu »*.
+## Outillage
 
-Réponse fournie à partir d'une relecture complète de `scripts/Data.gd`,
-couvrant six catégories :
+- **Godot 4.3 headless fonctionne dans ce bac à sable** (téléchargeable
+  depuis GitHub, réseau sortant autorisé) :
+  ```bash
+  curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+  unzip -q godot.zip && chmod +x Godot_v4.3-stable_linux.x86_64
+  ```
+  Premier lancement obligatoire pour peupler le cache de classes globales :
+  `./Godot... --headless --editor --quit --path .` (à relancer si un
+  fichier "Identifier not declared" apparaît, ou après avoir généré de
+  nouveaux PNG — sans repasse d'import, les nouveaux fichiers restent
+  invisibles à `load()`, repli silencieux). `_SmokeTest.tscn` tourne
+  ensuite avec `--headless --path . res://_SmokeTest.tscn`.
+- **Rendu réel / captures d'écran** : `--headless` seul utilise un pilote
+  factice (aucun pixel produit). Pour un vrai rendu logiciel sans GPU,
+  Mesa llvmpipe est installé : lancer via `xvfb-run` SANS `--headless`,
+  avec `--rendering-driver opengl3` ; un script `extends SceneTree` qui
+  instancie la scène, attend quelques `process_frame`, puis
+  `root.get_texture().get_image().save_png(...)`. Plus lent qu'un pur
+  `--headless` mais seule façon fiable de vérifier visuellement de l'UI/du
+  `_draw()`.
+- **`gen.py`** (repli Python, mêmes primitives que `_assets_gen.gd`) tenu à
+  jour en parallèle. Écart connu et non bloquant : le `round()` de Python
+  (arrondi au pair) diffère de celui de Godot (arrondi à l'écart de zéro)
+  sur les cas .5 exacts — préexistant dans tout le fichier, impact
+  observé : 1 pixel de bord sur de rares sprites, imperceptible.
 
-1. **12 bases d'équipement** (Dague, Épée, Hache, Bâton / Tunique, Cotte,
-   Plastron, Robe / Anneau, Amulette, Bottes, Talisman) avec leur stat
-   primaire garantie, par slot (`arme`, `armure`, `relique`).
-2. **4 raretés** (Commun 0 affixe ×1.0 / Rare 1 affixe ×1.15 / Épique 2
-   affixes ×1.35 / Légendaire 3 affixes ×1.6), avec poids de tirage variant
-   selon l'étage.
-3. **10 affixes** possibles (ATK, MAG, DEF, VIT, PV, Régén, Critique,
-   Esquive, Vol de vie, Épines) avec leurs plages de valeurs.
-4. **4 consommables** (Potion de soin +40% PV, Grande potion +75% PV, Élixir
-   de vie soin complet, Cristal d'Éclats +12+étage Éclats).
-5. **5 artefacts** passifs cumulables (Calice de Sang, Carapace d'Épines,
-   Croc Sauvage, Voile d'Ombre, Plume de Phénix) avec leur étage minimum.
-6. **14 talents** de montée de niveau (Vigueur, Puissance, Arcane,
-   Carapace, Célérité, Régénération, Précision, Agilité, Sangsue,
-   Représailles, Affûtage, Concentration, Second souffle, Brutalité) —
-   classés à part car ce sont des choix de build, pas du butin.
+## Ce qui reste à faire
 
-Cette liste portait sur le système **tel qu'il existait avant** la refonte
-décrite ci-dessous (rareté = stats + affixes aléatoires uniquement, pour
-tous les paliers).
-
----
-
-## 2. Demande : rendre les raretés plus intéressantes que de simples stats
-
-Demande : *« j'aimerai rendre les raretés d'équipement plus intéressement
-que seulement des stats supplémentaires. propose une idée et produits au
-moins 100 équipements pour commencer »*.
-
-### Idée retenue
-
-Garder **Commun** et **Rare** procéduraux (stats de base + 0 ou 1 affixe
-aléatoire) comme économie de loot courante, mais faire en sorte que
-**Épique** et **Légendaire** ne soient plus une simple amplification de
-chiffres : ils puisent désormais dans une **bibliothèque d'objets uniques
-nommés**, chacun porteur d'un **effet de combat distinct** (un « proc »)
-en plus de ses stats fixes. Le palier Légendaire est la version amplifiée
-(stats ×1.4, effet ×1.3, nom + épithète) de la même identité que son
-pendant Épique — trouver l'un de ces objets devient un évènement marquant
-qui change la façon de jouer, pas juste un meilleur nombre.
-
-### Les 6 effets de combat (procs)
-
-| id | Effet | Valeur Épique → Légendaire (exemples) |
-|---|---|---|
-| `execution` | +X% dégâts contre une cible sous 25% PV | 0.40–0.65 → ×1.3 |
-| `frenesie` | +X% dégâts quand le porteur est sous 40% PV | 0.30–0.35 → ×1.3 |
-| `premier_coup` | La 1ʳᵉ attaque de chaque combat est un critique garanti | booléen |
-| `frappe_double` | X% de chances de frapper une 2ᵉ fois (50% dégâts) | 0.20–0.28 → ×1.3 |
-| `soif_de_sang` | Soigne X% des PV max à chaque ennemi tué | 0.12–0.14 → ×1.3 |
-| `moisson` | +X Éclats à chaque ennemi tué | 4–5 → ×1.3 |
-
-### Contenu produit
-
-- **51 identités de base** définies à la main dans `Data.UNIQUE_BASES`
-  (17 par slot : arme / armure / relique), chacune avec nom, stats fixes et
-  proc assigné.
-- **17 épithètes** (`Data.UNIQUE_EPITHETS`) utilisées pour nommer la version
-  Légendaire de chaque identité (ex. *« Bâton des Cendres, du Jugement »*).
-- Le pool final **`Data.UNIQUE_ITEMS`** est construit une fois au chargement
-  par `Data._build_unique_pool()` : 51 × 2 paliers = **102 objets** au total
-  (vérifié par assertion dans le smoke test : `UNIQUE_ITEMS.size() >= 100`).
-
-### Implémentation technique
-
-- **`scripts/Data.gd`** :
-  - Ajout de `UNIQUE_EPITHETS`, `UNIQUE_BASES`, `_proc_desc()`,
-    `_build_unique_pool()`, `static var UNIQUE_ITEMS`, `_pick_unique()`.
-  - `generate_item()` réécrit : si la rareté tirée est Épique/Légendaire,
-    pioche dans `UNIQUE_ITEMS` (slot + rareté) plutôt que de générer une
-    pièce procédurale ; sinon délègue à `_generate_procedural_item()`
-    (l'ancienne logique d'affixes, extraite dans sa propre fonction).
-  - L'objet retourné porte en plus des champs habituels : `unique: true`,
-    `proc` (id), `proc_val` (valeur), `desc` (texte affiché en jeu).
-- **`scripts/Entity.gd`** :
-  - Nouveau champ `procs: Array` agrégé dans `recompute_stats()` à partir
-    des objets équipés portant un champ `"proc"`.
-  - Nouvelles méthodes `has_proc(id)` et `proc_value(id)`.
-- **`scripts/Main.gd`** (logique de combat) :
-  - Nouveau champ `first_strike_used`, réinitialisé dans `generate_floor()`.
-  - `_player_attack()` : applique `frenesie` (PV bas), `execution` (cible
-    affaiblie), force un critique pour `premier_coup` (une fois par
-    combat), et gère un second coup pour `frappe_double`.
-  - `on_enemy_killed()` : applique `moisson` (Éclats bonus) et
-    `soif_de_sang` (soin au kill).
-- **`scripts/Hud.gd`** : affiche la description de l'effet (`desc`) sous
-  chaque objet équipé/en sac, dans la sidebar, le sac et la boutique.
-
-### Bug latent corrigé en vérifiant
-
-En capturant un écran réel de l'inventaire, la sidebar (PV, stats,
-équipement) ne reflétait pas immédiatement un équipement/déséquipement/
-recyclage/usage d'objet — elle ne se mettait à jour qu'au tour suivant.
-Corrigé en ajoutant un appel à `refresh()` dans `equip_item()`,
-`unequip_item()`, `salvage_item()`, `use_consumable()` et
-`_acquire_artifact()` dans `scripts/Main.gd`.
-
-### Vérifications effectuées
-
-1. **Smoke test headless** (`_smoketest.gd` → `_SmokeTest.tscn`) : ajout
-   d'assertions vérifiant (a) au moins 100 objets dans `UNIQUE_ITEMS`,
-   (b) un objet unique pour chaque combinaison slot × rareté
-   Épique/Légendaire, (c) qu'un objet unique généré porte bien un `proc` et
-   une `desc`, (d) que `player.has_proc(...)` devient vrai après équipement
-   réel via `Main.equip_item()`. Résultat : `=== SMOKETEST PASSED ===`.
-2. **Capture d'écran réelle** (Xvfb + harnais jetable `_screenshot.gd`,
-   supprimé après usage) : confirmé visuellement que l'inventaire affiche
-   bien les trois effets uniques (Frénésie, Exécution, Moisson) sous les
-   objets équipés, et que la sidebar reflète immédiatement les nouvelles
-   stats après le correctif de rafraîchissement.
-
-### Documentation mise à jour
-
-`README.md` : la section *Rareté & affixes* a été remplacée par une
-description du nouveau système (Commun/Rare procéduraux vs.
-Épique/Légendaire = objets uniques + tableau des 6 effets de combat).
-
-### Commit
-
-```
-2cb6330 feat: objets uniques pour Épique/Légendaire (effets de combat, 102 objets)
-```
-Poussé sur `claude/rpg-roguelike-autonomy-g1vxmt`
-(6 fichiers modifiés : `README.md`, `_smoketest.gd`, `scripts/Data.gd`,
-`scripts/Entity.gd`, `scripts/Hud.gd`, `scripts/Main.gd`).
-
----
-
-## 3. Demande : résumé de session en fichier markdown
-
-Demande : *« crée un fichier md résumant cette discussion, sois précis »*.
-
-Ce fichier (`RESUME_SESSION.md`) a été créé à la racine du dépôt pour
-documenter les sections 1 et 2 ci-dessus. Un hook de fin de session a
-ensuite signalé la présence de fichiers non suivis ; le fichier a été
-ajouté, commité et poussé :
-
-```
-a3f69c6 docs: résumé de session (liste des items + refonte raretés Épique/Légendaire)
-```
-Poussé sur `claude/rpg-roguelike-autonomy-g1vxmt`.
-
-### État du dépôt à la fin de cette session
-
-- Branche : `claude/rpg-roguelike-autonomy-g1vxmt` (dépôt
-  `silversoulicious-lgtm/rpg-rogue-like-`), arbre de travail propre,
-  rien en attente côté git.
-- Dernier commit distant : `a3f69c6` (au-dessus de `2cb6330`).
-- Aucune tâche explicite restante côté utilisateur à ce stade ; la
-  prochaine session devra reprendre sur une nouvelle demande de
-  l'utilisateur (pas de TODO en suspens).
-- Règles à rappeler pour la suite : développer/pousser uniquement sur
-  `claude/rpg-roguelike-autonomy-g1vxmt` ; ne jamais créer de PR ni
-  commit sans demande explicite ; valider tout changement via le smoke
-  test headless (`godot --headless --path . res://_SmokeTest.tscn`,
-  binaire Godot 4.3 disponible dans le scratchpad de session) et, pour
-  tout changement d'interface, par une capture d'écran réelle (Xvfb +
-  harnais jetable `_screenshot.gd`/`_Screenshot.tscn`, supprimés après
-  usage) inspectée via l'outil de lecture avant de déclarer le travail
-  terminé. Attention : un `assert()` qui échoue en mode headless peut
-  faire boucler indéfiniment le processus Godot au lieu de planter —
-  toujours encapsuler les lancements de test avec `timeout` et rediriger
-  vers un fichier de log.
+1. **Forge du Hub** — nouveau système de progression permanente (pas un
+   renommage du Sanctuaire) : dépense les Éclats banqués pour des
+   déblocages durables (tiers de Forge in-run améliorés, garantie de type
+   de préfixe, nouveaux objets de départ...).
+2. **Boutique du Hub** — objets cosmétiques/de confort (palettes d'Aria,
+   emplacement de sac supplémentaire) contre Éclats banqués, sans effet sur
+   la puissance de combat.
+3. **Phase 6 — Dialogues/PNJ** : système de dialogue aux nœuds
+   événement/boutique/repos, portraits, choix liés aux Serments/Connaissances.
+4. **Phase 7 — Lore + fins multiples** : texte de lore par étages/Codex,
+   plusieurs fins selon progression/Serments/% Codex complété.
+5. **Phase 8 — Finition** : équilibrage (dégâts/HP/drop/coût des nœuds),
+   polish UI/UX, sons/musique, écran titre/crédits.
+6. **Suivis mineurs (non bloquants)** :
+   - Sprites directionnels pour les ennemis (seule Aria en a).
+   - Variantes teintées pour les ennemis élite, sprite distinct pour le
+     boss légendaire (actuellement `boss` générique).
+   - Représentation visuelle des pouvoirs actifs en combat (juste listés
+     en sidebar texte).
+   - Armurerie et Porte de la Tour mènent toutes deux au même écran de
+     Loadout — redondance mineure, probablement correcte telle quelle.
+   - Nettoyage de 3 branches GitHub redondantes (ancêtres fusionnés de la
+     branche actuelle), bloqué sur un changement de branche par défaut
+     à faire depuis les Settings GitHub (hors accès outillé).
