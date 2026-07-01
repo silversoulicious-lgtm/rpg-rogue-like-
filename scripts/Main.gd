@@ -3,7 +3,7 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { TITLE, LOADOUT, META, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
+enum State { TITLE, LOADOUT, META, HUB, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
 
 const MAX_LOG := 8
 const INV_CAP := 16
@@ -54,6 +54,16 @@ var pending_rewards: Array = []  # récompenses de fin d'étage proposées (Phas
 # Serments actifs pour le run en cours (ids de Data.OATHS, choisis au loadout)
 var active_oaths: Array = []
 
+# Hub (Pied de la Tour) : petite ville explorable hors run, accès aux écrans
+# de méta-progression via des bâtiments plutôt qu'une liste de boutons.
+var town: Town = null
+var hub_pos: Vector2i = Vector2i.ZERO
+var town_view: Node2D
+# État vers lequel les boutons "Retour" des écrans de méta doivent ramener :
+# TITLE (accès direct depuis l'écran-titre) ou HUB (accès depuis une visite
+# de bâtiment). Réglé juste avant d'ouvrir l'écran concerné.
+var _menu_return_state: int = State.TITLE
+
 var map_view: Node2D
 var hud                          # instance de Hud (scripts/Hud.gd)
 
@@ -62,6 +72,11 @@ func _ready() -> void:
 	map_view = Node2D.new()
 	map_view.set_script(load("res://scripts/MapView.gd"))
 	add_child(map_view)
+	town_view = Node2D.new()
+	town_view.set_script(load("res://scripts/TownView.gd"))
+	town_view.visible = false
+	add_child(town_view)
+	map_view.visible = false
 	hud = Node.new()
 	hud.set_script(load("res://scripts/Hud.gd"))
 	add_child(hud)
@@ -72,8 +87,19 @@ func _ready() -> void:
 # --- Flux d'écrans ------------------------------------------------------------
 ## Écran-titre (point d'entrée du jeu).
 func return_to_title() -> void:
+	_menu_return_state = State.TITLE
 	state = State.TITLE
 	hud.show_title()
+
+## Ramène vers l'écran-titre ou le Hub selon d'où l'écran courant a été ouvert
+## (réglé par _hub_enter_building juste avant d'ouvrir un bâtiment). À utiliser
+## par les boutons "Retour" des écrans de méta plutôt que return_to_title
+## directement, pour ne pas éjecter vers le titre une visite venue du Hub.
+func return_to_previous() -> void:
+	if _menu_return_state == State.HUB:
+		enter_hub()
+	else:
+		return_to_title()
 
 ## Écran de loadout : choix de l'arme de départ (fiches détaillées).
 func open_loadout() -> void:
@@ -95,6 +121,54 @@ func open_codex() -> void:
 	state = State.META
 	hud.show_codex()
 
+# --- Hub (Pied de la Tour) -----------------------------------------------------
+## Entre dans le Hub : la ville est créée une seule fois (disposition fixe) et
+## Aria conserve sa position d'une visite à l'autre (elle ne revient pas
+## systématiquement au centre en sortant d'un bâtiment).
+func enter_hub() -> void:
+	if town == null:
+		town = Town.new()
+		hub_pos = town.player_start
+	map_view.visible = false
+	town_view.visible = true
+	state = State.HUB
+	hud.show_hub()
+	town_view.refresh(town, hub_pos)
+
+## Déplacement libre dans le Hub (pas de tour par tour). Marcher sur la case
+## d'un bâtiment déclenche automatiquement son écran, comme l'escalier en donjon.
+func _hub_try_move(dx: int, dy: int) -> void:
+	if state != State.HUB:
+		return
+	var nx: int = hub_pos.x + dx
+	var ny: int = hub_pos.y + dy
+	if not town.is_walkable(nx, ny):
+		return
+	hub_pos = Vector2i(nx, ny)
+	town_view.refresh(town, hub_pos)
+	var b: Dictionary = town.building_at(nx, ny)
+	if not b.is_empty():
+		_hub_enter_building(String(b["id"]))
+
+## Bâtiments existants re-câblés vers leurs écrans actuels ; Forge/Boutique
+## sont de nouveaux systèmes (progression permanente / cosmétique) pas encore
+## conçus — repli en écran "bientôt disponible" plutôt qu'un bouton mort.
+func _hub_enter_building(id: String) -> void:
+	_menu_return_state = State.HUB
+	match id:
+		"tower_gate", "armurerie":
+			open_loadout()
+		"bibliotheque":
+			open_knowledge()
+		"sanctuaire":
+			open_meta()
+		"forge":
+			state = State.CHOICE
+			hud.show_hub_stub("⚒ FORGE", "Le forgeron n'a pas encore ouvert son atelier.\nBientôt : renforcement permanent de l'équipement, contre Éclats banqués.")
+		"boutique":
+			state = State.CHOICE
+			hud.show_hub_stub("🏪 BOUTIQUE", "La boutique n'a pas encore ouvert ses portes.\nBientôt : objets cosmétiques et de confort, contre Éclats banqués.")
+
 ## Enregistre une découverte ; +1 Connaissance si c'est une première (Codex débloqué).
 func _discover(category: String, key: String, label: String) -> void:
 	if GameState.note_discovery(category, key):
@@ -112,6 +186,8 @@ func choose_loadout(loadout_id: String) -> void:
 func start_run(loadout_id: String = "melee") -> void:
 	if not Data.WEAPON_TYPES.has(loadout_id):
 		loadout_id = "melee"
+	town_view.visible = false
+	map_view.visible = true
 	var h: Dictionary = Data.HEROINE
 	player = Entity.new()
 	player.display_name = h["name"]
@@ -657,14 +733,28 @@ func _unhandled_input(event: InputEvent) -> void:
 		if k == KEY_I or k == KEY_ESCAPE:
 			close_inventory()
 		return
-	# Navigation clavier dans les écrans de menu (Échap = revenir en arrière).
+	# Navigation clavier dans les écrans de menu (Échap = revenir en arrière,
+	# vers le Hub ou l'écran-titre selon d'où l'écran a été ouvert).
 	if state == State.LOADOUT or state == State.META:
 		if k == KEY_ESCAPE:
-			return_to_title()
+			return_to_previous()
 		return
 	if state == State.GAMEOVER:
 		if k == KEY_ESCAPE or k == KEY_ENTER or k == KEY_KP_ENTER:
 			return_to_title()
+		return
+	if state == State.HUB:
+		match k:
+			KEY_W, KEY_UP, KEY_K:
+				_hub_try_move(0, -1)
+			KEY_S, KEY_DOWN, KEY_J:
+				_hub_try_move(0, 1)
+			KEY_A, KEY_LEFT, KEY_H:
+				_hub_try_move(-1, 0)
+			KEY_D, KEY_RIGHT, KEY_L:
+				_hub_try_move(1, 0)
+			KEY_ESCAPE:
+				return_to_title()
 		return
 	if state != State.PLAYING:
 		return

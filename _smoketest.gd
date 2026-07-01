@@ -674,6 +674,30 @@ func _ready() -> void:
 	assert(Data.BOSSES.size() == 10, "10 boss définis (vu %d)" % Data.BOSSES.size())
 	print("OK boss Pass 2: %d boss (gardiens, ponte, phases, charge, souffle) sans crash" % Data.BOSSES.size())
 
+	# --- Hub (Pied de la Tour) : déplacement libre + entrée dans les bâtiments ----
+	main.enter_hub()
+	assert(main.state == main.State.HUB, "le Hub s'ouvre dans son propre état")
+	assert(main.hub_pos == main.town.player_start, "Aria démarre au centre de la place")
+	# Bibliothèque en (13,5), départ (8,6) : 5 pas est puis 1 pas nord.
+	for i in 5:
+		main._hub_try_move(1, 0)
+	main._hub_try_move(0, -1)
+	assert(main.state == main.State.META, "marcher sur la Bibliothèque ouvre l'Arbre de Connaissances")
+	assert(main.hub_pos == Vector2i(13, 5), "Aria s'arrête sur la case du bâtiment")
+	main.return_to_previous()
+	assert(main.state == main.State.HUB, "Retour depuis un écran ouvert par le Hub revient au Hub")
+	assert(main.hub_pos == Vector2i(13, 5), "la position d'Aria dans le Hub est conservée entre deux visites")
+	# La bordure de la ville reste infranchissable.
+	main.hub_pos = Vector2i(1, 1)
+	main._hub_try_move(-1, 0)
+	assert(main.hub_pos == Vector2i(1, 1), "la bordure du Hub bloque le déplacement")
+	# Depuis l'écran-titre (pas le Hub), Retour ramène bien au titre.
+	main.return_to_title()
+	main.open_knowledge()
+	main.return_to_previous()
+	assert(main.state == main.State.TITLE, "Retour depuis un écran ouvert par le titre revient au titre")
+	print("OK Hub: déplacement, entrée de bâtiment, retour contextuel (Hub vs titre), bordure bloquante")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

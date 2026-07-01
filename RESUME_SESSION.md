@@ -341,14 +341,63 @@ unzip -q godot.zip && chmod +x Godot_v4.3-stable_linux.x86_64
   (rasterisation logicielle) mais fiable pour vérifier visuellement du GDScript
   UI/`_draw()` sans jamais avoir besoin d'un vrai GPU/écran.
 
-### Main Hub (Pied de la Tour) — planifié, pas encore implémenté
-Décisions actées avec l'utilisateur pour la prochaine session :
-- **Style d'interaction** : ville explorable au pied de la Tour, avec Aria qui
-  s'y déplace réellement (même moteur de grille que les étages de donjon,
-  entrer dans un bâtiment déclenche son écran) — pas une simple liste de
-  boutons ni une carte cliquable statique. C'est l'option la plus coûteuse
-  des trois envisagées ; nécessite des sprites de bâtiments/tuiles de ville
-  temporaires puisque l'illustration finale n'est pas encore prête.
+### Main Hub (Pied de la Tour) — infrastructure implémentée
+Décisions actées avec l'utilisateur, puis construites (vérifiées par capture
+d'écran réelle via Xvfb + Mesa llvmpipe, cf. section outillage plus haut) :
+- **Style d'interaction** : ville explorable, Aria s'y déplace réellement
+  (WASD/flèches, pas de tour par tour/combat) ; marcher sur la case d'un
+  bâtiment déclenche automatiquement son écran, comme l'escalier en donjon.
+- **`Town.gd`** (nouveau, `RefCounted`) : disposition FIXE dessinée à la main
+  (17×13, pas de génération procédurale — c'est un lieu, pas un donjon) avec
+  une croix de chemins reliant 6 bâtiments à la place centrale. `tiles`,
+  `buildings` (`Vector2i -> {id,name,glyph,color}`), `is_walkable()`,
+  `building_at()`, `player_start`.
+- **`TownView.gd`** (nouveau, `Node2D`, calqué sur `MapView.gd` en plus
+  simple) : pas de brouillard de guerre ni de caméra de suivi (la ville
+  entière — 544×416px — tient dans les 1280×720 de la zone de jeu, centrée
+  statiquement). Réutilise les textures du biome "plaine" (sol/arbre en
+  bordure) et `road` pour rester cohérent visuellement sans nouveaux assets ;
+  les bâtiments n'ont pas encore de sprite dédié : panneau coloré + glyphe +
+  nom (dessinés en `_draw()`, même esprit de repli que `TitleBg.gd`). Un
+  rectangle de fond plein écran défensif évite qu'un rendu de donjon résiduel
+  ne transparaisse dans les marges.
+- **`Main.gd`** : `State.HUB` ; `town`/`hub_pos`/`town_view` ; `enter_hub()`
+  (crée la ville une seule fois, position conservée entre visites, bascule
+  `map_view.visible`/`town_view.visible`) ; `_hub_try_move()` (bloqué par la
+  bordure, comme un mur de donjon) ; `_hub_enter_building()` (dispatch par id).
+  Nouveau mécanisme `_menu_return_state` (TITLE ou HUB) + `return_to_previous()` :
+  les boutons "Retour" des écrans de Loadout/Sanctuaire/Connaissances
+  utilisent maintenant `return_to_previous()` plutôt que `return_to_title()`
+  en dur, pour ramener vers le Hub si c'est de là qu'on vient (l'écran de fin
+  de run garde `return_to_title()` en dur : pas de détour par le Hub après un
+  run, choix delibéré pour limiter la portée de cette passe).
+- **`Hud.gd`** : `hub_layer` minimal (pas de sidebar de combat, rien à
+  afficher hors-run) — bandeau d'indice + bouton "Menu principal" en coin,
+  `show_hub()`, `show_hub_stub()` (écran "bientôt disponible" réutilisant
+  `overlay_layer`, pour Forge/Boutique).
+- **Bâtiments câblés** : Porte de la Tour + Armurerie → `open_loadout()` ;
+  Bibliothèque → `open_knowledge()` ; Sanctuaire → `open_meta()` (écrans
+  existants, inchangés, juste re-câblés). Forge et Boutique affichent un
+  écran "bientôt disponible" — les concevoir (nouveaux systèmes : Forge =
+  progression permanente, Boutique = cosmétique/confort) reste à faire, cf.
+  décisions ci-dessous, conservées pour référence.
+- **Écran-titre** : "Nouvelle Ascension" ouvre maintenant le Hub
+  (`enter_hub()`) plutôt que le Loadout directement ; c'est en marchant
+  jusqu'à la Porte de la Tour qu'on atteint l'écran de Loadout.
+- **Bug de bord évité** : `map_view` et `town_view` sont deux `Node2D`
+  toujours présents dans l'arbre (ni l'un ni l'autre n'est un `CanvasLayer`)
+  — sans bascule explicite de `.visible`, un rendu de donjon résiduel
+  d'un run précédent aurait pu transparaître dans les marges autour de la
+  ville (plus petite que l'écran). Réglé en togglant `map_view.visible`/
+  `town_view.visible` dans `_ready()`/`start_run()`/`enter_hub()`.
+- **Test** : bloc dédié dans `_smoketest.gd` (déplacement, entrée de
+  bâtiment, `return_to_previous()` contextuel HUB vs TITLE, bordure
+  bloquante) + vérification visuelle par capture d'écran réelle (mêmes
+  outils que pour l'écran-titre) : un bug de troncature de texte a été trouvé
+  et corrigé ("Porte de la Tour" coupé en "Porte de la Tou" — largeur de
+  boîte de `draw_string` insuffisante pour le nom le plus long).
+
+Décisions encore valables pour la suite (Forge/Boutique restent à concevoir) :
 - **Forge/Blacksmith** : nouveau système de progression permanente (pas un
   simple renommage du Sanctuaire) — dépense les Éclats banqués pour des
   déblocages durables (tiers de Forge en jeu améliorés, garantie de type de
@@ -357,10 +406,10 @@ Décisions actées avec l'utilisateur pour la prochaine session :
 - **Boutique du Hub** : vend des objets cosmétiques/de confort (palettes
   alternatives d'Aria, emplacement de sac supplémentaire) contre Éclats
   banqués — pas d'effet sur la puissance de combat.
-- **Bâtiments envisagés** (à affiner) : Forge/Blacksmith (nouveau),
-  Boutique (nouveau, cosmétique/confort), Armurerie (= écran de Loadout +
-  Serments actuel), Bibliothèque/Tour du Sage (= Arbre de Connaissances +
-  Codex actuels), porte de la Tour (= lancement du run).
+- **Suivi ouvert (non bloquant)** : Armurerie et Porte de la Tour mènent
+  toutes deux au même écran de Loadout — redondance mineure à reconsidérer
+  une fois qu'on saura ce qu'Armurerie doit vraiment offrir de distinct
+  (peut-être rien : c'est probablement correct tel quel, thématiquement).
 
 ### Phase 6 — Dialogues / PNJ
 - Système de dialogue (PNJ aux nœuds événement/boutique/repos), portraits,

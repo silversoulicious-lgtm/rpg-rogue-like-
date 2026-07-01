@@ -41,6 +41,7 @@ var menu_root: Control
 var overlay_layer: CanvasLayer
 var overlay_content: VBoxContainer
 var log_label: RichTextLabel
+var hub_layer: CanvasLayer
 # Sidebar
 var sb_floor: Label
 var sb_hero: Label
@@ -61,6 +62,7 @@ func setup(game_ref) -> void:
 	_build_hud()
 	_build_menu()
 	_build_overlay()
+	_build_hub_ui()
 
 func play_area() -> Vector2:
 	return Vector2(VIEW.x - SIDEBAR_W, VIEW.y - LOG_H)
@@ -282,6 +284,44 @@ func show_game() -> void:
 func hide_overlay() -> void:
 	overlay_layer.visible = false
 
+# --- Hub (Pied de la Tour) -----------------------------------------------------
+## Bandeau minimal (pas de sidebar de combat, rien à afficher hors-run) :
+## indice de jeu + accès direct au menu principal sans avoir à marcher nulle part.
+func _build_hub_ui() -> void:
+	hub_layer = CanvasLayer.new()
+	hub_layer.layer = 1
+	hub_layer.visible = false
+	add_child(hub_layer)
+
+	var hint := PanelContainer.new()
+	hint.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.06, 0.05, 0.09, 0.75)))
+	hint.position = Vector2(24, 20)
+	hub_layer.add_child(hint)
+	hint.add_child(Ui.label("⛫ Pied de la Tour — approche un bâtiment pour y entrer.", 15, Ui.INK))
+
+	var back := Ui.button("↩ Menu principal", 40, 14)
+	back.position = Vector2(VIEW.x - 216, 20)
+	back.pressed.connect(game.return_to_title)
+	hub_layer.add_child(back)
+
+func show_hub() -> void:
+	menu_layer.visible = false
+	overlay_layer.visible = false
+	hud_layer.visible = false
+	hub_layer.visible = true
+
+## Écran "bientôt disponible" pour les bâtiments du Hub pas encore conçus
+## (Forge/Boutique : nouveaux systèmes de progression, cf. RESUME_SESSION.md).
+func show_hub_stub(title: String, desc: String) -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title(title, Color(0.85, 0.8, 0.5))
+	_overlay_label(desc, Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	var back := Ui.button("Retour", 44, 16)
+	back.pressed.connect(game.enter_hub)
+	overlay_content.add_child(back)
+
 # --- Overlays boutique / événement / repos ------------------------------------
 func show_shop(stock: Array, shards: int) -> void:
 	overlay_layer.visible = true
@@ -451,7 +491,7 @@ func show_title() -> void:
 	panel.add_child(col)
 
 	var play := Ui.menu_button("▶   Nouvelle Ascension", 300.0)
-	play.pressed.connect(game.open_loadout)
+	play.pressed.connect(game.enter_hub)
 	col.add_child(play)
 	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 300.0, 15)
 	sanct.pressed.connect(game.open_meta)
@@ -505,7 +545,7 @@ func show_loadout() -> void:
 		_build_oaths_panel(col)
 	col.add_child(_spacer(14))
 	var back := Ui.menu_button("↩   Retour", 240.0, 16)
-	back.pressed.connect(game.return_to_title)
+	back.pressed.connect(game.return_to_previous)
 	col.add_child(back)
 
 ## Serments : modificateurs de difficulté optionnels (toggles) avant de choisir l'arme.
@@ -610,7 +650,7 @@ func show_meta() -> void:
 	play.pressed.connect(game.open_loadout)
 	col.add_child(play)
 	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
-	back.pressed.connect(game.return_to_title)
+	back.pressed.connect(game.return_to_previous)
 	col.add_child(back)
 
 func _on_buy(key: String) -> void:
@@ -643,7 +683,7 @@ func show_knowledge() -> void:
 		codex.pressed.connect(game.open_codex)
 		col.add_child(codex)
 	var back := Ui.menu_button("↩   Menu principal", 360.0, 16)
-	back.pressed.connect(game.return_to_title)
+	back.pressed.connect(game.return_to_previous)
 	col.add_child(back)
 
 func _knowledge_row(nid: String, node: Dictionary) -> Control:
