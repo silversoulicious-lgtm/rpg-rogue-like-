@@ -388,35 +388,104 @@ func show_forge(equipment: Dictionary) -> void:
 	overlay_content.add_child(back)
 
 # --- Écran-titre --------------------------------------------------------------
+# Chemin de l'illustration finale (Aria devant la Tour). Tant qu'elle n'existe
+# pas, TitleBg.gd dessine une silhouette procédurale de repli — dès que ce
+# fichier est ajouté à assets/, il prend automatiquement le relais, sans
+# changement de code.
+const TITLE_BG_PATH := "res://assets/title_bg.png"
+
 func show_title() -> void:
 	_menu_show()
-	var col := _menu_column(560.0, false)
-	col.add_theme_constant_override("separation", 6)
-	col.add_child(Ui.label("⛫", 72, Ui.ACCENT_SOFT, true))
-	col.add_child(Ui.label("L E S   S T R A T E S", 46, Ui.ACCENT_SOFT, true))
-	col.add_child(Ui.label("Roguelike d'ascension — grimpe la tour, strate par strate.", 15, Ui.MUTED, true))
-	col.add_child(_spacer(26))
+	_menu_clear()
 
-	var play := Ui.menu_button("▶   Nouvelle Ascension", 360.0)
+	# --- Fond : illustration si présente, sinon silhouette procédurale ----------
+	if ResourceLoader.exists(TITLE_BG_PATH):
+		var tr := TextureRect.new()
+		tr.texture = load(TITLE_BG_PATH)
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_SCALE
+		tr.set_anchors_preset(Control.PRESET_FULL_RECT)
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		menu_root.add_child(tr)
+	else:
+		var placeholder := Control.new()
+		placeholder.set_script(load("res://scripts/TitleBg.gd"))
+		placeholder.set_anchors_preset(Control.PRESET_FULL_RECT)
+		menu_root.add_child(placeholder)
+
+	# Voiles de contraste : assombrit le haut (lisibilité du titre) et le bas
+	# (lisibilité du menu), quel que soit le contenu de l'image de fond.
+	# Ui.gradient_bg() ancre déjà en PRESET_FULL_RECT ; on retaille chaque voile
+	# à sa bande d'écran via un offset explicite (assigner .size seul serait
+	# écrasé par les ancres au premier redimensionnement).
+	var shade_top := Ui.gradient_bg(Color(0.02, 0.015, 0.04, 0.55), Color(0.02, 0.015, 0.04, 0.0))
+	shade_top.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	shade_top.offset_bottom = VIEW.y * 0.32
+	menu_root.add_child(shade_top)
+	var shade_bottom := Ui.gradient_bg(Color(0.02, 0.015, 0.04, 0.0), Color(0.02, 0.015, 0.04, 0.92))
+	shade_bottom.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	shade_bottom.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	shade_bottom.offset_top = -VIEW.y * 0.40
+	menu_root.add_child(shade_bottom)
+
+	# --- Bloc-titre, ancré en haut à gauche -------------------------------------
+	var title_col := Ui.vbox(4)
+	title_col.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	title_col.offset_left = 48
+	title_col.offset_top = 40
+	menu_root.add_child(title_col)
+	title_col.add_child(Ui.label("⛫  L E S   S T R A T E S", 36, Ui.INK))
+	title_col.add_child(Ui.label("Roguelike d'ascension — grimpe la tour, strate par strate.", 14, Ui.MUTED))
+
+	# --- Bloc-menu, ancré en bas à droite dans un panneau semi-transparent ------
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.07, 0.06, 0.11, 0.78)))
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	panel.offset_right = -48
+	panel.offset_bottom = -40
+	menu_root.add_child(panel)
+	var col := Ui.vbox(8)
+	col.custom_minimum_size = Vector2(340, 0)
+	panel.add_child(col)
+
+	var play := Ui.menu_button("▶   Nouvelle Ascension", 300.0)
 	play.pressed.connect(game.open_loadout)
 	col.add_child(play)
-	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 360.0)
+	var sanct := Ui.menu_button("✦   Sanctuaire  (%d Éclats)" % GameState.shards, 300.0, 15)
 	sanct.pressed.connect(game.open_meta)
 	col.add_child(sanct)
-	var know := Ui.menu_button("✶   Arbre de Connaissances  (%d)" % GameState.knowledge, 360.0)
+	var know := Ui.menu_button("✶   Arbre de Connaissances  (%d)" % GameState.knowledge, 300.0, 15)
 	know.pressed.connect(game.open_knowledge)
 	col.add_child(know)
-	var opt := Ui.menu_button("⚙   Options", 360.0)
+	var opt := Ui.menu_button("⚙   Options", 300.0, 15)
 	opt.pressed.connect(show_options)
 	col.add_child(opt)
-	var quit := Ui.menu_button("✕   Quitter", 360.0)
+	var quit := Ui.menu_button("✕   Quitter", 300.0, 15)
 	quit.pressed.connect(game.quit_game)
 	col.add_child(quit)
 
-	col.add_child(_spacer(22))
+	# --- Bandeau de profil, ancré en bas à gauche -------------------------------
+	var foot_col := Ui.vbox(6)
+	foot_col.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+	foot_col.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	foot_col.offset_left = 48
+	foot_col.offset_bottom = -40
+	menu_root.add_child(foot_col)
+	foot_col.add_child(_title_profile_strip())
+	foot_col.add_child(Ui.label(VERSION, 12, Color(0.45, 0.45, 0.55)))
+
+## Bandeau de profil du menu-titre : record d'ascension + monnaies méta, pour
+## donner l'impression d'un profil persistant plutôt qu'une ligne isolée.
+func _title_profile_strip() -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 16)
 	if GameState.best_floor > 1:
-		col.add_child(Ui.label("Record d'ascension : Strate atteinte à l'Étage %d" % GameState.best_floor, 13, Ui.GOLD, true))
-	col.add_child(Ui.label(VERSION, 12, Color(0.45, 0.45, 0.55), true))
+		row.add_child(Ui.label("⛰ Étage %d" % GameState.best_floor, 13, Ui.GOLD))
+	row.add_child(Ui.label("✦ %d" % GameState.shards, 13, Color(0.85, 0.78, 0.5)))
+	row.add_child(Ui.label("✶ %d" % GameState.knowledge, 13, Color(0.65, 0.75, 0.95)))
+	return row
 
 # --- Loadout : choix de l'arme de départ (fiches détaillées) ------------------
 func show_loadout() -> void:

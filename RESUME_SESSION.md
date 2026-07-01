@@ -261,6 +261,55 @@ leur contenu) et enchaîner les étages automatiquement.
   teste explicitement `act_floor`/`ACT_LENGTH`/le forçage du Gardien et la
   remise à zéro après victoire.
 
+### Écran-titre refondu (préparation de l'illustration Aria + Tour)
+`Hud.show_title()` ne repose plus sur la colonne centrée générique
+(`_menu_column`) mais construit sa propre composition en couches directement
+dans `menu_root` :
+- **Fond** : charge `res://assets/title_bg.png` s'il existe (`ResourceLoader.
+  exists`), sinon monte `scripts/TitleBg.gd` — un `Control` procédural
+  (tour en trapèzes empilés + fenêtres à halo + lune + étoiles + silhouette
+  d'Aria au pied de la tour, dessinés en `_draw()`). Le jour où l'illustration
+  finale est ajoutée dans `assets/`, elle prend le relais **sans changement
+  de code**. `TitleBg.gd` reconnecte `resized` à `queue_redraw()` (le premier
+  `_draw()` peut survenir avant que les ancres n'aient fini de résoudre la
+  taille réelle).
+- **Voiles de contraste** : deux dégradés (haut assombri pour le titre, bas
+  assombri pour le menu) ancrés en `PRESET_TOP_WIDE`/`PRESET_BOTTOM_WIDE`
+  avec un `offset` explicite (assigner `.size` seul sur un Control déjà ancré
+  en `PRESET_FULL_RECT` — cas de `Ui.gradient_bg()` — est silencieusement
+  écrasé par les ancres, piège rencontré et corrigé pendant l'implémentation).
+- **Disposition** : logo en haut à gauche, bloc de boutons dans un panneau
+  semi-transparent ancré en bas à droite (`PRESET_BOTTOM_RIGHT` +
+  `grow_horizontal/vertical = GROW_DIRECTION_BEGIN` pour qu'il s'étende vers
+  l'intérieur de l'écran plutôt qu'au-delà du bord), bandeau de profil (record
+  d'ascension + Éclats + Connaissances, `_title_profile_strip()`) en bas à
+  gauche — à la place de l'unique ligne de record précédente.
+- Godot n'étant pas exécutable dans cet environnement, ce rendu n'a **pas pu
+  être vérifié visuellement** — le raisonnement sur les ancres/marges a été
+  fait à la main (cf. sémantique standard des presets Godot), mais un passage
+  en jeu pour ajuster les marges/tailles reste à faire.
+
+### Main Hub (Pied de la Tour) — planifié, pas encore implémenté
+Décisions actées avec l'utilisateur pour la prochaine session :
+- **Style d'interaction** : ville explorable au pied de la Tour, avec Aria qui
+  s'y déplace réellement (même moteur de grille que les étages de donjon,
+  entrer dans un bâtiment déclenche son écran) — pas une simple liste de
+  boutons ni une carte cliquable statique. C'est l'option la plus coûteuse
+  des trois envisagées ; nécessite des sprites de bâtiments/tuiles de ville
+  temporaires puisque l'illustration finale n'est pas encore prête.
+- **Forge/Blacksmith** : nouveau système de progression permanente (pas un
+  simple renommage du Sanctuaire) — dépense les Éclats banqués pour des
+  déblocages durables (tiers de Forge en jeu améliorés, garantie de type de
+  préfixe, nouveaux objets de départ...), distinct des bonus de stats plates
+  du Sanctuaire.
+- **Boutique du Hub** : vend des objets cosmétiques/de confort (palettes
+  alternatives d'Aria, emplacement de sac supplémentaire) contre Éclats
+  banqués — pas d'effet sur la puissance de combat.
+- **Bâtiments envisagés** (à affiner) : Forge/Blacksmith (nouveau),
+  Boutique (nouveau, cosmétique/confort), Armurerie (= écran de Loadout +
+  Serments actuel), Bibliothèque/Tour du Sage (= Arbre de Connaissances +
+  Codex actuels), porte de la Tour (= lancement du run).
+
 ### Phase 6 — Dialogues / PNJ
 - Système de dialogue (PNJ aux nœuds événement/boutique/repos), portraits,
   arbres de choix simples liés aux Serments/Connaissances.
