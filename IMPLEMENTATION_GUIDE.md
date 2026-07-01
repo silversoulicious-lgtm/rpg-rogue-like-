@@ -2,8 +2,11 @@
 
 > **Purpose**: self-contained work order for an AI agent (or any developer)
 > executing the findings of `AUDIT.md` (bugs & issues) and `VISION.md`
-> (differentiation & polish). You should be able to work from this file alone;
-> AUDIT.md and VISION.md contain the extended rationale if needed.
+> (differentiation & polish). This file specifies *exactly how* — algorithms,
+> integration points, data shapes, known traps — not just what. Where a
+> number is marked *(tune)* you may adjust it after observing the result,
+> one change at a time. `ART_GENERATOR_SPEC.md` plays the same role for the
+> art phase.
 >
 > **Read this entire file before writing any code.**
 
@@ -18,12 +21,11 @@
   act, permadeath, meta-progression between runs (Shards bank, Knowledge
   tree, Oaths), procedural loot with rarities/affixes/prefixes/unique items.
 - **Everything player-facing is in FRENCH** (UI text, item names, messages,
-  commit messages, README). Keep it that way. Code identifiers are a
-  French/English mix — match the local style of whatever file you touch.
+  commit messages, README). Keep it that way.
 - **All art is code-generated** pixel sprites (32×32) in `assets/*.png`,
-  produced by `_assets_gen.gd`. There is a Python mirror `gen.py` (legacy).
-- **No scenes to speak of**: `scenes/Main.tscn` is one node; the whole game is
-  built in code.
+  produced by `_assets_gen.gd`. `gen.py` is a legacy Python mirror (frozen in
+  Phase 7.4).
+- `scenes/Main.tscn` is a single node; the whole game is built in code.
 
 ### File map
 
@@ -31,627 +33,904 @@
 |---|---|---|
 | `scripts/Main.gd` | God object: state machine, floor generation, combat, enemy AI, skills, loot, shop/events/rest, turn loop | ~2 180 lines |
 | `scripts/Hud.gd` | ALL UI: sidebar, log, title, loadout, meta screens, overlays | ~1 075 |
-| `scripts/Data.gd` | Static data registry: heroine, 25 enemies, 10 bosses, skills, items, affixes, prefixes, uniques, talents, artifacts, powers, events, upgrades, knowledge tree, oaths | ~890 |
+| `scripts/Data.gd` | Static data: heroine, 25 enemies, 10 bosses, skills, items, affixes, prefixes, uniques, talents, artifacts, powers, events, upgrades, knowledge tree, oaths | ~890 |
 | `scripts/Entity.gd` | Pure-data grid entity + derived stats + statuses | ~290 |
 | `scripts/Dungeon.gd` | Procedural open-world floor gen + fog of war | ~265 |
-| `scripts/GameState.gd` | Autoload: persistent meta-progression, JSON save (`user://save.json`) | ~175 |
+| `scripts/GameState.gd` | Autoload: persistent meta, JSON save (`user://save.json`) | ~175 |
 | `scripts/MapView.gd` | Tile/entity rendering, fog, camera, FX layer, atmosphere | ~430 |
-| `scripts/Town.gd` / `TownView.gd` | Hub (fixed little town) model + renderer | ~155 |
+| `scripts/Town.gd` / `TownView.gd` | Hub model + renderer | ~155 |
 | `scripts/Ui.gd` | Widget factory (labels/buttons/styles) | ~150 |
-| `scripts/EquipPanel.gd`, `TitleBg.gd` | Sidebar equipment silhouette; procedural title backdrop | small |
+| `scripts/EquipPanel.gd`, `TitleBg.gd` | Sidebar equipment silhouette; title backdrop | small |
 | `_smoketest.gd` + `_SmokeTest.tscn` | Headless smoke test driving full runs | ~710 |
-| `_assets_gen.gd` | Sprite generator (source of truth for art) | ~2 190 |
-| `gen.py` | Python mirror of the generator (legacy, to be frozen) | ~1 990 |
+| `_assets_gen.gd` | Sprite generator (art source of truth) | ~2 190 |
 
-### Tooling — how to build, test, verify (works in a sandbox)
+### Tooling — build, test, verify
 
 ```bash
-# 1. Get Godot 4.3 headless (Linux):
+# 1. Godot 4.3 headless (Linux):
 curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
 unzip -q godot.zip && chmod +x Godot_v4.3-stable_linux.x86_64
 
 # 2. MANDATORY first run — populates class cache & imports assets.
-#    Re-run after generating any new PNG, or on "Identifier not declared" errors:
+#    Re-run after generating any new PNG, or on "Identifier not declared":
 ./Godot_v4.3-stable_linux.x86_64 --headless --editor --quit --path .
 
-# 3. Run the smoke test (must print "=== SMOKETEST PASSED ==="):
+# 3. Smoke test (must print "=== SMOKETEST PASSED ==="):
 ./Godot_v4.3-stable_linux.x86_64 --headless --path . res://_SmokeTest.tscn
 
 # 4. Regenerate sprites after editing _assets_gen.gd:
 ./Godot_v4.3-stable_linux.x86_64 --headless --path . --script res://_assets_gen.gd
 
-# 5. Real rendering / screenshots (headless uses a dummy driver — no pixels):
-#    run under xvfb-run WITHOUT --headless, with --rendering-driver opengl3,
-#    via an `extends SceneTree` script that instantiates the scene, waits a few
+# 5. Real rendering / screenshots (headless = dummy driver, zero pixels):
+#    xvfb-run WITHOUT --headless, with --rendering-driver opengl3, driven by
+#    an `extends SceneTree` script that instantiates the scene, waits a few
 #    process_frame, then root.get_texture().get_image().save_png(...).
 ```
 
 ### Working rules
 
-1. **Never break the smoke test.** Run it after every task. When you fix a bug
-   listed below, ADD an assert to `_smoketest.gd` that would have caught it.
+1. **Never break the smoke test.** Run it after every task. Every bug fixed
+   below gets a regression assert added to `_smoketest.gd`.
 2. **One phase = one coherent commit series.** French commit messages,
-   imperative mood, matching the existing history style
-   (e.g. « Corrige le décalage d'étage et ajoute un assert de régression »).
-3. **Update the docs you invalidate**: `README.md` and `RESUME_SESSION.md`
-   must stay truthful after your changes.
-4. Work through phases **in order**. Within a phase, tasks are ordered by
-   dependency. Do not start a later phase while an earlier one is red.
-5. When a balance number is not specified, choose something sane, mark it with
-   a short comment, and keep it in `Data.gd` (data-driven, tunable).
-6. Do not add new third-party dependencies. Do not rewrite systems that work.
+   imperative mood, matching the existing history.
+3. **Update the docs you invalidate** (`README.md`, `RESUME_SESSION.md`).
+4. Work through phases in order; within a phase, tasks are dependency-ordered.
+5. Balance numbers live in `Data.gd` (data-driven, tunable), never inline.
+6. No new third-party dependencies. Don't rewrite systems that work.
+7. When this guide's line references have drifted (they anchor to the state
+   at commit `24ecda3`), locate by function name — every reference includes
+   one.
 
 ---
 
 ## PHASE 1 — Bug fixes (confirmed defects; small, high value)
 
 ### 1.1 Floor off-by-one
-- `Main.start_run()` sets `floor_num = 1` (Main.gd:222) then calls
-  `_advance("combat")` which does `floor_num += 1` (Main.gd:354) → the first
-  floor displays « Étage 2 ». Fix so the first playable floor is 1
-  (simplest: initialize `floor_num = 0`).
-- Ripple check: `best_floor` records, Knowledge gain
-  (`floor_num - GameState.best_floor`, Main.gd:2107), `biome_for_floor`,
-  enemy `min_floor` gating, item scaling all consume `floor_num`.
-- **Accept**: smoke test asserts `floor_num == 1` right after `start_run()`;
-  HUD shows « Étage 1 » on a new run.
+**Defect**: `start_run()` sets `floor_num = 1` (Main.gd:222), then
+`_advance("combat")` executes the default match branch which does
+`floor_num += 1` (Main.gd:354) → first playable floor displays « Étage 2 ».
+
+**Fix**: initialize `floor_num = 0` in `start_run()`. Nothing else — the
+increment site is correct.
+
+**Ripple check** (verify, no change expected): `Data.biome_for_floor` clamps
+via `max(1, floor)`; `_pick_enemy_def` min_floor gating, item scaling
+(`Data.generate_item`), knowledge gain (`floor_num - GameState.best_floor`,
+Main.gd:2107) all consume the now-correct value. Note the knowledge economy
+tightens by 1 for record-breaking runs — intended.
+
+**Assert**: after `start_run("melee")`, `main.floor_num == 1`.
 
 ### 1.2 Boss power drop is dead code
-- `on_enemy_killed`: `if floor_num % 15 == 0: _drop_power(...)`
-  (Main.gd:1305). Boss floors are ≡ 1 mod 6 → the condition is never true.
-- Replace with an act-based rule: e.g. drop a power after every 2nd Guardian
-  (`map_act % 2 == 0` at kill time) — pick and document the cadence.
-- **Accept**: smoke test simulates 2+ boss kills and asserts a power drop
-  occurred at the chosen cadence.
+**Defect**: `on_enemy_killed` → `if floor_num % 15 == 0: _drop_power(...)`
+(Main.gd:1305). Boss floors are ≡ 1 (mod 6); `6k+1 ≡ 0 (mod 15)` has no
+solution — never fires.
+
+**Fix**: `run_bosses` is incremented 6 lines above (Main.gd:1299). Replace
+the condition with `if run_bosses % 2 == 0:` → a guaranteed power on every
+2nd Guardian (bosses #2, #4, #6…). *(cadence: tune)*
+
+**Assert**: set `run_bosses = 1`, kill a spawned boss via
+`on_enemy_killed`, assert a loot entry with `kind == "power"` exists.
 
 ### 1.3 `weaken` has no effect on enemies (Représailles prefix is a no-op)
-- Only `_player_def()` (Main.gd:1077) reads `weaken`. `_enemy_atk()`
-  (Main.gd:1706) must subtract the enemy's own `weaken` status value
-  (floor at some minimum, e.g. 1).
-- **Accept**: smoke test applies weaken to an enemy and asserts its effective
-  attack drops.
+**Defect**: only `_player_def()` (Main.gd:1077) reads the `weaken` status.
+`_enemy_atk(e)` (Main.gd:1706) ignores it, so the armor prefix `renvoi`
+(Main.gd:1252) applies a status nothing reads.
 
-### 1.4 Boss shield-guardians spawn anywhere on the map
-- `_boss_on_spawn` uses `dungeon.random_floor_tiles(...)` over the whole map
-  (Main.gd:534). Spawn them within ~6 tiles of the boss instead (reuse
-  `_free_adjacent` / a radius-limited sampler; fall back to global only if no
-  local tile exists).
-- Also **kill remaining guardians when their boss dies** (they currently
-  linger as inert 0-ATK husks — check `guard_for` in `on_enemy_killed`).
-- **Accept**: smoke test spawns a guardian boss and asserts all its guardians
-  are within radius; killing the boss removes them.
+**Fix** in `_enemy_atk`, after the pack bonus:
+```gdscript
+if e.has_status("weaken"):
+    a -= int(round(e.status_value("weaken")))
+return maxi(1, a)
+```
+Covers all paths: melee, ranged (`_enemy_ranged_attack`), and charger
+(charger multiplies `e.atk` before calling `_enemy_attack_player`, which
+routes through `_enemy_atk` — verified).
+
+**Assert**: apply `apply_weaken(enemy, 3, 3.0)`, assert
+`main._enemy_atk(enemy) == maxi(1, enemy.atk - 3)`.
+
+### 1.4 Boss shield-guardians spawn anywhere / linger after boss death
+**Defect A**: `_boss_on_spawn` places guardians via
+`dungeon.random_floor_tiles(count, rng, occupied)` — anywhere on the map
+(Main.gd:534). With `resist` 0.85-0.9 the boss is near-immortal until the
+player finds them, potentially hundreds of tiles away in fog.
+
+**Fix A**: add to `Dungeon`:
+```gdscript
+func random_floor_tiles_near(center: Vector2i, radius: int, count: int,
+        rng: RandomNumberGenerator, exclude: Array) -> Array
+```
+Filter `reachable_tiles` by Chebyshev distance ≤ radius (build the filtered
+list once, then sample like `random_floor_tiles`). Call it with
+`radius = 6` from `_boss_on_spawn`; if it returns fewer than `count`, top up
+from the global sampler (degenerate tiny-arena case).
+
+**Defect B**: when the boss dies, its `stationary` 0-ATK guardians remain as
+inert husks.
+
+**Fix B**: in `on_enemy_killed`, inside the `if e.is_boss:` branch, before
+the reward logic:
+```gdscript
+for g in enemies.duplicate():
+    if int(g.ai.get("guard_for", 0)) == e.get_instance_id():
+        if map_view != null: map_view.fx_death(g)
+        enemies.erase(g)
+```
+Dissolve silently (no shards/XP — do NOT route through `on_enemy_killed`,
+that would recurse and pay the player), plus one log message
+(« Les gardiens se dissipent avec leur maître. »). **Trap**: iterate over
+`enemies.duplicate()` since you erase while iterating.
+
+**Assert**: spawn the Seigneur Fantôme via `_make_enemy` +
+`_boss_on_spawn`; assert every guardian within Chebyshev 6 of the boss;
+kill the boss; assert no entity with `guard_for` remains.
 
 ### 1.5 Uncapped dodge / crit / lifesteal
-- `Entity.recompute_stats` (Entity.gd:240-255) never clamps. Caps:
-  `dodge_chance ≤ 0.60`, `crit_chance ≤ 0.75`, `lifesteal_pct ≤ 0.50`
-  (constants in `Data.gd`).
-- **Accept**: smoke test stacks dodge sources past the cap and asserts the
-  clamp.
+**Defect**: `Entity.recompute_stats` (Entity.gd:240-255) never clamps.
+Voile d'Ombre (+20 % dodge) + the repeatable Agilité talent (+10 % each) +
+affixes reach 100 % dodge → immortality.
+
+**Fix**: constants in `Data.gd`:
+```gdscript
+const CAP_DODGE := 0.60
+const CAP_CRIT := 0.75
+const CAP_LIFESTEAL := 0.50
+```
+Clamp in `recompute_stats` next to the existing `speed = max(20, speed)`
+floor: `dodge_chance = minf(dodge_chance, Data.CAP_DODGE)` etc. Harmless for
+enemies (they never set these stats).
+
+**Assert**: stack three `{"mods": {"dodge_chance": 0.30}}` talents, recompute,
+assert `dodge_chance == 0.60`.
 
 ### 1.6 Forge amplifies maluses
-- `forge_choice` (Main.gd:2068-2089) scales bonuses by sign
-  (`signi(int(v))`) → negative stats get MORE negative. Skip non-positive
-  values (leave maluses untouched).
-- **Accept**: forging an item with `speed: -5` leaves it at -5.
+**Defect**: `forge_choice` (Main.gd:2076-2082) boosts each bonus by ±30 %
+respecting the sign (`signi(int(v))`) — `speed: -5` becomes `-7`.
 
-### 1.7 AZERTY-hostile input
-- `_unhandled_input` compares `event.keycode` (Main.gd:731). Switch to
-  `event.physical_keycode` (minimum), or better: define actions in the
-  InputMap (project.godot) — `move_up/down/left/right`, `wait`, `ability`,
-  `inventory`, `cancel` — and use `Input.is_action_*` / `event.is_action_*`.
-  Keep arrows + HJKL working.
-- **Accept**: movement works from physical WASD positions regardless of layout.
+**Fix**: in both branches skip non-positive values (`int(v) <= 0` /
+`float(v) <= 0.0` → `continue`). The existing `boosted` flag then correctly
+falls through to the `bonus["atk"] += 2` consolation for all-malus items.
+
+**Assert**: forge an item with `{"atk": 4, "speed": -5}`; assert speed still
+−5 and atk > 4.
+
+### 1.7 Layout-dependent input (WASD broken on AZERTY)
+**Defect**: `_unhandled_input` matches `event.keycode` (Main.gd:731) —
+layout-dependent, and nothing is rebindable.
+
+**Fix**: define actions in `project.godot` `[input]` (preferred over code so
+users can edit): `move_up`, `move_down`, `move_left`, `move_right`, `wait`,
+`ability`, `inventory`, `cancel`. Each movement action binds the
+**`physical_keycode`** of W/A/S/D **plus** the arrows **plus** H/J/K/L
+(physical); `wait` = `.` and KP5; `ability` = Space and E; `inventory` = I;
+`cancel` = Escape. Rewrite `_unhandled_input` matches as
+`event.is_action_pressed("move_up")` etc. (default `allow_echo=false`
+preserves the current echo filtering). Movement handling moves to polling in
+Phase 3.4 — for now a straight translation is fine.
+
+**Verify**: in-game (xvfb) the physical WASD positions move Aria regardless
+of layout; smoke test unaffected (it calls `try_move` directly).
 
 ### 1.8 No pause / no way to quit a run
-- In `State.PLAYING`, Escape opens a pause overlay: **Reprendre / Options /
-  Abandonner l'ascension**. Abandon banks the run's Shards like death does
-  (reuse the `game_over` banking path; a small penalty like ×0.75 is
-  acceptable — document the choice) and returns to title.
-- **Accept**: Escape in-run pauses; abandoning banks shards (smoke-testable
-  via direct method call).
+**Fix**:
+- Add `State.PAUSED` to the enum (Main.gd:6).
+- In `_unhandled_input`, `cancel` while `PLAYING` → `open_pause()`
+  (state = PAUSED, `hud.show_pause()`); `cancel` while PAUSED → resume.
+- `Hud.show_pause()`: overlay with **Reprendre** (`game.close_pause`),
+  **Options** (`show_options` — it already renders over the overlay layer),
+  **Abandonner l'ascension** (`game.abandon_run`).
+- Refactor: change `game_over()` → `game_over(abandoned := false)`. When
+  abandoned: shard banking multiplier ×0.75 *(tune)* applied before
+  `oath_shard_mult()`, summary text « Tu renonces à l'Étage %d. », and the
+  same `record_run` path (an abandoned floor still counts for records —
+  the player genuinely reached it).
+
+**Assert**: `abandon_run()` from PLAYING banks
+`int(round(run_shards * 0.75 * oath_shard_mult()))` and lands in GAMEOVER.
 
 ### 1.9 UI breaks off 16:9
-- HUD is absolutely positioned against `VIEW = 1280×720` (Hud.gd:7,79,191,304;
-  TownView.gd:11) while `project.godot` uses `stretch/aspect="expand"`.
-  Either (a) anchor sidebar/log/buttons to viewport edges with `PRESET_*`
-  anchors and derive `play_area()` from the real viewport size, or
-  (b) switch to `aspect="keep"` (letterboxing) and document it. Option (a)
-  preferred.
-- **Accept**: resize the window to 4:3 and 21:9 → sidebar hugs the right edge,
-  log hugs the bottom, no floating panels (verify via xvfb screenshot).
+**Defect**: `stretch/aspect="expand"` (project.godot:23) resizes the
+viewport with window aspect, but the HUD is absolutely positioned against
+`VIEW = 1280×720` (Hud.gd:7, sidebar panel Hud.gd:79, log Hud.gd:191, hub
+button Hud.gd:304; TownView.gd:11).
+
+**Fix** (option a — anchors):
+- Sidebar panel: `set_anchors_preset(PRESET_RIGHT_WIDE)`,
+  `custom_minimum_size.x = SIDEBAR_W`, `offset_left = -SIDEBAR_W`.
+- Log panel: `PRESET_BOTTOM_WIDE`, height `LOG_H - 10`,
+  `offset_right = -SIDEBAR_W - 12` (log spans the play area only).
+- Hub back button: `PRESET_TOP_RIGHT` with offsets.
+- `Hud.play_area()` returns
+  `get_viewport().get_visible_rect().size - Vector2(SIDEBAR_W, LOG_H)`.
+- `Main._ready`: connect `get_viewport().size_changed` →
+  `map_view.view_size = hud.play_area()`; `refresh()` (re-centers camera).
+- **Trap**: `MapView._vignette_tex` is cached at the first `view_size`
+  (MapView.gd:281) — set it to `null` in the resize handler so it
+  regenerates at the new size.
+- `TownView._draw`: replace the `VIEW` constant with
+  `get_viewport_rect().size` at draw time.
+
+**Verify**: xvfb screenshots at 1280×720, 1024×768, 2560×1080 — sidebar hugs
+the right edge, log hugs the bottom, town stays centered.
 
 ### 1.10 Oath of Poverty leaks a starting bonus
-- « Aucun bonus de départ » but `Pacte de Pouvoir` still grants a starting
-  power (Main.gd:256). Gate it behind `not has_oath("pauvrete")` and update
-  the oath description if needed.
-- **Accept**: smoke test with the oath active starts with zero powers.
+**Defect**: « aucun bonus de départ », but the Knowledge node
+`Pacte de Pouvoir` still grants its starting power (Main.gd:256 —
+`starts_with_power()` sits outside the `if not has_oath("pauvrete")` guard).
 
-**Phase 1 done when**: all 10 fixed, smoke test green with ≥6 new asserts,
-README updated where it lied (sprites are 32×32 not 24×24, README.md:142;
-Guardian cadence is every 6 real floors, README.md:12 — either fix the text
-or change `ACT_LENGTH` behavior to match the text, your call, but be
-consistent).
+**Fix**: move that block inside the guard.
+
+**Assert**: with `knowledge_nodes = ["pacte_pouvoir"]` and the oath active,
+`start_run` yields `player.powers.is_empty()`.
+
+**Phase 1 done when**: all 10 fixed, smoke test green with the new asserts,
+and README corrected where it lies: sprites are 32×32 not 24×24
+(README.md:142); Guardian cadence is every 6 real floors, not 5
+(README.md:12) — fix the text (do NOT change `ACT_LENGTH` semantics).
 
 ---
 
 ## PHASE 2 — Combat fairness (the felt-quality core)
 
-### 2.1 Shared line-of-sight for ranged combat
-- Implement a Bresenham LoS check in `Dungeon` (blocked by WALL/TREE/ROCK;
-  WATER does not block sight).
-- Enemy ranged/caster attacks (`_enemy_act_ranged`, `_enemy_cast`,
-  Main.gd:1766-1814) require: target within the ATTACKER's range AND clear
-  LoS AND the enemy is inside the player's *current vision* (no shots from
-  the void).
-- Player auto-targeting (`_nearest_enemy_in_range`, Main.gd:959) only
-  considers **visible** enemies with clear LoS. `dash_strike`'s range-99
-  scan obeys the same rule. AoE (`aoe_attack`) only hits targets with LoS
-  from the blast center. The Drone/Turret powers target visible enemies only.
-- **Accept**: smoke test placing a wall between player and archer asserts no
-  hit in either direction.
+### 2.1 Shared line-of-sight
+**New primitive** in `Dungeon`:
+```gdscript
+func has_los(a: Vector2i, b: Vector2i) -> bool
+```
+Standard Bresenham (copy the integer form from `_assets_gen.gd::_line`) from
+`a` to `b`, testing every intermediate cell (exclusive of both endpoints):
+blocked if `tiles[y][x]` is WALL, TREE or ROCK. **WATER does not block
+sight.** Bresenham is not symmetric between octants — that's acceptable;
+adopt the convention that every check is written `has_los(attacker, target)`
+so a given shot is at least self-consistent.
+
+**Apply to the player side** — `_nearest_enemy_in_range` (Main.gd:959) gains
+three filters:
+```gdscript
+if not dungeon.is_visible(e.x, e.y): continue        # fog
+if e.ai.get("behavior", "") == "ambush" and not e.revealed: continue  # mimic
+if not dungeon.has_los(player.pos(), e.pos()): continue
+```
+The mimic filter matters: auto-aim currently *detects* disguised mimics.
+Same filters in `_nearest_enemy_excluding` (bounce chains) — **except** LoS
+between chain hops is deliberately waived (it's arcing magic); visibility of
+the hop target is still required. `aoe_attack` (Main.gd:973): require
+`has_los(center, e.pos())` only when `radius >= 2` (radius-1 bursts always
+hit — walls don't matter at point-blank and it keeps Tourbillon d'acier
+reliable). `pierce_attack` already walks tiles and stops on obstacles —
+correct as is. Drone/turret (`_trigger_powers`) route through
+`_nearest_enemy_in_range` — fixed for free.
+
+**Apply to the enemy side** — `_enemy_act_ranged` (Main.gd:1766) and
+`_enemy_act_caster`'s scream path: shooting/screaming at the player requires
+`dungeon.is_visible(e.x, e.y)` (if the player can't see the enemy, the enemy
+holds fire — vision is radius-based and symmetric, so this is exactly « pas
+de tir depuis le néant ») **and** `dungeon.has_los(e.pos(), player.pos())`.
+When the shot is blocked, fall through to the existing approach/kite
+movement. Summoning does not require visibility (reinforcements arriving
+from darkness is fine and flavorful).
+
+**Assert**: build a 9×9 `Dungeon`, force a ROCK line between a ranged enemy
+and the player, run `_enemy_act(e)` — player HP unchanged; mirror-check
+`_nearest_enemy_in_range` returns null through the same wall.
 
 ### 2.2 Vision vs enemy range
-- `BASE_VISION = 4` (Data.gd:106) vs enemy ranges up to 7. Raise base vision
-  to 6 **or** clamp effective enemy attack range to the player's current
-  vision. Choose one; document it.
+`BASE_VISION := 4` (Data.gd:106) vs enemy ranges up to 7 (Œil du Néant).
+With 2.1 an unseen enemy can no longer fire, but a range-7 enemy would sit
+permanently outside a radius-4 view and never act. Set `BASE_VISION := 6`
+*(tune)*. The torch-pool overlay radius derives from `player.vision`
+(MapView.gd:292) — scales automatically.
 
 ### 2.3 Aggro radius (kill the omniscient AI)
-- Enemies start **dormant**. Wake when: player enters `aggro_radius`
-  (default ~8, overridable per enemy in `ai`), they take damage, or a woken
-  ally within ~4 tiles shouts. Dormant enemies skip their act (but still
-  regen). Bosses always awake.
-- **Accept**: on a large map, distant enemies don't converge from turn 1.
+- `Entity`: add `var awake := false`.
+- Top of `_enemy_act(e)` (Main.gd:1628), before ANY passive trait
+  (disease aura, copy_player, traps — they must not run while dormant):
+```gdscript
+if not e.awake:
+    if e.is_boss or String(e.ai.get("behavior", "")) == "stationary": e.awake = true
+    elif e.hp < e.max_hp: e.awake = true                    # took damage
+    elif dungeon.is_visible(e.x, e.y): e.awake = true       # seen (mutual)
+    elif _chebyshev(e.pos(), player.pos()) <= int(e.ai.get("aggro", 8)): e.awake = true
+    if e.awake and String(e.ai.get("behavior", "")) != "ambush":
+        for o in enemies:                                    # shout
+            if o.is_alive() and not o.awake and _chebyshev(e.pos(), o.pos()) <= 4:
+                o.awake = true
+    else:
+        return                                               # still dormant: skip turn
+```
+**Traps**: mimics (`ambush`) must never shout or be woken by shouts —
+their behavior function already self-gates on adjacency, but gate the shout
+both ways so a woken wolf doesn't out a mimic. Dormant enemies still accrue
+energy in `advance_world` — harmless, they just skip acting. Summoned/spawned
+enemies (`_enemy_summon`, `spawn_on_hit`): set `awake = true` at creation.
+
+**Assert**: on a large forced map, a melee enemy 30 tiles away stays at its
+position after 5 player waits.
 
 ### 2.4 Minimal obstacle avoidance
-- `_enemy_step_toward` is a 2-direction greedy (Main.gd:1668) — enemies stall
-  behind lakes forever. For bosses and elites, add a bounded A* (≤ ~24 steps,
-  cached a few turns); for common enemies, add a third fallback: try the
-  diagonal, then a random perpendicular sidestep.
-- **Accept**: a boss separated from the player by a small lake reaches the
-  player within a reasonable number of turns in a scripted smoke scenario.
+Two tiers:
+- **Everyone**: extend `_enemy_step_toward` (Main.gd:1668) — after the two
+  greedy tries fail, try the two perpendicular directions in rng order (4
+  candidates total). One line of behavior, unsticks most terrain.
+- **Bosses & elites** (`e.ai["smart_path"] = true`, set in `generate_floor`
+  for `is_boss` and elite-buffed enemies): add
+  `Dungeon.next_step(from: Vector2i, to: Vector2i, max_nodes := 400) -> Vector2i`
+  — A* (4-connected, Manhattan heuristic, other entities treated as free —
+  collision already resolves at move time) that aborts at `max_nodes`
+  expansions and returns `NO_TILE`/from on failure; caller falls back to the
+  greedy step. Called at most once per smart entity per turn — a handful per
+  floor, no caching needed.
+
+**Assert**: hand-built map with a 5-tile water pond between boss and player;
+boss reaches adjacency within 25 turns of `pass_turn()`.
 
 ### 2.5 Telegraphed enemy intents
-- Each awake enemy exposes its next action (`attack`, `shoot`, `cast`,
-  `charge`, `flee`, `sleep`) — derive from its behavior + cooldown state
-  BEFORE it acts. `MapView` draws a small intent glyph above visible
-  enemies (⚔ / ➶ / ✦ / ⚡ / 💤). Keep it readable at 32 px.
-- **Accept**: visible in a screenshot; the mapping is data-driven, not a
-  second copy of the AI logic (compute intent in one function reused for
-  display).
+Single source of truth (this must NOT re-implement the AI — it inspects the
+same fields the behaviors read):
+```gdscript
+func enemy_intent(e: Entity) -> String   # in Main (EnemyAI after 7.3)
+```
+Returns, in priority order: `""` for unrevealed mimics (never leak);
+`"sleep"` if `not e.awake`; `"attack"` if `_manhattan == 1`;
+`"charge"` if behavior charger and orthogonally aligned with clear lane;
+`"shoot"` if behavior ranged and dist ≤ ranged_range and `ai_cd <= 0` and
+LoS; `"cast"`/`"summon"` for casters with cooldown ready in range;
+`"flee"` for fleers under their HP threshold; else `"approach"`.
 
-### 2.6 Turn-order strip
-- The energy/speed system is invisible. Add a small horizontal strip (sidebar
-  or top of play area) previewing the next ~8 actors (mini sprite + name on
-  hover), computed by simulating energy accrual without side effects.
-- **Accept**: strip updates every player action; slowed enemies visibly drop
-  back.
+`MapView`: for each visible enemy, draw a 10 px backing rect
+(INK, alpha 0.6) at the cell's top-right corner + a glyph via `_draw_glyph`
+at font size 10: 💤→`z`, attack→`!`, shoot→`↣`, charge→`»`, cast/summon→`✦`,
+flee→`…` *(replaced by generated icons in Phase 8.A.6 — use ASCII-safe
+glyphs now, not emoji)*. Colors: red for attack/charge, orange shoot, violet
+cast, grey sleep/flee.
+
+**Assert**: intent of an adjacent melee enemy is `"attack"`; of a dormant
+one `"sleep"`; of an unrevealed mimic `""`.
+
+### 2.6 Turn-order strip (make the energy system visible)
+Pure simulation in Main:
+```gdscript
+func preview_turn_order(n := 8) -> Array   # of Entity refs
+```
+Copy `(entity, energy, effective_speed())` into local dicts for the player +
+awake living enemies. Loop: for each, `ticks_to_ready =
+ceili((ACTION_COST - energy) / float(speed))`; the minimum acts next
+(ties: player first, then array order); advance all energies by
+`min_ticks * speed`, subtract `ACTION_COST` from the actor, append it;
+repeat until `n` entries. **Must not touch real entities.**
+
+Hud: a horizontal strip above the log (fits in the existing free margin):
+`n` 26×26 panels — mini sprite (`TextureRect`, lazy-load
+`res://assets/%s.png`, nearest filter; fallback: glyph label in the entity's
+color), player's panel border in ACCENT. Rebuild inside `refresh()`
+only when the computed order changed (cache an Array of instance ids).
+
+**Assert**: with player speed 100 and one enemy speed 200, preview begins
+`[player, enemy, enemy, player]` (player has the energy head start from
+`generate_floor`).
 
 ### 2.7 Enemy inspection
-- Hovering (or a `x`-key examine cursor) over a visible enemy shows a tooltip:
-  name, HP, ATK, speed, behavior label, on-hit status, resists/weaknesses —
-  all straight from the entity/`ai` dict. Mimic shows chest info until
-  revealed (don't leak it — also stop drawing the HP pip for unrevealed
-  mimics, MapView.gd:417).
-- **Accept**: tooltip shows correct data for 3 different enemy archetypes.
+- **Hover**: `MapView` gets `func tile_at_mouse() -> Vector2i` =
+  `floor(get_local_mouse_position() / CELL)` (local coords already include
+  the camera offset since `position` is the camera). In `_process`, when the
+  hovered tile holds a visible living enemy (skip unrevealed mimics), call
+  `hud.show_inspect(e)`; else `hud.show_inspect(null)`.
+- **Hud**: new sidebar section `INSPECTION` (between ÉTATS and ÉQUIPEMENT)
+  filled on demand: name; `PV x / y`; `ATK n` (+ « (meute) » when
+  `ai.pack`); `VIT n`; behavior label from a FR table
+  (`melee→Corps à corps, ranged→Tireur, caster→Invocateur/Hurleuse,
+  charger→Chargeur, fleer→Fuyard, teleporter→Insaisissable`); on-hit status
+  (« Au contact : Poison (3 t) »); resist lines (« Résiste au physique
+  60 % » / « Vulnérable à la magie » for negative values; « Craint le feu »
+  for weak_fire; « Insensible au feu »). All read straight from `e` and
+  `e.ai` — no new data.
+- Keyboard parity can wait; note it as a TODO in code.
 
-**Phase 2 done when**: all six in, smoke test green, and a manual xvfb
-screenshot shows intents + turn strip rendering correctly.
+**Phase 2 done when**: all six in, smoke test green, and one xvfb screenshot
+shows intents + turn strip + inspection panel simultaneously.
 
 ---
 
 ## PHASE 3 — Feel & polish pass (the “real game” signals)
 
-Do these in order; they are cheap and transform perception.
-
 ### 3.1 Pixel font
-- The whole UI uses `ThemeDB.fallback_font`. Add a bitmap pixel font
-  (generate one via `_assets_gen.gd` as a texture font, or add a public-domain
-  .ttf like m5x7 — CC0 assets are acceptable) and route ALL text through it:
-  set a default theme in `Main._ready`/`Ui.gd` rather than touching every
-  label. Check French diacritics (é è à ç œ) render.
-- **Accept**: screenshot shows the new font on title, HUD, overlays; no
-  missing-glyph boxes on accented text.
+Two acceptable routes — try A, fall back to B:
+- **A (preferred)**: vendor a CC0 pixel TTF (e.g. *monogram* — CC0; check
+  the license file into `assets/fonts/` alongside it). Verify French
+  diacritics (é è ê à ç ù ô î ï œ « » −) render — this is the gate; a font
+  missing them is disqualified.
+- **B (if network policy blocks downloads, or diacritics fail)**: generate a
+  BMFont from code: `_assets_gen.gd` renders a 6×9 glyph grid atlas PNG
+  (ASCII 32-126 + the accented set above) and writes the matching `.fnt`
+  descriptor; Godot 4 loads BMFont natively. More work, fully on-brand
+  (everything generated).
+
+Integration: build one `Theme` in `Ui.gd` (`static func theme()`) — default
+font + default font size 16 — and assign `get_window().theme` in
+`Main._ready`. Existing per-label `font_size` overrides keep working; audit
+sizes so they land on multiples that keep the bitmap crisp (16/32; the
+current 10-13 px micro-labels move to the font's native small size).
+**Trap**: `MapView`/`TownView` draw text via `ThemeDB.fallback_font`
+(`_font` members) — point them to the new font resource explicitly.
 
 ### 3.2 Sound
-- Add a tiny SFX layer (`Sfx.gd` autoload, `AudioStreamPlayer` pool).
-  Generate the 10 core sounds procedurally as WAV at build time (a
-  `_sfx_gen.gd` sibling of `_assets_gen.gd` — square/noise blips are fine and
-  fit the aesthetic) or add CC0 files: hit, crit, kill, pickup, level-up,
-  stairs, purchase, heal, UI click, danger/boss.
-- Hook them: `_player_attack`, `on_enemy_killed`, `_pickup_loot_at`,
-  `_check_level_up`, `_node_cleared`, shop buy, `use_consumable`, UI buttons
-  (via `Ui.button`), boss spawn.
-- Volume sliders (master/SFX) in Options, persisted in `save.json`.
-- **Accept**: headless-safe (no crash without audio device); options persist.
+- **Generation** (`_sfx_gen.gd`, SceneTree script, same pattern as the asset
+  generator): synthesize PCM16 mono 22 050 Hz into `AudioStreamWAV`
+  (`format = FORMAT_16_BITS`, set `data`), `save_to_wav("res://assets/sfx/<id>.wav")`.
+  Ten recipes *(all tune)*:
+  `hit` 60 ms white-noise burst, exponential decay, mixed with a 150 Hz sine
+  thump; `crit` = hit + square chirp 400→900 Hz 80 ms; `kill` saw sweep
+  300→80 Hz 150 ms; `pickup` two square blips 660/990 Hz 40 ms;
+  `levelup` square arpeggio 523/659/784 Hz 60 ms each; `stairs` filtered
+  noise swell 200 ms; `buy` sine 1320 Hz with fast decay ×2; `heal` sine
+  swell 440→660 Hz 250 ms; `ui` 10 ms square tick; `danger` two 110 Hz
+  square pulses. Normalize peaks to −6 dBFS.
+- **Playback**: new autoload `Sfx` (register in project.godot): pool of 8
+  `AudioStreamPlayer`s, `Sfx.play(id: String, vol_db := 0.0)` — lazy-load
+  streams, round-robin the first idle player, apply master SFX volume.
+  Headless-safe by construction (playing into a null device doesn't crash;
+  still guard `ResourceLoader.exists`).
+- **Hooks**: `_player_attack` (hit/crit), `on_enemy_killed` (kill; danger on
+  boss), `_bag_add`/`_pickup_loot_at` (pickup), `_check_level_up` (levelup),
+  `_node_cleared` (stairs), `buy_shop_item`/`buy_shop_heal` (buy),
+  `use_consumable` heal effects (heal), `Ui._style_button` — connect each
+  button's `pressed` to `Sfx.play("ui")` centrally in `Ui.button()`.
+- **Settings**: `GameState` gains `settings := {"sfx_vol": 0.8,
+  "music_vol": 0.8, "screenshake": true}`, persisted in the save (see 7.2);
+  Options screen gets two `HSlider`s + the shake toggle.
 
-### 3.3 Movement & combat juice
-- Tween entity movement between tiles (~0.08 s, `MapView` visual offset only —
-  logic stays instant), attack lunge already exists (`fx_attack`).
-- Floating damage numbers (crit = bigger/gold, heal = green) as a `MapView`
-  FX; hook where `take_damage`/`heal` results are known in Main.
-- 2-frame hit-stop on player crits; 3-4 px screenshake on crit/boss rage
-  (offset `MapView.position`, respect an Options toggle).
-- **Accept**: screenshot mid-combat shows damage numbers; shake toggle works.
+### 3.3 Movement & combat juice (all inside MapView; logic stays instant)
+- **Tweened movement**: `_vis_pos: Dictionary` (instance_id → Vector2
+  pixels). Each `_process`:
+  `vp = vp.lerp(logical_px, minf(1.0, delta * 14.0))` *(≈80 ms; tune)*;
+  entities draw at `_vis_pos` instead of the cell rect (extend
+  `_blit_ex_off` to take an absolute px position). Initialize on first
+  sight; snap (no tween) when the entity was previously invisible —
+  otherwise off-screen spawns slide across the map.
+- **Floating damage numbers**: `_floaters: Array` of
+  `{text, color, px, t}`; `fx_damage(pos: Vector2i, amount: int, kind)`
+  with kinds `hit` (white 12 px) / `crit` (gold 16 px) / `player_hit`
+  (red) / `heal` (green, "+n"); rise 14 px over 0.6 s, alpha fade, drawn
+  after entities. Hooks in Main: `_player_attack` (after `dealt`),
+  `_enemy_hit_player`, `_trigger_weapon_prefixes`, DoT tick in
+  `_begin_turn`, the lifesteal/potion/rest heal sites.
+- **Hit-stop**: `_freeze_until: float`; on player crit set
+  `_anim_t`-freeze for 0.05 s (skip advancing `_anim_t` and `_vis_pos`
+  lerps while frozen). Do NOT touch `Engine.time_scale`.
+- **Screenshake**: Main writes `map_view.base_position` (rename in
+  `_update_camera`); MapView applies
+  `position = base_position + Vector2(rng ±_shake_mag)` in `_process`,
+  `_shake_mag` decaying ×0.85/frame. `fx_shake(4.0)` on player crit and
+  boss rage. Respect `GameState.settings.screenshake`.
 
 ### 3.4 Input responsiveness
-- Hold-to-repeat movement (initial delay ~0.25 s, repeat ~0.09 s) via
-  `_process` polling of the InputMap actions from 1.7 — but only in
-  `State.PLAYING`, and never faster than the game can resolve turns.
-- Keyboard navigation of overlays: reward/event/rest/levelup buttons
-  selectable with arrows + Enter (grab focus on first button when shown).
-- **Accept**: holding a direction walks smoothly; a full run is playable
-  without the mouse.
+- Movement moves from `_unhandled_input` to polling in `Main._process`
+  (PLAYING only): on `is_action_just_pressed` act immediately and set
+  `_repeat_at = now + 0.25`; while held and `now >= _repeat_at`, act and set
+  `_repeat_at = now + 0.09` *(tune)*. Remove the four movement cases from
+  `_unhandled_input` (keep wait/ability/inventory/cancel there).
+  Hub movement (`_hub_try_move`) gets the same treatment.
+- **Overlay keyboard nav**: every overlay builder in Hud
+  (`show_floor_reward`, `show_event`, `show_rest`, `show_levelup`,
+  `show_forge`, `show_pause`, shop) calls `grab_focus()` on its first
+  button. Godot's built-in focus chain (arrows/Tab) plus Enter-to-press
+  then works with zero extra code. Ui buttons keep default `FOCUS_ALL`.
 
-### 3.5 Ambient particles per biome
-- `MapView`: lightweight `CPUParticles2D` (or hand-drawn in `_draw`) per
-  biome — leaves (forêt), snow (toundra), ash (volcan), fireflies (marais),
-  dust (désert), pollen (plaine) + torch embers near Aria. Data-driven from
-  a new `ambient` key in `Data.BIOMES`.
-- **Accept**: screenshots of 2 biomes show distinct ambience; no perf hit.
+### 3.5 Ambient particles per biome (draw-based, no scene nodes)
+- `Data.BIOMES[*]` gains
+  `"ambient": {"color": Color, "count": int, "vel": Vector2, "size": int}`:
+  plaine = pollen (gold, drift up-right, 18), forêt = leaves (green,
+  down-drift, 24), désert = dust (bone, fast horizontal, 16), toundra =
+  snow (white, slow down, 40), marais = fireflies (poison green, sinusoidal
+  hover, 14), volcan = ash/embers (ember, rise, 22).
+- MapView `_process`: maintain `_motes: Array` of `{px, phase}` in
+  **view-space**; advance by `vel * delta` (+ `sin(phase + _anim_t)` sway
+  for fireflies), wrap around `view_size`; draw as 1-2 px rects at
+  `origin + px` after atmosphere, alpha ~0.5. Rebuild the pool when
+  `dungeon.biome` changes. Skip when `dungeon == null`.
 
-### 3.6 Death recap that sells the next run
-- Track cause of death (last damage source name) in Main; show on game over:
-  « Tuée par X à l'Étage N ». Add a compact run timeline (per act: floors
-  cleared, boss beaten, best item) and « à N étages de ton record » when
-  close.
-- **Accept**: dying to a specific enemy names it on the death screen.
+### 3.6 Death recap
+- Main: `var last_damage_source := ""` — set at every
+  `player.take_damage` site: enemy display_name (melee/ranged/explosions),
+  « un piège », « les toxines » (DoT in `_begin_turn`), event names.
+- `game_over` adds `stats["killed_by"] = last_damage_source`;
+  `Hud.show_gameover`/`_build_run_journal` renders « Terrassée par %s » and,
+  when `0 < best_floor - floor <= 3`, « À %d étage(s) de ton record. ».
+- Run timeline: `run_timeline: Array` — push entries at biome entry
+  (« Étage %d — %s »), boss kills, power pickups; cap 40; render the last
+  10 as a compact list in the game-over column.
 
 ### 3.7 Log & seeds
-- Scrollable message log (keep last ~200 messages; RichTextLabel with
-  scroll, autoscroll on new).
-- Seed the run: display seed on HUD/death screen; `start_run` accepts an
-  optional seed; route ALL gameplay randomness through `Main.rng` (replace
-  `pool.shuffle()` in Hud.show_levelup, Hud.gd:830, and any global-RNG use).
-- **Accept**: two runs with the same seed and same inputs produce identical
-  first floors (smoke-testable).
+- `MAX_LOG` 8 → 200 (Main.gd:8). Hud log: `scroll_active = true`,
+  `fit_content = false`, after assignment call
+  `log_label.scroll_to_line(log_label.get_line_count() - 1)`. Visual panel
+  size unchanged; wheel scrolls history.
+- **Seeded runs**: `start_run(loadout_id, forced_seed := -1)`: if −1,
+  `rng.randomize()` then read back `run_seed = rng.seed`; else
+  `rng.seed = forced_seed`. Display the seed in the game-over journal and
+  the pause menu (copyable via log message).
+- **Unify RNG**: the one non-`Main.rng` gameplay roll is
+  `pool.shuffle()` in `Hud.show_levelup` (Hud.gd:830) — replace with a
+  3-pick using `game.rng.randi_range` without replacement (and move the
+  pick into Main so Hud stays logic-free: `game.roll_talent_choices()`).
+  Grep for `randi(`/`randf(`/`shuffle(` outside `Main.rng`/generators to
+  confirm nothing else leaks.
 
-**Phase 3 done when**: all seven in, smoke test green, README « Interface »
-section updated.
+**Assert**: two `start_run("melee", 12345)` calls produce identical
+`dungeon.start`, `dungeon.stairs`, enemy count and first-enemy position.
+
+**Phase 3 done when**: all seven in, smoke test green (incl. the seed
+assert), README « Interface »/« Contrôles » updated (pause, scrolling log).
 
 ---
 
 ## PHASE 4 — The hook: elemental terrain (vertical slice first)
 
-Full rationale in VISION.md §2.A. **Build ONE biome's interaction first,
-validate, then extend.**
+Rationale: VISION.md §2.A. **Build the Forêt fire slice first, validate fun,
+then extend.** All randomness through `Main.rng`.
 
-### 4.1 Vertical slice — fire spreads in the Forêt biome
-- New terrain state layer in `Dungeon` (e.g. `effects[y][x]`: none/burning/
-  burnt/frozen…, with per-cell timers), ticked once per player turn from
-  `advance_world`.
-- Rules for the slice:
-  - Any `burn` application on/adjacent to a TREE tile ignites it (sources:
-    the `ardent` prefix, `ember`/`fireball` skills, Élémentaire de feu,
-    explosions).
-  - A burning tree: emits fire FX, each tick deals burn to entities in the
-    8 neighbors, then has a chance (~35 %/tick) to spread to adjacent TREEs;
-    after 3-4 ticks it becomes `burnt` ground (**walkable** — obstacle gone).
-  - Entities standing in flames get the existing `burn` status (respect
-    `immune_fire` / `weak_fire`).
-  - Fog rules apply: you only see fire you can see.
-- `MapView`: burning overlay (animated 2-frame flame from `_assets_gen.gd`)
-  + `burnt` ground variant sprite.
-- **Accept**: smoke test scenario — place trees, ignite one, tick N turns,
-  assert propagation, damage to an adjacent entity, and tile → walkable burnt
-  ground. Manual screenshot of a burning forest.
+### 4.0 Substrate: the effects layer
+- `Dungeon` gains:
+  - `var effects: Array` (grid of int: `EFF_NONE/EFF_BURNING/EFF_BURNT/
+    EFF_FROZEN/EFF_CLOUD`), `var effect_timer: Array` (grid of int),
+    `var active_effects: Array[Vector2i]` — **iterate this list, never the
+    full grid** (640×400 exists).
+  - `is_walkable` change: FROZEN water is walkable
+    (`t == WATER and effects == EFF_FROZEN → true`); BURNT is just FLOOR
+    (the tile itself is rewritten, see below).
+  - `func rebuild_reachability()` — re-runs `_reachable_set` +
+    `reachable_tiles` cache; call after any tile mutation (burnt tree,
+    freeze, melt). **Trap**: the cache exists (Dungeon.gd:80) and silently
+    goes stale otherwise.
+- Main: `func _tick_terrain()` called once per player action, at the top of
+  `_player_acted` (terrain moves at player cadence, before enemies act).
 
-### 4.2 Evaluate, then extend (only if 4.1 plays well)
-- **Eau + foudre**: lightning damage on a target standing in/adjacent to
-  WATER chains (reuse `bounce_attack`) to all enemies in the same connected
-  water body (flood-fill, cached).
-- **Givre + eau**: slow/frost effects on WATER freeze it into walkable ice
-  for ~10 turns (new tile state; melts back; fire melts it instantly).
-- **Marais**: poison clouds (cell effect) left by some enemies/deaths.
-- **Volcan**: 1-2 slow lava fronts advancing along a precomputed path.
-- Each interaction: same acceptance pattern — a scripted smoke scenario +
-  a screenshot.
-- Update weapon prefixes/skills descriptions to mention terrain synergies.
+### 4.1 Vertical slice — fire spreads in the Forêt
+- `func ignite(p: Vector2i) -> bool` (Main): if `tiles[p] == TREE` and
+  effect is NONE → set BURNING, timer 4, append to `active_effects`,
+  message + `Sfx.play("danger")` first time per floor.
+- Ignition sources (hook exactly these):
+  - skills with `"status": "burn"` (`ember`, `fireball`'s explosion): after
+    resolving, attempt `ignite` on every TREE within the blast radius /
+    adjacent to the struck target;
+  - the `ardent` weapon prefix: 25 % *(tune)* per hit to ignite one TREE
+    adjacent to the target;
+  - Élémentaire de feu death explosion and cultist sacrifice: ignite TREEs
+    in radius;
+  - burning entities do NOT ignite terrain (v1 — keeps chains readable).
+- `_tick_terrain()` per BURNING cell:
+  1. `timer -= 1`;
+  2. damage: every entity (player included!) in the 8-neighborhood gets
+     `apply_burn(ent, 2, 2.0 + floor_num * 0.2, 3)`;
+  3. spread: each 4-neighbor that is TREE with EFF_NONE → 35 % *(tune)*
+     becomes BURNING (timer 4);
+  4. at timer 0: effect = EFF_BURNT, `tiles[p] = FLOOR`, `decor[p] = ""`,
+     mark a burnt-ground flag MapView can render (dark scorch overlay; a
+     dedicated sprite arrives with Phase 8), and set a
+     `_reach_dirty = true` flag — call `rebuild_reachability()` once at the
+     end of the tick, not per cell.
+- Fog discipline: burning/burnt render only on explored tiles, full color
+  only in vision — same rules as everything else. Fire keeps ticking in the
+  fog (you hear about it only when you see it).
 
-### 4.3 Knockback (multiplies the hook)
-- Add a push primitive (`push(entity, dir, tiles)`): moving into water =
-  brief `slow` + repositioning; into fire = burn; into a trap = trigger it.
-  Give it to: a new melee skill, 1-2 enemies (Bélier-type), and the charger
-  behavior (small knock on charge hit).
-- **Accept**: smoke scenario pushes an enemy into water and asserts the
-  status.
+**Assert (scripted)**: build a small Dungeon by hand (fill FLOOR, plant a
+5-TREE row, `rebuild_reachability`), `ignite` one end, run `_tick_terrain`
+×12 with spread chance forced to 1.0 (expose the chance as a `Data`
+constant so the test can set it): all 5 trees end BURNT and walkable; an
+entity parked adjacent accumulated burn stacks.
 
-**Phase 4 done when**: Forêt slice + at least two more biome interactions
-shipped, each with tests; VISION.md updated with what was validated/cut.
+**→ STOP. Play it (xvfb + manual run), screenshot a burning forest, decide
+it's fun. Only then continue.**
+
+### 4.2 Extensions (each = same pattern: rule, hooks, scripted assert)
+- **Element tags**: add `"elem"` to `Data.SKILLS` entries — `bolt`,
+  `arc_bolt`, `chain_lightning` = `"lightning"`; `fireball`, `ember` =
+  `"fire"`; `frost_nova`, and the `givre` prefix = `"frost"`.
+- **Water conducts lightning**: entities never stand IN water (unwalkable) —
+  the rule is **adjacency**: when a lightning skill damages a target that is
+  4-adjacent to a WATER cell, flood-fill that water body (cap 500 cells,
+  cache per cast) and deal 50 % of the hit to every OTHER enemy 4-adjacent
+  to the body. Message + a crackle along the shoreline (reuse fx_hit on
+  targets).
+- **Frost freezes water**: a frost skill striking a target adjacent to
+  water (or `frost_nova` centered near it) sets EFF_FROZEN on the connected
+  water cells within radius 4 of the impact, timer 10 player-turns →
+  reverts. Walkable while frozen (`is_walkable` above +
+  `rebuild_reachability`). On melt with an entity standing on it: relocate
+  to nearest walkable tile, 3 damage, slow 2 (« la glace cède ! »). Fire
+  (any) on a FROZEN cell melts it instantly.
+- **Poison clouds (marais)**: serpents and zombies leave, on death (30 %),
+  EFF_CLOUD radius 1, timer 3; entities inside get
+  `apply_poison(ent, 2, 3.0)` per tick. Render: translucent poison-green
+  circles.
+- **Lava (volcan)**: volcan's WATER is lava. No passive adjacency damage
+  (too punishing). Being **pushed into** lava (4.3): 8 + floor damage +
+  burn 3, entity stays on its origin tile (bounced back).
+
+### 4.3 Knockback (multiplies every rule above)
+```gdscript
+func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void
+```
+Per step: `next = pos + dir` —
+walkable & free → move; occupied by enemy → both take 2, stop;
+WATER (volcan) → lava rule above, stop; WATER (elsewhere) → 3 dmg + slow 2,
+stop (stays on last valid tile); FROZEN → slides (continue 1 extra step);
+BURNING-adjacent destination → burn applies via the normal tick; hazard
+tile → trigger it against the pushed enemy (extend `_trigger_hazard_at`
+with an entity parameter — traps finally cut both ways).
+Sources: new commune melee skill `shield_bash` « Coup de bélier »
+(cd 3, power 0.8, push 2); the charger behavior pushes 1 on hit; the
+Bourreau pushes 2.
+
+**Phase 4 done when**: slice + ≥2 extensions + knockback shipped, each with
+a scripted assert; skill/prefix descriptions updated to mention terrain;
+VISION.md updated with what was validated/cut.
 
 ---
 
 ## PHASE 5 — Balance instrumentation & tuning
 
-### 5.1 Autoplay harness
-- `_balance_sim.gd` (SceneTree script, headless): plays N runs (e.g. 200)
-  with a simple policy (move toward nearest visible enemy, use ability when
-  ready, drink potion < 35 % HP, equip strict upgrades). Outputs CSV:
-  seed, death floor, death cause, level, kills, shards, best item rarity,
-  turns played.
-- **Accept**: one command produces the CSV; document it in README.
+### 5.1 Autoplay harness (`_balance_sim.gd`, SceneTree script)
+- Instantiate `Main.tscn` like the smoke test. Policy per state:
+  - PLAYING: drink a heal consumable if `hp < 35 %`; `use_ability()` if
+    ready and a visible enemy is in range; else step via
+    `dungeon.next_step(player.pos(), target)` toward nearest visible enemy,
+    else toward `dungeon.stairs` (2.4's A* reused — this is why it lives in
+    Dungeon).
+  - CHOICE floor reward: equip if `_rarity_rank` beats the current slot
+    item, else heal if `hp < 60 %`, else shards. Shop: buy heal if
+    `hp < 50 %` and affordable, else leave. Event: choice 0. Rest: heal.
+  - LEVELUP: `pick_talent` first offer. INVENTORY: never opens.
+  - Safety: hard cap 20 000 actions per run, then record as `"stalled"`.
+- Runs: `OS.get_environment("SIM_RUNS")`, default 50 (GDScript on 640×400
+  maps is slow — expect minutes; that IS the measurement).
+- Output `user://balance_sim.csv`:
+  `seed,death_floor,killed_by,level,kills,turns,shards_banked,best_rarity,stalled`
+  + print p25/p50/p75 of death_floor at the end.
 
-### 5.2 Tune with data (targets, adjust in `Data.gd`/`Main.gd`)
-- Median death floor for a no-meta run: ~10-14. If the sim says otherwise,
-  adjust: enemy scale slope (Main.gd:593, currently ×1+0.12/floor on HP&ATK),
-  scale enemy defense too (currently unscaled, Main.gd:603), item scale slope
-  (Data.gd:628).
-- **Decouple XP from shard value** (Main.gd:1268): add an `xp` field per
-  enemy def; soften the level flood (curve like `10 + level² × 3`).
-- Economy pass: shop prices vs income, salvage, Moisson values, Knowledge
-  node costs, oath rewards. Make the gamble event an actual gamble
-  (negative-EV-tinged risk, Main.gd:1992).
-- Enemy pool weighting: add optional `max_floor`/weights so floor 30 isn't
-  the same 25 monsters with bigger numbers (Data.gd ENEMIES + Main.gd:581).
-- **Accept**: before/after sim CSVs committed (in `docs/` or the PR
-  description), showing movement toward targets.
+### 5.2 Tune with data (targets; all knobs in Data.gd)
+- Target: median no-meta death floor ≈ **12-15**. Levers, in order:
+  enemy scale slope (`_make_enemy`, Main.gd:593 — currently
+  `1 + 0.12/floor` on HP **and** ATK; split the two slopes), **scale enemy
+  defense** (currently unscaled, Main.gd:603 — add ×`1 + 0.06/floor`),
+  item scale slope (Data.gd:628, `1 + 0.08/floor`).
+- **Decouple XP from shards**: `Entity` gains `xp_value`; `_make_enemy`
+  sets it from `def.get("xp", def["shards"])` (add explicit `"xp"` to each
+  ENEMIES/BOSSES entry, starting equal to shards); `on_enemy_killed` uses
+  it. Curve: `xp_to_next(level) = 10 + level * level * 3` *(tune)* —
+  kills the early level flood.
+- Gamble event becomes a gamble: 55 % → +25 shards, 45 % → lose 15 % max HP
+  *(tune)*.
+- Enemy pool weighting: ENEMIES entries gain optional `"max_floor"`;
+  `_pick_enemy_def` filters on it (gobelin/kobold out past ~14 — let weak
+  species retire instead of scaling forever).
+- Commit the before/after CSVs under `docs/balance/` with a dated note.
 
 ---
 
 ## PHASE 6 — Content depth (only after Phase 5 exists)
 
-1. **Talents**: replace at least half of the flat `+stat` talents
-   (Data.gd:703-720) with mechanical ones (DoTs tick twice; +1 projectile
-   bounce; traps become allies; killing a burning enemy spreads fire; etc.).
-   Keep the data-driven `mods` shape where possible; add a `hook` field
-   interpreted by Main for the mechanical ones.
-2. **Elite affixes**: elites get 1 random affix (rapide / explosif /
-   régénérant / voleur / chef de meute…) + a visible tint (modulate) and the
-   affix in their display name — replaces the flat ×1.25 stat sponge
-   (Main.gd:472-476).
-3. **Pool expansion**: artifacts 5 → ~15, powers 5 → ~12, events 7 → ~20
-   (some biome-specific), consumables 4 → ~10 (bombe, antidote, parchemin de
-   téléport, huiles d'arme élémentaires — synergy with Phase 4).
-4. **Merge artifacts + powers into one « Reliques » system** (VISION.md §6):
-   one list, one UI section, rarity tiers; migrate `ARTIFACT_MODS`/`POWER_MODS`
-   into one registry. Update Codex categories and `GameState.discovered`
-   (bump save version, see 7.2).
-5. **Bestiary in the Codex**: monsters + bosses as a category; entries fill
-   in as you fight them (name at first sight, traits after N kills).
-6. **Align biome ↔ act**: make each act happen inside one biome
-   (`BIOME_SPAN` derived from act length) and give each boss a home biome.
-7. Then the pre-existing roadmap: Forge du Hub, Boutique du Hub, dialogues
-   (with the barks system below), lore/endings.
+### 6.1 Mechanical talents (replace ≥8 flat +stat entries)
+Talents gain an optional `"hook": String` consumed at explicit sites
+(`player.has_talent_hook(id)` helper on Entity scanning `talents`):
+| id | Effect | Hook site |
+|---|---|---|
+| `pyromane` | tes ignitions se propagent à 50 % (au lieu de 35 %) et brûlures +1 stack max | `_tick_terrain` spread roll; `apply_burn` cap |
+| `balistique` | +1 rebond et +2 de portée de transpercement | `_cast_skill` bounce/pierce params |
+| `toxicologue` | tes poisons ont une valeur ×1.6 | `apply_poison` (player-sourced calls only — statuses don't track their applier; this is the honest v1) |
+| `echo_arcanique` | 15 % de chances de ne pas consommer la recharge | `use_ability` after cast |
+| `pied_leger` | les pièges ne se déclenchent plus sous tes pas et sont visibles hors vision | `_trigger_hazard_at`; MapView hazard draw |
+| `berserker` | +25 % dégâts tant que tu subis un DoT | `_player_attack` raw calc |
+| `chasseur_nuit` | +2 Vision et +10 % dégâts à distance ≥ 4 | mods + `_player_attack` |
+| `demolisseur` | tes poussées gagnent +1 case et infligent +3 | `push_entity` |
 
-### Narrative barks (cheap, do alongside 6.7)
-- A `Barks.gd` data file: one-liners for Aria (biome entry, low HP, boss
-  rematch, echo encounter), boss intros (2-3 variants keyed on times faced —
-  persist a counter in `GameState`), hub NPC lines reacting to `last_run`
-  (death cause, boss killed). Display: log + a small speech bubble above the
-  speaker in MapView. **One line max, always.**
+### 6.2 Elite affixes (replaces the flat ×1.25 sponge, Main.gd:472-476)
+One affix rolled per elite; name becomes « Élite %s : %s ». `Entity` gains
+`var tint := Color.WHITE`; MapView passes it as the `modulate` argument of
+`draw_texture_rect` in the entity pass.
+| id | Effect | Data | tint |
+|---|---|---|---|
+| rapide | +40 speed | stat | cyan |
+| explosif | explodes on death | reuse `ai.explode` | orange |
+| regenerant | hp_regen 4 | stat | green |
+| voleur | steals 4 shards per hit, returns all on its death | new ai flag, hooks in `_enemy_hit_player`/`on_enemy_killed` | gold |
+| chef | +2 ATK aura to allies within 3 | fold into `_enemy_atk` (scan for a live `chef` nearby) | red |
+Keep a reduced stat bump (+15 % HP) on top.
 
-### Optional signature feature — Echoes (VISION.md §2.B)
-- On death, serialize the build (equipment, talents, skills, powers, level,
-  floor) into `save.json`. Next run, on that floor, spawn « l'Écho d'Aria »:
-  a boss-tier enemy using `copy_player`-style logic but driven by the DEAD
-  build's stats/procs. On kill: pick ONE item from the echo's gear.
-  Cap: one echo stored (newest replaces).
-- **Accept**: die with a distinctive item → next run's echo drops offer
-  contains it.
+### 6.3 Pool expansion
+Artifacts 5 → ~15, powers 5 → ~12, events 7 → ~20 (at least one per biome,
+gated by `dungeon.biome.id`… events fire between floors — gate on the
+*upcoming* floor's biome), consumables 4 → ~10 (bombe = aoe 2 at a thrown
+visible tile; antidote = clear DoT statuses; parchemin de rappel = teleport
+to stairs-adjacent explored tile; huiles d'arme = temp element on hits for
+20 turns, feeding Phase 4). Follow the existing dict schemas exactly.
+
+### 6.4 Merge artifacts + powers into « Reliques » (requires 7.2 first)
+- One registry `Data.RELICS` = ARTIFACTS ∪ POWERS entries with a
+  `"tier"` field; one `player.relics` list; `ARTIFACT_MODS`/`POWER_MODS`
+  merge into `RELIC_MODS`. Keep thin compat wrappers
+  (`has_artifact`/`has_power` delegating) during the change, delete at the
+  end. Hud: one sidebar section. Codex: migrate `discovered["power"]` +
+  `discovered["unique"]`-adjacent artifact keys into `"relic"` in the save
+  migration (7.2). Exclusions (`excludes`) carry over unchanged.
+
+### 6.5 Bestiary in the Codex
+- `GameState`: `discovered["monster"]` + `kill_counts: Dictionary`
+  (sprite id → int, persisted). `on_enemy_killed`: increment +
+  `note_discovery("monster", e.sprite)` (name revealed at first kill;
+  traits line shown at ≥5 kills). Codex: new section listing
+  `Data.ENEMIES + Data.BOSSES` by name / « ??? », traits from the same FR
+  label table as 2.7 (share the function).
+
+### 6.6 Biome ↔ act alignment
+`Data.biome_for_floor` currently spans 12 floors; an act is 6 real floors.
+Change the mapping to derive from acts: biome index =
+`int(map_act / 2) % BIOMES.size()` — requires passing `map_act` (or
+computing it from floor) — simplest: `biome_for_floor(floor)` with
+`BIOME_SPAN := 12` already yields exactly 2 acts per biome **once 1.1 makes
+floors start at 1** — verify the boundaries land after boss floors
+(floors 1-12 = plaine = acts 1-2, boss floors 7 and 13… floor 13 is foret's
+first floor and an act-1 boss — off by one act boundary). Fix by defining
+strata explicitly: biome switches when `map_act` is even, applied in
+`generate_floor` via a biome chosen from `map_act / 2` instead of
+`floor_num`. Give each boss a home biome note in its Data entry (flavor
+only for now).
+
+### 6.7 Barks + the pre-existing roadmap
+- `Barks.gd` (data): pools keyed by trigger — `biome_enter/<id>`,
+  `low_hp`, `boss_intro/<sprite>/<times_faced 0|1|2+>`, `boss_kill`,
+  `echo_seen`; `GameState.boss_faced: Dictionary` persists rematch counts.
+- `Main.bark(speaker_pos, text, color)` → log line + MapView floater
+  (reuse the damage-number pipeline, 2.5 s, italic prefix « Aria : »).
+  Rate-limit: max 1 bark per 10 turns, never repeat the last line. **One
+  line max, always.**
+- Then: Forge du Hub, Boutique du Hub, dialogues, lore/endings — design on
+  arrival, consistent with RESUME_SESSION's notes.
+
+### 6.8 Optional signature — Echoes (VISION.md §2.B)
+- On death, serialize into the save: `echo = {floor, level, loadout,
+  equipment, powers, max_hp, atk}`. **Trap**: item dicts contain `Color`
+  objects (`rarity_color`) — JSON round-trip destroys them. Write a
+  `_color_to_save` / `_color_from_save` pair (store `.to_html()`) applied
+  over equipment dicts, or store only what the echo needs (names, bonus,
+  procs) and rebuild colors from `rarity`.
+- Next run, entering floor `echo.floor`: spawn « l'Écho d'Aria » — sprite
+  `aria`, `tint` arcane, boss-tier flag off, stats: `max_hp = echo.max_hp`,
+  `atk = int(echo.atk * 0.9)`, behavior melee, `awake = true`, carries the
+  echo's `frappe_double`-style proc if its weapon had one. On kill: a
+  CHOICE overlay to claim ONE item of `echo.equipment`. Echo consumed on
+  kill only; one stored (newest replaces). Clear on victory (when endings
+  exist).
 
 ---
 
-## PHASE 7 — Engineering hygiene (continuous, start anytime after Phase 1)
+## PHASE 7 — Engineering hygiene (continuous; start right after Phase 1)
 
-1. **CI**: GitHub Actions workflow — cache the Godot 4.3 binary, run the
-   editor import step, run `_SmokeTest.tscn`, fail on non-zero / missing
-   « SMOKETEST PASSED ». Seed the smoke test RNG for determinism.
-2. **Save versioning**: add `"version": 2` to `save.json`; on load, migrate
-   older shapes (missing keys → defaults). Never crash on an old save.
-   Required before the Reliques merge (6.4).
-3. **Split `Main.gd`** (do this when Phase 2 lands, it touches AI anyway):
-   extract `EnemyAI.gd` (behaviors), `CombatSystem.gd` (attacks/procs/statuses
-   application), `LootSystem.gd` (drops/inventory ops), `RunProgression.gd`
-   (node rolling/acts/rewards). `Main` keeps state + input + orchestration.
-   Pure refactor: smoke test must pass unchanged at each extraction step.
-4. **Freeze `gen.py`**: add a header comment marking `_assets_gen.gd` as the
-   only source of truth, or delete `gen.py` (preferred if nothing imports it).
-5. **Dead code/assets**: remove `knight/mage/ranger` from MapView texture
-   list (MapView.gd:80) and delete unused PNGs; dedupe ASCII glyph collisions
-   (Drake vs Kobold « k », Ours vs boss « B »).
-6. **Explicit `wtype` on unique weapons** (Data.gd UNIQUE_BASES) — delete the
-   name-sniffing `infer_weapon_type` (Data.gd:96).
-7. **HUD rebuild churn**: only rebuild artifact/power/synergy/status boxes on
-   change (dirty flag), not every action (Hud.gd:1017-1074).
-8. **Housekeeping**: LICENSE file (ask the owner which; default MIT for code,
-   note assets are generated), `export_presets.cfg` for Linux/Windows/Web,
-   README corrections (32×32, real Guardian cadence, controls incl. new
-   pause/examine keys).
+### 7.1 CI (do this first — it protects everything else)
+`.github/workflows/smoke.yml`:
+```yaml
+name: smoke
+on: [push, pull_request]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with: { path: godot, key: godot-4.3-stable }
+      - run: |
+          if [ ! -x godot/Godot ]; then
+            mkdir -p godot && curl -sSL -o g.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+            unzip -q g.zip -d godot && mv godot/Godot_v4.3* godot/Godot && chmod +x godot/Godot
+          fi
+      - run: godot/Godot --headless --editor --quit --path . || true   # import pass; may warn
+      - run: test -d .godot                                            # import actually ran
+      - run: godot/Godot --headless --path . res://_SmokeTest.tscn 2>&1 | tee out.log
+      - run: grep -q "SMOKETEST PASSED" out.log
+```
+Also **seed the smoke test** (`seed(4242)` in `_smoketest.gd::_ready`) —
+its random-walk section currently uses the unseeded global RNG (flaky by
+design). Once Phase 8 lands, append the `_art_check.gd` validator as a step.
+
+### 7.2 Save versioning + migration
+- `save_game` writes `"version": 2`. `load_game`: read
+  `int(parsed.get("version", 1))`; a `match` ladder migrates upward
+  (v1→v2: fill `settings` defaults, `kill_counts = {}`, rename codex
+  buckets when 6.4 lands — each schema change bumps the version and adds a
+  branch). Unknown future version: log and load best-effort. **Never crash
+  on any historical save**; assert in the smoke test by feeding a
+  hand-written v1 JSON through `load_game`.
+
+### 7.3 Split `Main.gd` (do when Phase 2 lands — it touches the AI anyway)
+Four `RefCounted` modules, each `_init(game)` holding a back-reference;
+Main keeps thin delegating methods so `Hud`'s `game.*` bindings never
+change. **One extraction per commit, smoke test green after each.**
+- `scripts/EnemyAI.gd`: `_enemy_act*`, `_enemy_step_toward/away`,
+  `_enemy_atk`, `_enemy_cast/summon/sacrifice`, `_count_allies_near`,
+  `enemy_intent`.
+- `scripts/CombatSystem.gd`: `_player_attack`, `_enemy_attack_player`,
+  `_enemy_hit_player`, `aoe/pierce/bounce/dash`, all `apply_*`,
+  `_trigger_weapon_prefixes`, `_fire_prefix_damage`, `push_entity`,
+  `_check_revive`.
+- `scripts/LootSystem.gd`: `_spawn_loot`, `_pickup_loot_at`, `_bag_add`,
+  equip/unequip/salvage/consumable, `_drop_skill/_drop_power`,
+  `_acquire_*`, `_pick_*_def`.
+- `scripts/RunProgression.gd`: `_roll_node_type`, `_advance`,
+  `_node_cleared`, floor rewards, shop/event/rest/forge handlers.
+Shared state (player, enemies, rng, floor_num…) stays on Main; modules
+reach it via `game.`.
+
+### 7.4 Freeze `gen.py`
+Delete it (preferred — nothing imports it) or prepend a frozen-legacy
+header naming `_assets_gen.gd` as sole source of truth. **Must precede any
+Phase 8 work.**
+
+### 7.5 Dead code & assets
+Remove `knight/mage/ranger` from `MapView._load_textures` (MapView.gd:80),
+their `_fig_*`/`_gen_creature` entries, and the PNGs (+ `.import`). Dedupe
+ASCII fallback glyph collisions: Drake `"k"`→`"K"` vs Kobold; Ours `"B"`→
+`"U"` vs bosses (Data.gd ENEMIES).
+
+### 7.6 Explicit `wtype` on unique weapons
+Add `"wtype"` to every arme entry in `Data.UNIQUE_BASES` (17 entries — from
+their names: Arc du Vent = ranged; Bâton/Sceptre = magic; rest melee),
+read it in `_make_unique_item`, then delete `infer_weapon_type`
+(Data.gd:96) and its call site (Data.gd:603).
+
+### 7.7 HUD rebuild churn
+`Hud.refresh` rebuilds artifact/power/synergy/status boxes every action
+(Hud.gd:1017-1074). Cache a fingerprint per box (e.g. joined ids/turns
+string); rebuild only when it changes.
+
+### 7.8 Housekeeping
+LICENSE (ask the owner; default MIT), `export_presets.cfg`
+(Linux/Windows/Web), README corrections beyond Phase 1's, and the branch
+cleanup noted in RESUME_SESSION once the default branch changes.
 
 ---
 
 ## PHASE 8 — Art direction: generator upgrade & 64×64 migration
 
-> **Where it slots**: 8.A (technique upgrades) right after Phase 3 — they
-> multiply the value of every screenshot taken later. 8.B (the 64×64
-> migration) is independent of Phases 4-6 and can interleave with them,
-> wave by wave. Do **not** start 8.B before 8.A is done: redrawing 80+
-> sprites with the old techniques would be wasted work.
-
-### Current state of the generator (read this before touching it)
-
-`_assets_gen.gd` (~2 190 lines) draws every sprite from scratch with pixel
-primitives (`_px/_rect/_ellipse/_trapezoid/_line/_tri_up/_diamond`), plus
-`_glow` (neon halo), `_ground_shadow`, 3-band shading (`_disc_band`/
-`_tri_band`), Bayer 4×4 dithering on grounds, a named identity palette
-(~20 constants: INK/STONE/STEEL/GOLD/ARCANE/CYAN/EMBER…), `TILE := 32`,
-seeded RNG (1337). Each of the ~45 creatures is a bespoke `_fig_*` function
-of 20-40 hardcoded coordinate calls. Buildings use `_new_sized` (64×88).
-The instincts are good (top-left light, outlines, contact shadows, glow
-accents). The ceiling comes from five specific limitations:
-
-1. **Value-only shading**: all ramps are `darkened()/lightened()` — same hue,
-   less/more value. Good pixel art hue-shifts: shadows slide toward
-   indigo/violet, highlights toward warm; saturation drops in light. This is
-   the single biggest "programmer art vs artist" tell.
-2. **One tile per terrain type**: each biome has exactly one ground, one
-   water, one tree, one rock texture, tiled infinitely → visible grid
-   repetition, the #1 thing that screams "generated".
-3. **No edge transitions**: water meets grass as a hard square seam; roads
-   have no borders. No autotiling anywhere.
-4. **No animation frames**: water is frozen, fires don't flicker (the idle
-   "bob" in MapView is a position offset, not animation).
-5. **Bespoke-code creatures**: 45 hand-coded figures means inconsistent
-   proportions/quality across the bestiary and a high cost per new enemy.
-
-Also note two coherence leaks outside the generator: the HUD uses **emoji
-glyphs** (⚔ ✦ 🏪 ⚒ 📖…) rendered by the OS fallback font — they don't match
-the pixel art at all and render differently per platform; and `Ui.gd`
-styleboxes use rounded corners + soft shadows (vector look) against pixel
-sprites. Both are fixed in this phase.
-
-### 8.A — Generator technique upgrades (resolution-independent, do first)
-
-> **Detailed spec**: `ART_GENERATOR_SPEC.md` gives the exact algorithms,
-> color math, naming conventions, MapView integration points, execution
-> order (checkpoints C1-C10) and known traps for everything in 8.A. Follow
-> that file when implementing; the subsections below are the summary.
-
-#### 8.A.1 Hue-shifted color ramps
-- Add a `_ramp(base: Color, n: int)` helper producing n-step ramps that
-  hue-shift toward the palette's indigo (`INK`) in shadow and toward warm
-  white in highlight, with saturation peaking in the mid-dark steps.
-- Define a central `RAMPS` table (material name → 5-color ramp: skin, steel,
-  bone, rose, arcane, foliage-per-biome, stone-per-biome…). Replace direct
-  `darkened/lightened` calls in figures/tiles with ramp lookups as they get
-  touched (full sweep happens naturally during 8.B redraws).
-- Emit a machine-checkable **palette report**: after generation, scan all
-  PNGs, count distinct colors; warn above a budget (~64 total). Restraint is
-  the style.
-- **Accept**: a regenerated tree/rock/Aria visibly hue-shifts (screenshot
-  comparison); palette report runs and passes.
-
-#### 8.A.2 Consistent selective outlines (“selout”)
-- Add a post-process `_auto_outline(img)` : from the silhouette (alpha mask),
-  draw the outline INK only on bottom/right (shadow side) and a hue-shifted
-  darker-fill color on top/left (lit side). Apply to every creature/prop
-  after its figure function — removes the current per-figure inconsistency
-  where some shapes carry `_o` outlined variants and some don't.
-- **Accept**: contact sheet (8.A.6) shows uniform outline treatment.
-
-#### 8.A.3 Tile variants + autotiling (biggest visual win, do not skip)
-- **Ground variants**: generate 4 variants per biome ground
-  (`plaine_ground_0..3` — same recipe, different seeds/detail placement).
-  `MapView._draw_ground` picks per-cell via a stable position hash
-  (`(x*7+y*13) % 4`). Kills the grid-repetition look for one afternoon of
-  work.
-- **Water shoreline autotiling**: generate a 4-bit edge set for water
-  (16 tiles, or the 8-tile blob subset: straight edges N/E/S/W + inner
-  corners), with a lighter bank line + 1px foam crest where water touches
-  land. `MapView._draw_terrain` selects by neighbor bitmask (water/not-water
-  in 4 directions). Same mechanism reused later for lava (Phase 4) and
-  roads (road gets soft dirt edges).
-- **Tall trees**: draw trees on a 32×48 (later 64×96) canvas anchored to the
-  tile bottom so canopies overlap the tile above; MapView draws TREE cells
-  in a second pass (after ground row y+1) so overlaps layer correctly.
-  Instant depth.
-- **Accept**: xvfb screenshot of a marais floor shows shorelines and
-  non-repeating ground; smoke test green (pure rendering change).
-
-#### 8.A.4 Animation frames (data convention: `name_f0.png`, `name_f1.png`…)
-- Generator gains a frame parameter for: water (2 frames, crest offset),
-  campfire (3-4 frames), glow decors (2 frames, pulse), torch/lantern.
-  `MapView` cycles frames from `_anim_t` (~0.4 s step) when `name_f0`
-  exists; falls back to the static name otherwise (zero-risk rollout).
-- Creatures: keep the position bob, but add a real 2-frame idle for **Aria
-  and the 10 bosses only** (breathing: 1px chest/head shift, glow pulse).
-  Common enemies stay single-frame until 8.B wave 4.
-- **Accept**: water shimmer + campfire flicker visible across two timed
-  screenshots.
-
-#### 8.A.5 Creature composition kit (pays for itself at 64×64)
-- Extract reusable parameterized stamps from the existing figures:
-  `_body_biped(ramp, w, h)`, `_body_quadruped(...)`, `_body_robed(...)`,
-  `_head(style, ramp)`, `_weapon_stamp(kind)`, `_glow_eyes` (exists).
-  A new creature becomes ~8 lines of composition + a ramp, instead of 40
-  bespoke lines. Keep bespoke overrides for hero/bosses (they deserve it).
-- This is also what makes **elite tints** (Phase 6.2) and legendary variants
-  nearly free: same composition, shifted ramp + accent glow.
-- **Accept**: at least 5 existing common enemies rebuilt on the kit with no
-  visible regression on the contact sheet.
-
-#### 8.A.6 Iteration & QA tooling (small, do before everything above)
-- **Contact sheet**: `_assets_gen.gd` ends by composing
-  `assets_preview.png` — every sprite on a grid, each rendered over two
-  backgrounds (dark + its typical biome ground). This is how you review art
-  in a headless sandbox; regenerate + view after every change.
-- **Readability validator**: automated check rendering each creature over
-  each biome ground and computing silhouette-edge luma contrast; fail under
-  threshold. (Contrast bugs already happened once — commit 18514a5 — make
-  the regression impossible.)
-- **Icon set to replace emoji**: generate 16×16 (later 24×24) pixel icons
-  for the sidebar stats, buildings, statuses, node types; swap Hud's emoji
-  strings for TextureRects. Pixel-consistent UI across all platforms.
-- **Pixel 9-patch panels**: generate a panel/button border texture and swap
-  `Ui.gd`'s rounded StyleBoxFlat for StyleBoxTexture (crisp pixel corners).
-  Pairs with the Phase 3.1 pixel font.
-- **Accept**: contact sheet committed as a build artifact (or regenerated in
-  CI); validator wired into the smoke test; no emoji left in the HUD.
-
-### 8.B — The 64×64 migration
-
-#### The decision, stated honestly
-Sprites are drawn stretched into `MapView.CELL` rects. Feeding 64×64 art
-into 32px cells would *downscale* it (half the pixels lost) — pointless. So
-64×64 art requires `CELL = 64`, which forces a viewport decision:
+**Full detail lives in two places** — this section is deliberately short:
+- `ART_GENERATOR_SPEC.md` — exact algorithms, color math, naming
+  conventions, MapView integration, execution checkpoints **C1-C10** for
+  the technique upgrades (8.A): per-sprite RNG reseeding, hue-shifted
+  ramps, selective outlines, ground variants + seam removal, water/lava
+  shoreline autotiling, road overlay blending, tall trees, animation
+  frames, creature composition kit, contact sheets, readability validator,
+  UI pixel icons + 9-patch panels. **Follow that file.**
+- 8.B (the 64×64 migration) decision table and wave plan:
 
 | Option | Viewport | Visible play area | Verdict |
 |---|---|---|---|
-| **B1 (recommended)** | **1920×1080**, CELL 64, sidebar 576, log 132 | ~21×15 tiles | Max enemy range (7) fits with margin; matches modern displays; UI gets room for the pixel font. On smaller screens `canvas_items` stretch scales down — acceptable, add an integer-zoom option later if shimmer bothers. |
-| B2 | keep 1280×720, CELL 64 | ~14×9 tiles | Too tight: range-7 enemies can shoot from off-screen edges. Rejected. |
-| B3 | stay at 32×32, only do 8.A | unchanged | Legitimate fallback if effort is constrained — 8.A alone is ~70 % of the visual gain. |
+| **B1 (recommended)** | **1920×1080**, CELL 64, sidebar 576, log 132 | ~21×15 tiles | Range-7 enemies fit with margin; UI gains room for the pixel font. Smaller screens scale via `canvas_items` stretch. |
+| B2 | 1280×720, CELL 64 | ~14×9 tiles | Range-7 enemies can shoot from screen edge. Rejected. |
+| B3 | stay 32×32, ship only 8.A | unchanged | Legitimate fallback — 8.A alone is ~70 % of the visual gain. |
 
-Choose B1 unless told otherwise. Note: the 24→32 migration was already done
-once (commit b33993e), so the codebase has survived this kind of change.
+Waves (each: regen → import → contact sheet → xvfb screenshot at 1080p AND
+a scaled 1366×768 window → validator green → smoke green):
+**W0** prerequisites (7.4 done, 8.A complete, viewport+anchor switch);
+**W1** `TILE` 32→64 behind a redrawn-set registry (non-redrawn sprites
+nearest-upscale 2× at save time — game stays coherent);
+**W2** terrain (80 % of screen pixels — grounds/water sets/trees 64×96/
+rocks/roads per biome); **W3** Aria (3 views × 2 frames) + bosses at 96×96
+overflowing their tile (bottom-anchored oversize draw path in MapView);
+**W4** the 25 common enemies via the composition kit; **W5** props, POI,
+loot, buildings (128×176), node icons, UI icons at 24-32 px, and a real
+generated 1920×1080 title illustration replacing `TitleBg.gd` via the
+existing `assets/title_bg.png` hook (Hud.gd:435).
 
-#### Why this is redraw work, not a constant change
-Every `_fig_*` function hardcodes 32-space coordinates (center 16, feet
-28-30). Doubling coordinates mechanically = chunky 2× upscale, zero new
-detail. The gain of 64×64 (real facial features on Aria, readable weapon
-shapes, textured fur/scales, 4-5 step ramps instead of 3) only exists if
-sprites are **redrawn**. Hence waves, with an upscale fallback so the game
-is shippable at every commit:
+Touchpoints for the CELL/viewport switch: `_assets_gen.gd:12` (TILE),
+`MapView.gd:5` (CELL), `TownView.gd:8-10` (CELL/BW/BH), `project.godot`
+viewport, `Hud.gd:7-9` + font sizes, `EquipPanel.gd` coords,
+`Hud._sprite_portrait` (72 px), `_draw_hp_pip` metrics, README. Camera math
+and torch/vignette radii derive from CELL/view_size — verify only.
 
-- **Wave 0 — prerequisites**: freeze/delete `gen.py` first (Phase 7.4 —
-  never do this migration twice); 8.A complete; viewport/UI switch to
-  1920×1080 (requires the anchor work from 1.9 and the pixel font from 3.1
-  at the new scale).
-- **Wave 1 — plumbing**: `TILE 32→64` behind a redrawn-set registry: any
-  sprite not yet redrawn is generated at 32 and nearest-neighbor-upscaled
-  2× at save time (visually identical to today). The game runs 100 %
-  coherent from day one of the migration.
-- **Wave 2 — terrain** (80 % of screen pixels): 6 biomes × (ground variants,
-  water + shoreline set, tree at 64×96 tall-canvas, rock) + road with
-  edges. Grounds gain a 3rd detail octave (pebbles, grass blades, cracks)
-  — 64px is where Bayer dithering starts looking great.
-- **Wave 3 — Aria + bosses**: Aria's 3 views ×2 idle frames at true 64
-  (visible face, hair shapes, weapon silhouette per loadout would be a
-  bonus). Bosses at **96×96 drawn overflowing their tile** (anchor-bottom,
-  like Hub buildings) for presence — MapView needs an oversize-sprite draw
-  path (bottom-anchored rect, drawn in the entity pass).
-- **Wave 4 — the 25 common enemies** via the 8.A.5 composition kit, ~5 per
-  session, contact-sheet-reviewed.
-- **Wave 5 — props, POI structures, loot, node icons, buildings (128×176),
-  UI icons at 24-32px, title illustration**: with the upgraded pipeline,
-  generate a real layered 1920×1080 title backdrop (tower silhouette,
-  starfield, fog bands, glow) to finally replace `TitleBg.gd`'s runtime
-  placeholder via the existing `assets/title_bg.png` hook (Hud.gd:435).
-
-#### Touchpoint checklist for the CELL/viewport switch (audit before, verify after)
-- `_assets_gen.gd:12` (`TILE`), `MapView.gd:5` (`CELL`),
-  `TownView.gd:8-10` (`CELL`, `BW`, `BH`), `project.godot` viewport size,
-  `Hud.gd:7-9` (`VIEW`, `SIDEBAR_W`, `LOG_H`) + every font size,
-  `EquipPanel.gd` hardcoded silhouette coords, `Hud._sprite_portrait`
-  (72px), `MapView._draw_hp_pip` metrics, `Data.gd` comments, README.
-- Auto-scaling already (verify only): camera math, torch pool/glow radii,
-  vignette (all derive from `CELL`/`view_size`).
-- **Accept per wave**: regenerate → editor import pass → contact sheet →
-  in-game xvfb screenshot at 1080p AND a scaled 1366×768 window → readability
-  validator green → smoke test green.
-
-**Phase 8 done when**: 8.A all in; B1 shipped through wave 5 (or B3
-explicitly chosen and documented in this file); `assets_preview.png`
-regenerable; no emoji glyphs in UI; README's art section updated (64×64,
-frame convention, how to review the contact sheet).
+**Phase 8 done when**: 8.A checkpoints C1-C10 all pass; B1 shipped through
+W5 (or B3 explicitly chosen and recorded here); no emoji in the UI; README
+art section updated.
 
 ---
 
@@ -660,21 +939,25 @@ frame convention, how to review the contact sheet).
 - No new parallel systems: every addition must deepen an existing system or
   the Phase 4 hook.
 - No additional playable heroes.
-- No map size increases; don't touch `MAP_MAX_H` upward (lowering it to ~240
-  until density work exists is allowed and encouraged — see AUDIT §3.4).
+- No map size increases; don't raise `MAP_MAX_H` (lowering it to ~240 until
+  density work exists is allowed — see AUDIT §3.4).
 - No multiplayer/online features.
 - No walls of lore text; barks are one line.
-- Don't convert the game to English; don't mix English into player-facing text.
+- Don't convert the game to English; don't mix English into player-facing
+  text.
 - Don't replace the code-generated art pipeline with external art without
-  being asked.
+  being asked (the Phase 3.1 font and its license file are the sole
+  sanctioned exception).
 
 ## Definition of done (overall)
 
-1. Smoke test green, extended with regression asserts for every Phase 1 bug
-   and every Phase 4 interaction.
-2. CI runs it on every push.
-3. A full keyboard-only run is playable: title → hub → run → pause → death
-   recap → title, at 4:3 / 16:9 / 21:9.
+1. Smoke test green, extended with regression asserts for every Phase 1
+   bug, the Phase 2 LoS/aggro/intents behaviors, the Phase 3 seed
+   determinism, and every Phase 4 interaction.
+2. CI runs it (plus the art validator) on every push.
+3. A full keyboard-only run is playable: title → hub → run → pause →
+   death recap → title, at 4:3 / 16:9 / 21:9.
 4. `README.md` / `RESUME_SESSION.md` accurate; `AUDIT.md` items checked off
-   (edit the file: mark fixed items with ✅ and the commit hash).
-5. Balance sim CSV before/after committed for Phase 5.
+   in-file (✅ + commit hash).
+5. Balance sim CSVs (before/after) committed under `docs/balance/` for
+   Phase 5.
