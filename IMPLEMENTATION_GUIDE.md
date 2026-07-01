@@ -459,6 +459,197 @@ shipped, each with tests; VISION.md updated with what was validated/cut.
 
 ---
 
+## PHASE 8 — Art direction: generator upgrade & 64×64 migration
+
+> **Where it slots**: 8.A (technique upgrades) right after Phase 3 — they
+> multiply the value of every screenshot taken later. 8.B (the 64×64
+> migration) is independent of Phases 4-6 and can interleave with them,
+> wave by wave. Do **not** start 8.B before 8.A is done: redrawing 80+
+> sprites with the old techniques would be wasted work.
+
+### Current state of the generator (read this before touching it)
+
+`_assets_gen.gd` (~2 190 lines) draws every sprite from scratch with pixel
+primitives (`_px/_rect/_ellipse/_trapezoid/_line/_tri_up/_diamond`), plus
+`_glow` (neon halo), `_ground_shadow`, 3-band shading (`_disc_band`/
+`_tri_band`), Bayer 4×4 dithering on grounds, a named identity palette
+(~20 constants: INK/STONE/STEEL/GOLD/ARCANE/CYAN/EMBER…), `TILE := 32`,
+seeded RNG (1337). Each of the ~45 creatures is a bespoke `_fig_*` function
+of 20-40 hardcoded coordinate calls. Buildings use `_new_sized` (64×88).
+The instincts are good (top-left light, outlines, contact shadows, glow
+accents). The ceiling comes from five specific limitations:
+
+1. **Value-only shading**: all ramps are `darkened()/lightened()` — same hue,
+   less/more value. Good pixel art hue-shifts: shadows slide toward
+   indigo/violet, highlights toward warm; saturation drops in light. This is
+   the single biggest "programmer art vs artist" tell.
+2. **One tile per terrain type**: each biome has exactly one ground, one
+   water, one tree, one rock texture, tiled infinitely → visible grid
+   repetition, the #1 thing that screams "generated".
+3. **No edge transitions**: water meets grass as a hard square seam; roads
+   have no borders. No autotiling anywhere.
+4. **No animation frames**: water is frozen, fires don't flicker (the idle
+   "bob" in MapView is a position offset, not animation).
+5. **Bespoke-code creatures**: 45 hand-coded figures means inconsistent
+   proportions/quality across the bestiary and a high cost per new enemy.
+
+Also note two coherence leaks outside the generator: the HUD uses **emoji
+glyphs** (⚔ ✦ 🏪 ⚒ 📖…) rendered by the OS fallback font — they don't match
+the pixel art at all and render differently per platform; and `Ui.gd`
+styleboxes use rounded corners + soft shadows (vector look) against pixel
+sprites. Both are fixed in this phase.
+
+### 8.A — Generator technique upgrades (resolution-independent, do first)
+
+#### 8.A.1 Hue-shifted color ramps
+- Add a `_ramp(base: Color, n: int)` helper producing n-step ramps that
+  hue-shift toward the palette's indigo (`INK`) in shadow and toward warm
+  white in highlight, with saturation peaking in the mid-dark steps.
+- Define a central `RAMPS` table (material name → 5-color ramp: skin, steel,
+  bone, rose, arcane, foliage-per-biome, stone-per-biome…). Replace direct
+  `darkened/lightened` calls in figures/tiles with ramp lookups as they get
+  touched (full sweep happens naturally during 8.B redraws).
+- Emit a machine-checkable **palette report**: after generation, scan all
+  PNGs, count distinct colors; warn above a budget (~64 total). Restraint is
+  the style.
+- **Accept**: a regenerated tree/rock/Aria visibly hue-shifts (screenshot
+  comparison); palette report runs and passes.
+
+#### 8.A.2 Consistent selective outlines (“selout”)
+- Add a post-process `_auto_outline(img)` : from the silhouette (alpha mask),
+  draw the outline INK only on bottom/right (shadow side) and a hue-shifted
+  darker-fill color on top/left (lit side). Apply to every creature/prop
+  after its figure function — removes the current per-figure inconsistency
+  where some shapes carry `_o` outlined variants and some don't.
+- **Accept**: contact sheet (8.A.6) shows uniform outline treatment.
+
+#### 8.A.3 Tile variants + autotiling (biggest visual win, do not skip)
+- **Ground variants**: generate 4 variants per biome ground
+  (`plaine_ground_0..3` — same recipe, different seeds/detail placement).
+  `MapView._draw_ground` picks per-cell via a stable position hash
+  (`(x*7+y*13) % 4`). Kills the grid-repetition look for one afternoon of
+  work.
+- **Water shoreline autotiling**: generate a 4-bit edge set for water
+  (16 tiles, or the 8-tile blob subset: straight edges N/E/S/W + inner
+  corners), with a lighter bank line + 1px foam crest where water touches
+  land. `MapView._draw_terrain` selects by neighbor bitmask (water/not-water
+  in 4 directions). Same mechanism reused later for lava (Phase 4) and
+  roads (road gets soft dirt edges).
+- **Tall trees**: draw trees on a 32×48 (later 64×96) canvas anchored to the
+  tile bottom so canopies overlap the tile above; MapView draws TREE cells
+  in a second pass (after ground row y+1) so overlaps layer correctly.
+  Instant depth.
+- **Accept**: xvfb screenshot of a marais floor shows shorelines and
+  non-repeating ground; smoke test green (pure rendering change).
+
+#### 8.A.4 Animation frames (data convention: `name_f0.png`, `name_f1.png`…)
+- Generator gains a frame parameter for: water (2 frames, crest offset),
+  campfire (3-4 frames), glow decors (2 frames, pulse), torch/lantern.
+  `MapView` cycles frames from `_anim_t` (~0.4 s step) when `name_f0`
+  exists; falls back to the static name otherwise (zero-risk rollout).
+- Creatures: keep the position bob, but add a real 2-frame idle for **Aria
+  and the 10 bosses only** (breathing: 1px chest/head shift, glow pulse).
+  Common enemies stay single-frame until 8.B wave 4.
+- **Accept**: water shimmer + campfire flicker visible across two timed
+  screenshots.
+
+#### 8.A.5 Creature composition kit (pays for itself at 64×64)
+- Extract reusable parameterized stamps from the existing figures:
+  `_body_biped(ramp, w, h)`, `_body_quadruped(...)`, `_body_robed(...)`,
+  `_head(style, ramp)`, `_weapon_stamp(kind)`, `_glow_eyes` (exists).
+  A new creature becomes ~8 lines of composition + a ramp, instead of 40
+  bespoke lines. Keep bespoke overrides for hero/bosses (they deserve it).
+- This is also what makes **elite tints** (Phase 6.2) and legendary variants
+  nearly free: same composition, shifted ramp + accent glow.
+- **Accept**: at least 5 existing common enemies rebuilt on the kit with no
+  visible regression on the contact sheet.
+
+#### 8.A.6 Iteration & QA tooling (small, do before everything above)
+- **Contact sheet**: `_assets_gen.gd` ends by composing
+  `assets_preview.png` — every sprite on a grid, each rendered over two
+  backgrounds (dark + its typical biome ground). This is how you review art
+  in a headless sandbox; regenerate + view after every change.
+- **Readability validator**: automated check rendering each creature over
+  each biome ground and computing silhouette-edge luma contrast; fail under
+  threshold. (Contrast bugs already happened once — commit 18514a5 — make
+  the regression impossible.)
+- **Icon set to replace emoji**: generate 16×16 (later 24×24) pixel icons
+  for the sidebar stats, buildings, statuses, node types; swap Hud's emoji
+  strings for TextureRects. Pixel-consistent UI across all platforms.
+- **Pixel 9-patch panels**: generate a panel/button border texture and swap
+  `Ui.gd`'s rounded StyleBoxFlat for StyleBoxTexture (crisp pixel corners).
+  Pairs with the Phase 3.1 pixel font.
+- **Accept**: contact sheet committed as a build artifact (or regenerated in
+  CI); validator wired into the smoke test; no emoji left in the HUD.
+
+### 8.B — The 64×64 migration
+
+#### The decision, stated honestly
+Sprites are drawn stretched into `MapView.CELL` rects. Feeding 64×64 art
+into 32px cells would *downscale* it (half the pixels lost) — pointless. So
+64×64 art requires `CELL = 64`, which forces a viewport decision:
+
+| Option | Viewport | Visible play area | Verdict |
+|---|---|---|---|
+| **B1 (recommended)** | **1920×1080**, CELL 64, sidebar 576, log 132 | ~21×15 tiles | Max enemy range (7) fits with margin; matches modern displays; UI gets room for the pixel font. On smaller screens `canvas_items` stretch scales down — acceptable, add an integer-zoom option later if shimmer bothers. |
+| B2 | keep 1280×720, CELL 64 | ~14×9 tiles | Too tight: range-7 enemies can shoot from off-screen edges. Rejected. |
+| B3 | stay at 32×32, only do 8.A | unchanged | Legitimate fallback if effort is constrained — 8.A alone is ~70 % of the visual gain. |
+
+Choose B1 unless told otherwise. Note: the 24→32 migration was already done
+once (commit b33993e), so the codebase has survived this kind of change.
+
+#### Why this is redraw work, not a constant change
+Every `_fig_*` function hardcodes 32-space coordinates (center 16, feet
+28-30). Doubling coordinates mechanically = chunky 2× upscale, zero new
+detail. The gain of 64×64 (real facial features on Aria, readable weapon
+shapes, textured fur/scales, 4-5 step ramps instead of 3) only exists if
+sprites are **redrawn**. Hence waves, with an upscale fallback so the game
+is shippable at every commit:
+
+- **Wave 0 — prerequisites**: freeze/delete `gen.py` first (Phase 7.4 —
+  never do this migration twice); 8.A complete; viewport/UI switch to
+  1920×1080 (requires the anchor work from 1.9 and the pixel font from 3.1
+  at the new scale).
+- **Wave 1 — plumbing**: `TILE 32→64` behind a redrawn-set registry: any
+  sprite not yet redrawn is generated at 32 and nearest-neighbor-upscaled
+  2× at save time (visually identical to today). The game runs 100 %
+  coherent from day one of the migration.
+- **Wave 2 — terrain** (80 % of screen pixels): 6 biomes × (ground variants,
+  water + shoreline set, tree at 64×96 tall-canvas, rock) + road with
+  edges. Grounds gain a 3rd detail octave (pebbles, grass blades, cracks)
+  — 64px is where Bayer dithering starts looking great.
+- **Wave 3 — Aria + bosses**: Aria's 3 views ×2 idle frames at true 64
+  (visible face, hair shapes, weapon silhouette per loadout would be a
+  bonus). Bosses at **96×96 drawn overflowing their tile** (anchor-bottom,
+  like Hub buildings) for presence — MapView needs an oversize-sprite draw
+  path (bottom-anchored rect, drawn in the entity pass).
+- **Wave 4 — the 25 common enemies** via the 8.A.5 composition kit, ~5 per
+  session, contact-sheet-reviewed.
+- **Wave 5 — props, POI structures, loot, node icons, buildings (128×176),
+  UI icons at 24-32px, title illustration**: with the upgraded pipeline,
+  generate a real layered 1920×1080 title backdrop (tower silhouette,
+  starfield, fog bands, glow) to finally replace `TitleBg.gd`'s runtime
+  placeholder via the existing `assets/title_bg.png` hook (Hud.gd:435).
+
+#### Touchpoint checklist for the CELL/viewport switch (audit before, verify after)
+- `_assets_gen.gd:12` (`TILE`), `MapView.gd:5` (`CELL`),
+  `TownView.gd:8-10` (`CELL`, `BW`, `BH`), `project.godot` viewport size,
+  `Hud.gd:7-9` (`VIEW`, `SIDEBAR_W`, `LOG_H`) + every font size,
+  `EquipPanel.gd` hardcoded silhouette coords, `Hud._sprite_portrait`
+  (72px), `MapView._draw_hp_pip` metrics, `Data.gd` comments, README.
+- Auto-scaling already (verify only): camera math, torch pool/glow radii,
+  vignette (all derive from `CELL`/`view_size`).
+- **Accept per wave**: regenerate → editor import pass → contact sheet →
+  in-game xvfb screenshot at 1080p AND a scaled 1366×768 window → readability
+  validator green → smoke test green.
+
+**Phase 8 done when**: 8.A all in; B1 shipped through wave 5 (or B3
+explicitly chosen and documented in this file); `assets_preview.png`
+regenerable; no emoji glyphs in UI; README's art section updated (64×64,
+frame convention, how to review the contact sheet).
+
+---
+
 ## What NOT to do (hard constraints)
 
 - No new parallel systems: every addition must deepen an existing system or
