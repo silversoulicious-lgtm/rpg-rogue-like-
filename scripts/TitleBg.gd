@@ -5,12 +5,18 @@
 extends Control
 
 const SKY_STAR := Color(0.85, 0.85, 1.0, 0.55)
-const TOWER_INK := Color(0.05, 0.045, 0.09)
-const TOWER_EDGE := Color(0.16, 0.13, 0.24)
+# La tour et le sol sont quasi noirs (plus sombres que n'importe quel point du
+# dégradé de ciel derrière), pour toujours lire comme silhouette ; c'est le
+# liseré (TOWER_EDGE) qui donne sa forme, façon contre-jour de crépuscule.
+const TOWER_INK := Color(0.010, 0.012, 0.022)
+const TOWER_EDGE := Color(0.58, 0.50, 0.85, 0.9)
 const WINDOW_GLOW := Color(1.0, 0.82, 0.45)
 const MOON := Color(0.62, 0.58, 0.85, 0.35)
-const ARIA_INK := Color(0.03, 0.03, 0.06)
-const GROUND := Color(0.03, 0.035, 0.05)
+const GROUND := Color(0.008, 0.010, 0.018)
+# Aria est nettement plus claire que le sol/la tour pour se détacher en
+# silhouette, avec un fin liseré clair (lune) sur un bord.
+const ARIA_INK := Color(0.13, 0.11, 0.18)
+const ARIA_RIM := Color(0.55, 0.50, 0.80, 0.85)
 
 # Positions d'étoiles fixes (proportions 0..1 de la taille du Control) : pas
 # besoin d'aléatoire ici, un motif décoratif stable suffit.
@@ -61,14 +67,14 @@ func _draw() -> void:
 			Vector2(cx + hw1, y1), Vector2(cx - hw1, y1),
 		])
 		draw_colored_polygon(pts, TOWER_INK)
-		draw_polyline(PackedVector2Array([pts[0], pts[3]]), TOWER_EDGE, 1.5)
-		draw_polyline(PackedVector2Array([pts[1], pts[2]]), TOWER_EDGE, 1.5)
+		draw_polyline(PackedVector2Array([pts[0], pts[3]]), TOWER_EDGE, 2.5)
+		draw_polyline(PackedVector2Array([pts[1], pts[2]]), TOWER_EDGE, 2.5)
 		# Fenêtre éclairée, une sur deux, en alternance de côté.
 		if i % 2 == 0:
 			var wx: float = cx + (hw0 * 0.4 if i % 4 == 0 else -hw0 * 0.4)
 			var wy: float = (y0 + y1) * 0.5
-			draw_circle(Vector2(wx, wy), 3.5, Color(WINDOW_GLOW.r, WINDOW_GLOW.g, WINDOW_GLOW.b, 0.25))
-			draw_circle(Vector2(wx, wy), 1.6, WINDOW_GLOW)
+			draw_circle(Vector2(wx, wy), 6.0, Color(WINDOW_GLOW.r, WINDOW_GLOW.g, WINDOW_GLOW.b, 0.30))
+			draw_circle(Vector2(wx, wy), 2.6, WINDOW_GLOW)
 	# Flèche au sommet.
 	draw_colored_polygon(PackedVector2Array([
 		Vector2(cx - base_w * 0.18, top_y), Vector2(cx + base_w * 0.18, top_y), Vector2(cx, top_y - h * 0.05),
@@ -78,12 +84,19 @@ func _draw() -> void:
 	draw_rect(Rect2(0, base_y, w, h - base_y), GROUND)
 	draw_line(Vector2(0, base_y), Vector2(w, base_y), TOWER_EDGE, 1.0)
 
-	# Silhouette d'Aria : petite figure au pied de la tour, tournée vers elle.
+	# Silhouette d'Aria : figure au pied de la tour, tournée vers elle. Un peu
+	# de lumière au sol sous ses pieds (clair de lune) pour attirer l'œil et
+	# la détacher nettement du sol, plus clair qu'elle mais aussi très sombre.
 	var ax: float = w * 0.40
 	var ay: float = base_y
-	draw_circle(Vector2(ax, ay - h * 0.075), h * 0.018, ARIA_INK)                 # tête
+	draw_circle(Vector2(ax, ay - h * 0.006), h * 0.05, Color(ARIA_RIM.r, ARIA_RIM.g, ARIA_RIM.b, 0.10))
+	draw_circle(Vector2(ax, ay - h * 0.11), h * 0.026, ARIA_INK)                  # tête
+	draw_circle(Vector2(ax, ay - h * 0.11), h * 0.026, ARIA_RIM, false, 1.5)      # liseré (lune)
 	var body := PackedVector2Array([
-		Vector2(ax - h * 0.012, ay - h * 0.058), Vector2(ax + h * 0.012, ay - h * 0.058),
-		Vector2(ax + h * 0.017, ay), Vector2(ax - h * 0.017, ay),
+		Vector2(ax - h * 0.020, ay - h * 0.085), Vector2(ax + h * 0.020, ay - h * 0.085),
+		Vector2(ax + h * 0.028, ay), Vector2(ax - h * 0.028, ay),
 	])
 	draw_colored_polygon(body, ARIA_INK)
+	draw_polyline(PackedVector2Array([
+		Vector2(ax - h * 0.020, ay - h * 0.085), Vector2(ax - h * 0.028, ay),
+	]), ARIA_RIM, 1.5)

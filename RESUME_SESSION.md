@@ -284,10 +284,62 @@ dans `menu_root` :
   l'intérieur de l'écran plutôt qu'au-delà du bord), bandeau de profil (record
   d'ascension + Éclats + Connaissances, `_title_profile_strip()`) en bas à
   gauche — à la place de l'unique ligne de record précédente.
-- Godot n'étant pas exécutable dans cet environnement, ce rendu n'a **pas pu
-  être vérifié visuellement** — le raisonnement sur les ancres/marges a été
-  fait à la main (cf. sémantique standard des presets Godot), mais un passage
-  en jeu pour ajuster les marges/tailles reste à faire.
+- **Mise à jour** : Godot 4.3 headless EST utilisable dans cet environnement
+  (voir « Godot headless : comment ça marche ici » ci-dessous) — ce rendu a
+  depuis été vérifié par une vraie capture d'écran, deux bugs visuels réels
+  ont été trouvés et corrigés dans `TitleBg.gd` : le remplissage de la tour
+  et le sol étaient bien assez sombres, mais le contraste de bord (silhouette
+  quasi invisible sur fond de ciel déjà très sombre en bas de dégradé) et la
+  silhouette d'Aria (couleur quasi identique à celle du sol) ne se voyaient
+  presque pas. Corrigé en assombrissant encore la tour/le sol (toujours plus
+  sombres que n'importe quel point du ciel) et en ajoutant un liseré clair
+  (contre-jour lunaire, `TOWER_EDGE`/`ARIA_RIM`) qui dessine la forme par son
+  contour plutôt que par contraste de remplissage — plus des halos de
+  fenêtres et un halo au sol sous Aria agrandis pour rester visibles.
+
+### Godot headless : comment ça marche ici
+Le binaire Godot 4.3 n'est pas préinstallé, mais **peut être téléchargé et
+exécuté** dans ce bac à sable (accès réseau sortant autorisé vers GitHub) :
+```bash
+curl -sSL -o godot.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+unzip -q godot.zip && chmod +x Godot_v4.3-stable_linux.x86_64
+```
+- **Premier lancement obligatoire** : faire un passage d'import du projet
+  avant tout `--script`/scène, sinon les classes globales (`class_name Data`,
+  `Entity`...) ne sont pas encore résolues et tout échoue en "Identifier not
+  declared" : `./Godot... --headless --editor --quit --path .` (crée
+  `.godot/`, à relancer si le cache est absent).
+- **`_SmokeTest.tscn` tourne réellement** avec `--headless --path . res://_SmokeTest.tscn`
+  une fois l'import fait — aucun display/GPU nécessaire pour la logique pure
+  (assertions, simulation de tours). Deux bugs de FLAKINESS DE TEST (pas de
+  bugs de jeu) ont été trouvés en le faisant tourner plusieurs fois de suite
+  (le hasard du Pacte de Pouvoir en début de run change les résultats d'un
+  run à l'autre) et corrigés :
+  - « Serment de Fragilité » et « repos : entraînement » comparaient
+    `player.atk`/`max_hp` (dérivés, faussés par l'arrondi d'un pouvoir en %
+    comme Cœur de Verre) au lieu de `base_atk`/`base_max_hp` (le champ
+    réellement muté) — comparaisons corrigées sur les champs de base.
+  - Le test de comportement des 20 monstres pouvait voir un pouvoir Drone
+    (hérité du Pacte de Pouvoir acheté plus haut dans le fichier) achever
+    automatiquement un monstre fragile (Chauve-souris, 9 PV) avant la fin
+    des 14 tours de test — `main.player.powers.clear()` ajouté pour isoler
+    ce test.
+- **Rendu RÉEL / captures d'écran** : `--headless` seul utilise un pilote de
+  rendu factice (`get_viewport().get_texture()` renvoie null, aucun pixel
+  produit) — utile pour la logique, pas pour vérifier visuellement l'UI.
+  Pour un vrai rendu logiciel sans GPU/écran physique, Mesa llvmpipe est
+  installé : lancer via `xvfb-run` (Xvfb dispo) SANS `--headless`, avec
+  `--rendering-driver opengl3` :
+  ```bash
+  xvfb-run -a --server-args="-screen 0 1280x720x24" \
+    ./Godot... --path . --script capture.gd --rendering-driver opengl3
+  ```
+  où `capture.gd` (`extends SceneTree`) instancie la scène, attend quelques
+  `process_frame`, puis `root.get_texture().get_image().save_png(...)`. C'est
+  ainsi que le screenshot de l'écran-titre ci-dessus a été obtenu et les deux
+  bugs de contraste corrigés. Nettement plus lent qu'un pur `--headless`
+  (rasterisation logicielle) mais fiable pour vérifier visuellement du GDScript
+  UI/`_draw()` sans jamais avoir besoin d'un vrai GPU/écran.
 
 ### Main Hub (Pied de la Tour) — planifié, pas encore implémenté
 Décisions actées avec l'utilisateur pour la prochaine session :

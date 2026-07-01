@@ -39,15 +39,18 @@ func _ready() -> void:
 	assert(main.current_node_type == "boss", "un Gardien est garanti après ACT_LENGTH étages réels")
 	var act_before: int = main.map_act
 	main._node_cleared()
-	assert(main.map_act == act_before + 1 and main.act_floor == 0, "Gardien vaincu : acte suivant, compteur remis à zéro")
+	# _node_cleared() remet act_floor à 0 PUIS enchaîne aussitôt sur le Combat
+	# de répit garanti (_advance("combat")), qui le fait remonter à 1 : c'est
+	# cette valeur (1), pas 0, qu'on observe une fois l'appel terminé.
+	assert(main.map_act == act_before + 1 and main.act_floor == 1, "Gardien vaincu : acte suivant, 1er étage (Combat) déjà compté")
 	assert(main.current_node_type == "combat", "après le Gardien, on repart sur un Combat de répit")
 	assert(not main._act_rest_done, "le drapeau de pause pré-Gardien est remis à zéro pour le nouvel acte")
 	# La pause Repos/Boutique juste avant le Gardien est garantie une seule fois.
 	main.act_floor = main.ACT_LENGTH - 1
 	main._act_rest_done = false
-	var t := main._roll_node_type()
+	var t = main._roll_node_type()
 	assert((t == "rest" or t == "shop") and main._act_rest_done, "pause Repos/Boutique garantie juste avant le Gardien")
-	var t2 := main._roll_node_type()
+	var t2 = main._roll_node_type()
 	assert(t2 != "boss", "la pause garantie ne se redéclenche pas en boucle avant le Gardien")
 	print("OK progression: 1er étage=combat, Gardien garanti à ACT_LENGTH, reset après victoire, pause pré-Gardien garantie")
 
@@ -66,9 +69,12 @@ func _ready() -> void:
 	main.resolve_event(0)
 	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE or main.state == main.State.GAMEOVER, "événement résolu : avance automatiquement")
 	main.open_rest()
-	var atk_r = main.player.atk
+	# Comparaison sur base_atk (pas atk) : un Pacte de Pouvoir "Cœur de Verre"
+	# actif (+50% ATK) rendrait la relation base_atk -> atk non linéaire à
+	# cause de l'arrondi, faussant une comparaison sur le seul delta de atk.
+	var base_atk_r = main.player.base_atk
 	main.rest_choice("train")
-	assert(main.player.atk == atk_r + 3, "repos: entraînement +3 ATK")
+	assert(main.player.base_atk == base_atk_r + 3, "repos: entraînement +3 ATK (base)")
 	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE, "repos résolu : avance automatiquement")
 	print("OK salles spéciales: boutique / événement / repos (avancée automatique, sans carte)")
 
@@ -111,7 +117,7 @@ func _ready() -> void:
 	main._trigger_weapon_prefixes(target)
 	assert(target.hp < hp0, "Ardent inflige des dégâts de feu bonus au coup suivant")
 	# Cuirasse : réduction plate de dégâts entrants, pliée dans _player_def().
-	var def0 := main._player_def()
+	var def0 = main._player_def()
 	main.player.procs.append({ "id": "cuirasse", "value": 4.0 })
 	assert(main._player_def() == def0 + 4, "Cuirasse augmente la défense effective de sa valeur")
 	# Renvoi : affaiblit l'attaquant au contact (forcé à 100% pour le test).
@@ -154,6 +160,10 @@ func _ready() -> void:
 
 	# --- Inventaire + talents (en combat) ---
 	main.start_run("melee")
+	# Isole ce test d'un Pacte de Pouvoir "Cœur de Verre" (+50% ATK, potentiellement
+	# accordé au hasard au démarrage) : son arrondi rendrait le delta de +5 à plat
+	# non exact et casserait les comparaisons ci-dessous.
+	main.player.powers.clear()
 	main.unequip_item("arme")   # retire l'arme de loadout pour une base propre
 	main.inventory.clear()
 	var atk0 = main.player.atk
@@ -467,13 +477,15 @@ func _ready() -> void:
 	assert(main.has_oath("fragilite"), "serment mineur activable une fois débloqué")
 	main.toggle_oath("elite")
 	assert(not main.has_oath("elite"), "serment majeur refusé sans le palier majeur")
-	# Fragilité réduit les PV de départ.
+	# Fragilité réduit les PV de départ. Comparaison sur base_max_hp (pas
+	# max_hp) : max_hp inclut d'éventuels talents de départ aléatoires
+	# (Instinct) qui pourraient fausser la comparaison entre les deux runs.
 	main.active_oaths = []
 	main.start_run("melee")
-	var hp_full = main.player.max_hp
+	var base_hp_full = main.player.base_max_hp
 	main.active_oaths = ["fragilite"]
 	main.start_run("melee")
-	assert(main.player.max_hp < hp_full, "Serment de Fragilité : PV max réduits")
+	assert(main.player.base_max_hp < base_hp_full, "Serment de Fragilité : PV max réduits")
 	# Récompense des serments : multiplicateur d'Éclats + bonus de Connaissances.
 	main.active_oaths = ["fragilite", "horde"]
 	assert(main.oath_shard_mult() > 1.3, "multiplicateur d'Éclats cumulé des serments")
@@ -575,6 +587,11 @@ func _ready() -> void:
 
 	# --- Nouveaux monstres : spawn + exécution de chaque comportement (Pass 1) -----
 	main.start_run("melee")
+	# Isole ce test de comportement d'IA du Pacte de Pouvoir (nœud acheté plus
+	# haut) : un pouvoir de départ comme le Drone attaquerait automatiquement à
+	# chaque tour et pourrait achever un monstre fragile (ex. Chauve-souris,
+	# 9 PV) avant la fin des 14 tours, faussant l'objectif du test.
+	main.player.powers.clear()
 	var new_count := 0
 	for edef in Data.ENEMIES:
 		if not edef.has("ai"):
