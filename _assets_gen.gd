@@ -125,6 +125,21 @@ func _init() -> void:
 	_save(_gen_sunken_ruin(Color(0.64, 0.86, 0.32)), "sunken_ruin")
 	_save(_gen_abandoned_anvil(Color(1.0, 0.58, 0.20)), "abandoned_anvil")
 
+	# --- Bâtiments du Hub (couleurs reprises de Town.gd pour rester cohérent
+	# avec le nom/glyphe affichés à côté de chaque bâtiment) ---
+	var TownClass = load("res://scripts/Town.gd")
+	var hub_town = TownClass.new()
+	for pos in hub_town.buildings.keys():
+		var b: Dictionary = hub_town.buildings[pos]
+		var bcol: Color = b["color"]
+		match String(b["id"]):
+			"armurerie": _save(_gen_building_armurerie(bcol), "building_armurerie")
+			"bibliotheque": _save(_gen_building_bibliotheque(bcol), "building_bibliotheque")
+			"sanctuaire": _save(_gen_building_sanctuaire(bcol), "building_sanctuaire")
+			"forge": _save(_gen_building_forge(bcol), "building_forge")
+			"boutique": _save(_gen_building_boutique(bcol), "building_boutique")
+			"tower_gate": _save(_gen_building_tower_gate(bcol), "building_tower_gate")
+
 	print("=== ASSETS GENERATED ===")
 	quit()
 
@@ -138,9 +153,20 @@ func _new(opaque: bool = false) -> Image:
 		img.fill(Color(0, 0, 0, 1))
 	return img
 
+## Variante de _new() à taille libre (les bâtiments du Hub sont plus grands
+## qu'une tuile 32x32 pour vraiment lire comme des lieux, pas des icônes).
+func _new_sized(w: int, h: int, opaque: bool = false) -> Image:
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	if opaque:
+		img.fill(Color(0, 0, 0, 1))
+	return img
+
 # --- Primitives de dessin -----------------------------------------------------
+# Bornées à la taille RÉELLE de l'image (pas à la constante TILE) : identique
+# pour tous les sprites 32x32 existants, mais permet aussi les sprites plus
+# grands (bâtiments du Hub, cf. _new_sized).
 func _px(img: Image, x: int, y: int, c: Color) -> void:
-	if x >= 0 and x < TILE and y >= 0 and y < TILE:
+	if x >= 0 and x < img.get_width() and y >= 0 and y < img.get_height():
 		if c.a >= 1.0:
 			img.set_pixel(x, y, c)
 		elif c.a > 0.0:
@@ -222,7 +248,7 @@ func _diamond(img: Image, cx: int, cy: int, r: int, c: Color) -> void:
 func _glow(img: Image, cx: float, cy: float, r: float, c: Color, strength: float = 0.85) -> void:
 	for yy in range(int(floor(cy - r)), int(ceil(cy + r)) + 1):
 		for xx in range(int(floor(cx - r)), int(ceil(cx + r)) + 1):
-			if xx < 0 or xx >= TILE or yy < 0 or yy >= TILE:
+			if xx < 0 or xx >= img.get_width() or yy < 0 or yy >= img.get_height():
 				continue
 			var d := sqrt(pow(xx - cx, 2.0) + pow(yy - cy, 2.0)) / r
 			if d >= 1.0:
@@ -1866,6 +1892,119 @@ func _gen_abandoned_anvil(c: Color) -> Image:
 	_tri_up(img, 22, 14, 3, 4, iron_d)
 	_glow(img, 16.0, 22.0, 4.0, EMBER, 0.35)
 	_px(img, 14, 22, EMBER); _px(img, 18, 23, EMBER_L)
+	return img
+
+# --- Bâtiments du Hub (Pied de la Tour) ----------------------------------------
+# Plus grands qu'une tuile (64x88, ~2x2 tuiles au sol) pour vraiment lire comme
+# des lieux visitables plutôt que des icônes de sol. Une silhouette générique
+# (murs + toit + porte + fenêtres) sert de base commune ; chaque bâtiment
+# ajoute par-dessus le détail qui raconte sa fonction (enseigne, cheminée,
+# colonnes, arche...). `accent` reprend la couleur du bâtiment définie dans
+# Town.gd pour rester cohérent avec le glyphe/nom affichés à côté.
+const BW := 64
+const BH := 88
+
+func _gen_building_base(wall: Color, roof: Color) -> Image:
+	var img := _new_sized(BW, BH)
+	var wall_l := wall.lightened(0.16)
+	var roof_d := roof.darkened(0.35)
+	var roof_l := roof.lightened(0.20)
+	var door := Color(0.10, 0.08, 0.07)
+
+	_ellipse(img, 32, 83, 22.0, 5.0, Color(INK.r, INK.g, INK.b, 0.35))
+
+	_trapezoid_o(img, 32, 42, 78, 20.0, 22.0, wall, INK)
+	_rect(img, 13, 43, 38, 3, wall_l)
+
+	_tri_up(img, 32, 44, 27, 27, roof_d)
+	_tri_up(img, 32, 42, 25, 25, roof)
+	_rect(img, 22, 18, 20, 3, roof_l)
+
+	_rect(img, 27, 60, 10, 18, INK)
+	_rect(img, 28, 61, 8, 17, door)
+	_px(img, 34, 69, wall_l)
+
+	for wx in [16, 40]:
+		_rect(img, wx, 53, 9, 9, INK)
+		_rect(img, wx + 1, 54, 7, 7, Color(0.10, 0.10, 0.17))
+	return img
+
+func _gen_building_armurerie(accent: Color) -> Image:
+	var img := _gen_building_base(STONE, STONE_D.lightened(0.08))
+	# Écusson au-dessus de la porte, épées croisées en acier.
+	_diamond(img, 32, 50, 7, accent.darkened(0.4))
+	_diamond(img, 32, 50, 5, accent)
+	_line(img, 25, 43, 39, 57, STEEL_L)
+	_line(img, 39, 43, 25, 57, STEEL_L)
+	_px(img, 32, 50, STEEL_L)
+	return img
+
+func _gen_building_bibliotheque(accent: Color) -> Image:
+	var img := _gen_building_base(STONE_L.darkened(0.05), accent.darkened(0.35))
+	# Fenêtre en arc façon lucarne, halo doux (lecture nocturne) ; livres empilés.
+	_glow(img, 32.0, 33.0, 11.0, accent, 0.35)
+	_ellipse(img, 32, 34, 8.0, 10.0, INK)
+	_ellipse(img, 32, 34, 6.2, 8.2, Color(accent.r * 0.55, accent.g * 0.55, accent.b, 0.6))
+	_line(img, 32, 27, 32, 41, accent.lightened(0.3))
+	for bx in [15, 41]:
+		_rect(img, bx, 76, 8, 6, BONE_D)
+		_rect(img, bx, 74, 8, 2, BONE)
+	return img
+
+func _gen_building_sanctuaire(accent: Color) -> Image:
+	var img := _gen_building_base(BONE.darkened(0.12), accent.darkened(0.3))
+	# Colonnes de chaque côté de l'entrée (contraste net vs. le mur) + lueur
+	# dorée dans le porche.
+	for cx in [14, 45]:
+		_rect(img, cx, 44, 6, 34, INK)
+		_rect(img, cx + 1, 44, 4, 34, STEEL_L)
+		_rect(img, cx + 1, 44, 1, 34, Color(1, 1, 1))
+		_rect(img, cx - 1, 41, 8, 4, INK)
+		_rect(img, cx, 41, 6, 2, STEEL_L)
+	_glow(img, 32.0, 64.0, 10.0, GOLD, 0.5)
+	_diamond(img, 32, 50, 5, GOLD_L)
+	return img
+
+func _gen_building_forge(accent: Color) -> Image:
+	var img := _gen_building_base(STONE_D.lightened(0.05), STONE.darkened(0.25))
+	# Cheminée fumante à braises + enclume posée devant l'entrée.
+	_rect(img, 43, 8, 8, 18, STONE_D); _rect(img, 43, 8, 8, 2, STONE)
+	_glow(img, 47.0, 6.0, 7.0, accent, 0.6)
+	_ellipse(img, 47, 5, 3.4, 2.2, EMBER_L)
+	_glow(img, 32.0, 68.0, 9.0, accent, 0.4)
+	_rect(img, 24, 70, 16, 6, INK)
+	_rect(img, 25, 71, 14, 4, STEEL_D)
+	_rect(img, 25, 71, 14, 1, STEEL_L)
+	_rect(img, 20, 75, 24, 3, STEEL_D.darkened(0.25))
+	return img
+
+func _gen_building_boutique(accent: Color) -> Image:
+	var img := _gen_building_base(PROP_WOOD.lightened(0.12), PROP_WOOD.darkened(0.35))
+	# Auvent rayé au-dessus de l'entrée + tonneau de marchandise posé devant.
+	for i in range(7):
+		var sx: int = 16 + i * 4
+		_tri_up(img, sx, 60, 2, 7, accent if i % 2 == 0 else BONE)
+	_rect(img, 15, 57, 34, 3, INK)
+	_ellipse(img, 50, 76, 6.0, 8.0, PROP_WOOD.darkened(0.1))
+	_ellipse(img, 50, 70, 5.0, 1.5, PROP_WOOD.lightened(0.22))
+	_ellipse(img, 50, 76, 6.5, 1.6, Color(INK.r, INK.g, INK.b, 0.3))
+	return img
+
+func _gen_building_tower_gate(accent: Color) -> Image:
+	var img := _new_sized(BW, BH)
+	_ellipse(img, 32, 83, 22.0, 5.0, Color(INK.r, INK.g, INK.b, 0.35))
+	# Arche de pierre ouvrant sur la Tour, entrevue au loin, lueur arcanique.
+	_rect(img, 6, 34, 13, 48, STONE_D); _rect(img, 45, 34, 13, 48, STONE_D)
+	_rect(img, 7, 35, 11, 46, STONE); _rect(img, 46, 35, 11, 46, STONE)
+	_ellipse(img, 32, 34, 25.0, 20.0, STONE_D)
+	_ellipse(img, 32, 36, 21.0, 17.0, INK)
+	_glow(img, 32.0, 52.0, 17.0, accent, 0.4)
+	# Silhouette de la Tour entrevue au loin, dans l'arche : nettement plus
+	# claire que l'intérieur (INK) pour bien se détacher, façon fond de scène.
+	var tower_c: Color = accent.lightened(0.35)
+	_trapezoid(img, 32, 20, 60, 4.0, 9.0, tower_c.darkened(0.25))
+	_trapezoid(img, 32, 20, 58, 3.0, 7.5, tower_c)
+	_px(img, 32, 20, Color(1, 1, 1))
 	return img
 
 func _gen_road() -> Image:

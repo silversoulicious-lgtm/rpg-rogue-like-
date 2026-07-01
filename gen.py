@@ -120,12 +120,13 @@ rng = RNG(1337)
 
 # --- Image / primitives -------------------------------------------------------
 class Img:
-    def __init__(self, opaque=False):
+    def __init__(self, opaque=False, w=TILE, h=TILE):
+        self.w, self.h = w, h
         self.px = [[ [0.0,0.0,0.0,1.0] if opaque else [0.0,0.0,0.0,0.0]
-                     for _ in range(TILE)] for _ in range(TILE)]
+                     for _ in range(w)] for _ in range(h)]
     def fill(self, c):
-        for y in range(TILE):
-            for x in range(TILE):
+        for y in range(self.h):
+            for x in range(self.w):
                 self.px[y][x] = [c.r, c.g, c.b, c.a]
     def get(self, x, y):
         p = self.px[y][x]
@@ -135,7 +136,7 @@ class Img:
 
 def _px(img, x, y, c):
     x = int(x); y = int(y)
-    if 0 <= x < TILE and 0 <= y < TILE:
+    if 0 <= x < img.w and 0 <= y < img.h:
         if c.a >= 1.0:
             img.set(x, y, c)
         elif c.a > 0.0:
@@ -225,8 +226,8 @@ def _disc_band(img, cx, cy, r, c_light, c_mid, c_dark):
                 _px(img, xx, yy, c)
 
 def _fade(img, a):
-    for y in range(TILE):
-        for x in range(TILE):
+    for y in range(img.h):
+        for x in range(img.w):
             p = img.px[y][x]
             if p[3] > 0.0:
                 p[3] *= a
@@ -234,9 +235,9 @@ def _fade(img, a):
 # --- ENHANCEMENTS -------------------------------------------------------------
 def _glow(img, cx, cy, r, c, strength=0.85):
     """Halo néon additif (bloom). Éclaircit le fond et lui donne un peu d'alpha."""
-    for yy in range(int(cy-r), int(cy+r)+1):
-        for xx in range(int(cx-r), int(cx+r)+1):
-            if not (0 <= xx < TILE and 0 <= yy < TILE): continue
+    for yy in range(int(math.floor(cy-r)), int(math.ceil(cy+r))+1):
+        for xx in range(int(math.floor(cx-r)), int(math.ceil(cx+r))+1):
+            if not (0 <= xx < img.w and 0 <= yy < img.h): continue
             d = math.hypot(xx-cx, yy-cy)/r
             if d >= 1.0: continue
             fa = (1.0-d)*(1.0-d)*strength
@@ -260,10 +261,10 @@ def _rim(img, cx, cy, r, c):
 # --- IO -----------------------------------------------------------------------
 ASSETS = None
 def _save(img, name):
-    out = Image.new("RGBA", (TILE, TILE))
+    out = Image.new("RGBA", (img.w, img.h))
     data = []
-    for y in range(TILE):
-        for x in range(TILE):
+    for y in range(img.h):
+        for x in range(img.w):
             p = img.px[y][x]
             data.append((int(round(max(0,min(1,p[0]))*255)),
                          int(round(max(0,min(1,p[1]))*255)),
@@ -274,6 +275,10 @@ def _save(img, name):
 
 def _new(opaque=False):
     return Img(opaque)
+
+def _new_sized(w, h, opaque=False):
+    """Variante de _new() à taille libre (bâtiments du Hub, cf. _assets_gen.gd)."""
+    return Img(opaque, w, h)
 
 # --- Textures du monde --------------------------------------------------------
 def _gen_floor():
@@ -1115,6 +1120,105 @@ def _gen_abandoned_anvil(c):
     _px(img, 14, 22, EMBER); _px(img, 18, 23, EMBER_L)
     return img
 
+# --- Bâtiments du Hub (Pied de la Tour) ----------------------------------------
+# Port fidèle de _assets_gen.gd : plus grands qu'une tuile (64x88, ~2x2 tuiles
+# au sol) pour lire comme des lieux visitables plutôt que des icônes de sol.
+BW = 64
+BH = 88
+
+def _gen_building_base(wall, roof):
+    img = _new_sized(BW, BH)
+    wall_l = wall.lightened(0.16)
+    roof_d = roof.darkened(0.35); roof_l = roof.lightened(0.20)
+    door = C(0.10, 0.08, 0.07)
+
+    _ellipse(img, 32, 83, 22.0, 5.0, C(INK.r, INK.g, INK.b, 0.35))
+
+    _trapezoid_o(img, 32, 42, 78, 20.0, 22.0, wall, INK)
+    _rect(img, 13, 43, 38, 3, wall_l)
+
+    _tri_up(img, 32, 44, 27, 27, roof_d)
+    _tri_up(img, 32, 42, 25, 25, roof)
+    _rect(img, 22, 18, 20, 3, roof_l)
+
+    _rect(img, 27, 60, 10, 18, INK)
+    _rect(img, 28, 61, 8, 17, door)
+    _px(img, 34, 69, wall_l)
+
+    for wx in (16, 40):
+        _rect(img, wx, 53, 9, 9, INK)
+        _rect(img, wx + 1, 54, 7, 7, C(0.10, 0.10, 0.17))
+    return img
+
+def _gen_building_armurerie(accent):
+    img = _gen_building_base(STONE, STONE_D.lightened(0.08))
+    _diamond(img, 32, 50, 7, accent.darkened(0.4))
+    _diamond(img, 32, 50, 5, accent)
+    _line(img, 25, 43, 39, 57, STEEL_L)
+    _line(img, 39, 43, 25, 57, STEEL_L)
+    _px(img, 32, 50, STEEL_L)
+    return img
+
+def _gen_building_bibliotheque(accent):
+    img = _gen_building_base(STONE_L.darkened(0.05), accent.darkened(0.35))
+    _glow(img, 32.0, 33.0, 11.0, accent, 0.35)
+    _ellipse(img, 32, 34, 8.0, 10.0, INK)
+    _ellipse(img, 32, 34, 6.2, 8.2, C(accent.r * 0.55, accent.g * 0.55, accent.b, 0.6))
+    _line(img, 32, 27, 32, 41, accent.lightened(0.3))
+    for bx in (15, 41):
+        _rect(img, bx, 76, 8, 6, BONE_D)
+        _rect(img, bx, 74, 8, 2, BONE)
+    return img
+
+def _gen_building_sanctuaire(accent):
+    img = _gen_building_base(BONE.darkened(0.12), accent.darkened(0.3))
+    for cx in (14, 45):
+        _rect(img, cx, 44, 6, 34, INK)
+        _rect(img, cx + 1, 44, 4, 34, STEEL_L)
+        _rect(img, cx + 1, 44, 1, 34, C(1, 1, 1))
+        _rect(img, cx - 1, 41, 8, 4, INK)
+        _rect(img, cx, 41, 6, 2, STEEL_L)
+    _glow(img, 32.0, 64.0, 10.0, GOLD, 0.5)
+    _diamond(img, 32, 50, 5, GOLD_L)
+    return img
+
+def _gen_building_forge(accent):
+    img = _gen_building_base(STONE_D.lightened(0.05), STONE.darkened(0.25))
+    _rect(img, 43, 8, 8, 18, STONE_D); _rect(img, 43, 8, 8, 2, STONE)
+    _glow(img, 47.0, 6.0, 7.0, accent, 0.6)
+    _ellipse(img, 47, 5, 3.4, 2.2, EMBER_L)
+    _glow(img, 32.0, 68.0, 9.0, accent, 0.4)
+    _rect(img, 24, 70, 16, 6, INK)
+    _rect(img, 25, 71, 14, 4, STEEL_D)
+    _rect(img, 25, 71, 14, 1, STEEL_L)
+    _rect(img, 20, 75, 24, 3, STEEL_D.darkened(0.25))
+    return img
+
+def _gen_building_boutique(accent):
+    img = _gen_building_base(_WOOD.lightened(0.12), _WOOD.darkened(0.35))
+    for i in range(7):
+        sx = 16 + i * 4
+        _tri_up(img, sx, 60, 2, 7, accent if i % 2 == 0 else BONE)
+    _rect(img, 15, 57, 34, 3, INK)
+    _ellipse(img, 50, 76, 6.0, 8.0, _WOOD.darkened(0.1))
+    _ellipse(img, 50, 70, 5.0, 1.5, _WOOD.lightened(0.22))
+    _ellipse(img, 50, 76, 6.5, 1.6, C(INK.r, INK.g, INK.b, 0.3))
+    return img
+
+def _gen_building_tower_gate(accent):
+    img = _new_sized(BW, BH)
+    _ellipse(img, 32, 83, 22.0, 5.0, C(INK.r, INK.g, INK.b, 0.35))
+    _rect(img, 6, 34, 13, 48, STONE_D); _rect(img, 45, 34, 13, 48, STONE_D)
+    _rect(img, 7, 35, 11, 46, STONE); _rect(img, 46, 35, 11, 46, STONE)
+    _ellipse(img, 32, 34, 25.0, 20.0, STONE_D)
+    _ellipse(img, 32, 36, 21.0, 17.0, INK)
+    _glow(img, 32.0, 52.0, 17.0, accent, 0.4)
+    tower_c = accent.lightened(0.35)
+    _trapezoid(img, 32, 20, 60, 4.0, 9.0, tower_c.darkened(0.25))
+    _trapezoid(img, 32, 20, 58, 3.0, 7.5, tower_c)
+    _px(img, 32, 20, C(1, 1, 1))
+    return img
+
 def _gen_road():
     img = _new(True); dirt = C(0.24, 0.20, 0.18); img.fill(dirt)
     for i in range(60):
@@ -1321,6 +1425,14 @@ def main():
     _save(_gen_ice_cairn(C(0.62, 0.90, 1.0)), "ice_cairn")
     _save(_gen_sunken_ruin(C(0.64, 0.86, 0.32)), "sunken_ruin")
     _save(_gen_abandoned_anvil(C(1.0, 0.58, 0.20)), "abandoned_anvil")
+    # Bâtiments du Hub (couleurs reprises de Town.gd, une par bâtiment, pour
+    # rester cohérent avec le nom affiché à côté de chaque sprite).
+    _save(_gen_building_armurerie(C(0.85, 0.6, 0.35)), "building_armurerie")
+    _save(_gen_building_bibliotheque(C(0.55, 0.75, 1.0)), "building_bibliotheque")
+    _save(_gen_building_sanctuaire(C(0.85, 0.7, 0.35)), "building_sanctuaire")
+    _save(_gen_building_forge(C(0.95, 0.45, 0.3)), "building_forge")
+    _save(_gen_building_boutique(C(0.5, 0.95, 0.75)), "building_boutique")
+    _save(_gen_building_tower_gate(C(0.72, 0.62, 1.0)), "building_tower_gate")
     print("=== ASSETS GENERATED ===", ASSETS)
 
 # === Nouveaux monstres (Pass 1) ==============================================

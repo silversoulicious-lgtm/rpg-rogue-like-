@@ -340,6 +340,26 @@ unzip -q godot.zip && chmod +x Godot_v4.3-stable_linux.x86_64
   bugs de contraste corrigés. Nettement plus lent qu'un pur `--headless`
   (rasterisation logicielle) mais fiable pour vérifier visuellement du GDScript
   UI/`_draw()` sans jamais avoir besoin d'un vrai GPU/écran.
+- **Régénérer `assets/` avec `_assets_gen.gd`** (`--headless --script
+  res://_assets_gen.gd`) produit les PNG mais PAS leurs `.import` — un
+  nouveau fichier généré reste invisible à `load()` (repli silencieux sur
+  texture nulle) tant qu'un passage d'import (`--headless --editor --quit`)
+  n'a pas tourné après coup. Piège déjà rencontré une fois dans l'historique
+  du projet, retombé dedans en générant les sprites de bâtiments du Hub.
+- **`gen.py` (repli Python)** : maintenu à jour en parallèle de
+  `_assets_gen.gd` (nouveaux `_gen_building_*`, `_new_sized`/`Img` à taille
+  libre, `_px`/`_glow`/`_fade`/`_save` généralisés à `img.w`/`img.h`).
+  Vérifié par diff pixel-à-pixel contre les PNG produits par le vrai Godot :
+  identique pour 3 des 6 sprites, différences de quelques pixels (delta ≤2/255,
+  imperceptible) pour les 3 autres, dues à `_glow()` qui utilisait `int()`
+  au lieu de `floor`/`ceil` pour les bornes de boucle (corrigé) et à un écart
+  résiduel connu et **non corrigé** : le `round()` de Python arrondit au pair
+  le plus proche (banker's rounding) alors que celui de Godot arrondit
+  toujours à l'écart de zéro sur les cas .5 exacts — écart préexistant dans
+  tout le fichier (15+ appels à `round()`), pas introduit par ce chantier ;
+  corriger ça partout demanderait de revérifier visuellement des dizaines de
+  sprites déjà livrés, hors scope ici. Impact réel observé : 1 pixel de bord
+  sur un des 6 sprites de bâtiment, imperceptible.
 
 ### Main Hub (Pied de la Tour) — infrastructure implémentée
 Décisions actées avec l'utilisateur, puis construites (vérifiées par capture
@@ -356,11 +376,30 @@ d'écran réelle via Xvfb + Mesa llvmpipe, cf. section outillage plus haut) :
   simple) : pas de brouillard de guerre ni de caméra de suivi (la ville
   entière — 544×416px — tient dans les 1280×720 de la zone de jeu, centrée
   statiquement). Réutilise les textures du biome "plaine" (sol/arbre en
-  bordure) et `road` pour rester cohérent visuellement sans nouveaux assets ;
-  les bâtiments n'ont pas encore de sprite dédié : panneau coloré + glyphe +
-  nom (dessinés en `_draw()`, même esprit de repli que `TitleBg.gd`). Un
-  rectangle de fond plein écran défensif évite qu'un rendu de donjon résiduel
-  ne transparaisse dans les marges.
+  bordure) et `road` pour rester cohérent visuellement sans nouveaux assets.
+  Un rectangle de fond plein écran défensif évite qu'un rendu de donjon
+  résiduel ne transparaisse dans les marges.
+- **Sprites de bâtiments dédiés** (ajoutés après coup, sur demande) : 6
+  nouveaux générateurs dans `_assets_gen.gd` (`_gen_building_<id>`,
+  64×88 — 2×2 tuiles au sol, bien plus grand qu'une tuile 32×32 pour lire
+  comme un vrai lieu et pas une icône), une silhouette générique commune
+  (`_gen_building_base` : murs + toit + porte + fenêtres) que chaque
+  bâtiment personnalise (Armurerie : écusson à épées croisées ; Bibliothèque :
+  lucarne ronde lumineuse + livres empilés ; Sanctuaire : colonnes + lueur
+  dorée au porche ; Forge : cheminée fumante + enclume devant l'entrée ;
+  Boutique : auvent rayé + tonneau ; Porte de la Tour : arche de pierre avec
+  la Tour entrevue au loin). Couleur reprise de `Town.buildings[].color`
+  (chargé dynamiquement depuis `Town.gd` dans `_assets_gen.gd`, pas dupliqué).
+  `TownView._blit_or_rect()` les dessine centrés sur la case du bâtiment,
+  débordant vers le haut. **Fix nécessaire au passage** : `_px()`/`_glow()`
+  étaient bornés en dur à `TILE` (32) — généralisé à `img.get_width()`/
+  `get_height()` (comportement identique pour tous les sprites 32×32
+  existants, permet aussi les sprites plus grands).
+- **Piège rencontré** : après génération, `load("res://assets/building_*.png")`
+  échouait silencieusement (repli sur rectangle coloré) tant qu'un passage
+  d'import (`--headless --editor --quit`) n'avait pas tourné pour créer les
+  `.import` — déjà rencontré une fois dans l'historique du projet ("Add
+  missing .import files for new PNG assets").
 - **`Main.gd`** : `State.HUB` ; `town`/`hub_pos`/`town_view` ; `enter_hub()`
   (crée la ville une seule fois, position conservée entre visites, bascule
   `map_view.visible`/`town_view.visible`) ; `_hub_try_move()` (bloqué par la

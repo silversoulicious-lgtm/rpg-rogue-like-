@@ -1,10 +1,13 @@
 ## Rendu du Hub (pied de la Tour) : petite ville fixe, sans brouillard de guerre
 ## ni caméra de suivi (la carte entière tient à l'écran). Réutilise les
-## textures du biome "plaine" pour le sol/chemin ; les bâtiments n'ont pas
-## encore de sprite dédié — panneau coloré + glyphe en attendant.
+## textures du biome "plaine" pour le sol/chemin ; les bâtiments ont leur
+## propre sprite dédié (generés par _assets_gen.gd, cf. building_<id>.png),
+## plus grand qu'une tuile pour lire comme un vrai lieu plutôt qu'une icône.
 extends Node2D
 
 const CELL := 32
+const BW := 64   # doit rester en phase avec BW/BH de _assets_gen.gd
+const BH := 88
 const VIEW := Vector2(1280, 720)
 const COLOR_GRASS := Color(0.10, 0.14, 0.10)
 const COLOR_ROAD := Color(0.16, 0.14, 0.12)
@@ -21,7 +24,9 @@ func _ready() -> void:
 	_load_textures()
 
 func _load_textures() -> void:
-	for n in ["plaine_ground", "plaine_tree", "road", "aria"]:
+	for n in ["plaine_ground", "plaine_tree", "road", "aria",
+			"building_armurerie", "building_bibliotheque", "building_sanctuaire",
+			"building_forge", "building_boutique", "building_tower_gate"]:
 		var path := "res://assets/%s.png" % n
 		tex[n] = load(path) if ResourceLoader.exists(path) else null
 
@@ -54,18 +59,16 @@ func _draw() -> void:
 			else:
 				_blit_or_rect("plaine_ground", Rect2(px, py, CELL, CELL), COLOR_GRASS)
 
-	# Bâtiments : panneau coloré + glyphe + nom, débordant un peu de la case
-	# pour lire comme un petit édifice plutôt qu'un simple marqueur au sol.
+	# Bâtiments : sprite dédié (2x2 tuiles), ancré par sa base sur la case du
+	# bâtiment — il déborde vers le haut/les côtés pour lire comme un édifice
+	# plutôt qu'un simple marqueur au sol. Nom affiché en dessous.
 	for p in town.buildings.keys():
 		var b: Dictionary = town.buildings[p]
-		var col: Color = b["color"]
 		var px: float = ox + p.x * CELL
 		var py: float = oy + p.y * CELL
-		var rect := Rect2(px - 8, py - 26, CELL + 16, CELL + 26)
-		draw_rect(rect, Color(col.r * 0.16, col.g * 0.14, col.b * 0.20, 0.95))
-		draw_rect(rect, col, false, 2.0)
-		draw_string(_font, Vector2(px - 8, py - 4), b["glyph"],
-			HORIZONTAL_ALIGNMENT_CENTER, CELL + 16, 20, col)
+		var bx: float = px + CELL * 0.5 - BW * 0.5
+		var by: float = py + CELL - BH + 6.0
+		_blit_or_rect("building_%s" % b["id"], Rect2(bx, by, BW, BH), b["color"])
 		draw_string(_font, Vector2(px - 54, py + CELL + 16), b["name"],
 			HORIZONTAL_ALIGNMENT_CENTER, CELL + 108, 12, Color(0.88, 0.88, 0.94))
 
