@@ -389,6 +389,48 @@ const AFFIXES := [
 	{ "key": "thorns_flat",  "name": "des Épines",     "min": 2,    "max": 5 },
 ]
 
+# --- PRÉFIXES DE COMBAT (inspiré de Dungeonmans) ------------------------------
+# Contrairement aux AFFIXES ci-dessus (bonus de stat plats), un préfixe ajoute
+# un EFFET DE COMBAT à un objet procédural (Commun/Rare) — tiré indépendamment
+# des affixes de stat, réservé à un slot (arme = déclenché à l'attaque, armure
+# = déclenché en défense). Un seul scalaire par préfixe (magnitude OU chance
+# selon l'effet), dans l'esprit "un proc = une valeur" du reste du code
+# (cf. UNIQUE_BASES/proc_val). Épique/Légendaire gardent leur identité propre
+# (bibliothèque d'objets nommés) et ne tirent pas de préfixe en plus.
+const PREFIXES := [
+	{ "id": "ardent",     "name": "du Brasier",       "slot": "arme",
+	  "base": 3.0, "per_floor": 0.12, "max": 9.0 },
+	{ "id": "givre",      "name": "du Givre",         "slot": "arme",
+	  "base": 0.25, "per_floor": 0.0, "max": 0.25 },
+	{ "id": "venimeux",   "name": "du Venin",         "slot": "arme",
+	  "base": 0.30, "per_floor": 0.0, "max": 0.30 },
+	{ "id": "foudroyant", "name": "de la Foudre",     "slot": "arme",
+	  "base": 0.12, "per_floor": 0.0, "max": 0.12 },
+	{ "id": "cuirasse",   "name": "du Rempart",       "slot": "armure",
+	  "base": 2.0, "per_floor": 0.08, "max": 6.0 },
+	{ "id": "renvoi",     "name": "des Représailles", "slot": "armure",
+	  "base": 0.25, "per_floor": 0.0, "max": 0.25 },
+]
+# Chance qu'un objet procédural tire un préfixe, par rareté (Épique/Légendaire
+# gardent leur propre effet et n'en tirent pas). Rare a plus de chances que
+# Commun : c'est la rareté qui doit sembler "spéciale" sans égaler l'Épique.
+const PREFIX_CHANCE := { "commun": 0.12, "rare": 0.22 }
+
+## Tire un préfixe compatible avec le slot donné (dict vide si aucun tiré).
+static func _roll_prefix(slot: String, rarity_id: String, floor: int, rng: RandomNumberGenerator) -> Dictionary:
+	var chance: float = float(PREFIX_CHANCE.get(rarity_id, 0.0))
+	if chance <= 0.0 or rng.randf() >= chance:
+		return {}
+	var pool: Array = []
+	for p in PREFIXES:
+		if p["slot"] == slot:
+			pool.append(p)
+	if pool.is_empty():
+		return {}
+	var def: Dictionary = pool[rng.randi_range(0, pool.size() - 1)]
+	var value: float = minf(float(def["max"]), float(def["base"]) + float(def["per_floor"]) * float(floor - 1))
+	return { "id": def["id"], "name": String(def["name"]), "value": value }
+
 # --- OBJETS UNIQUES (Épique/Légendaire) ---------------------------------------
 # Au-delà de la rareté = "plus de stats", les paliers Épique et Légendaire
 # puisent dans une bibliothèque d'objets NOMMÉS, chacun porteur d'un EFFET DE
@@ -472,6 +514,12 @@ static func _proc_desc(proc: String, val: float) -> String:
 		"frappe_double": return "Frappe Double : %d%% de chances de frapper une 2e fois (50%% dégâts)." % int(round(val * 100))
 		"soif_de_sang": return "Soif de Sang : soigne %d%% PV max à chaque ennemi tué." % int(round(val * 100))
 		"moisson": return "Moisson : +%d Éclats à chaque ennemi tué." % int(round(val))
+		"ardent": return "Brasier : inflige %d à %d dégâts de feu bonus par attaque." % [maxi(1, int(val) - 1), int(val) + 1]
+		"givre": return "Givre : %d%% de chances de ralentir la cible touchée." % int(round(val * 100))
+		"venimeux": return "Venin : %d%% de chances d'empoisonner la cible touchée." % int(round(val * 100))
+		"foudroyant": return "Foudre : %d%% de chances d'étourdir la cible touchée (1 tour)." % int(round(val * 100))
+		"cuirasse": return "Rempart : réduit chaque coup subi de %d dégâts." % int(round(val))
+		"renvoi": return "Représailles : %d%% de chances d'affaiblir un attaquant au contact." % int(round(val * 100))
 		_: return ""
 
 ## Construit le pool complet (Épique + Légendaire, 102 objets) une seule fois.
@@ -597,11 +645,18 @@ static func _generate_procedural_item(slot: String, floor: int, rarity: Dictiona
 	var name: String = base["name"]
 	if not affix_names.is_empty():
 		name += " " + affix_names[0]
+	var prefix: Dictionary = _roll_prefix(slot, rarity["id"], floor, rng)
+	if not prefix.is_empty():
+		name += " " + String(prefix["name"])
 	var item: Dictionary = {
 		"kind": "equip", "name": name, "slot": slot,
 		"rarity": rarity["id"], "rarity_name": rarity["name"], "rarity_color": rarity["color"],
 		"bonus": bonus, "salvage": int(rarity["salvage"]) + floor, "sprite": slot,
 	}
+	if not prefix.is_empty():
+		item["proc"] = prefix["id"]
+		item["proc_val"] = prefix["value"]
+		item["desc"] = _proc_desc(prefix["id"], prefix["value"])
 	if slot == "arme":
 		item["weapon_type"] = String(base.get("wtype", "melee"))
 	return item

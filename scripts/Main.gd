@@ -313,9 +313,12 @@ func _make_floor_rewards(is_elite: bool) -> Array:
 			"desc": "Récupère une partie de tes points de vie." })
 	var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
 	var item: Dictionary = Data.generate_item(slot, lvl, rng)
+	var idesc: String = "%s — %s" % [item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])]
+	if item.get("desc", "") != "":
+		idesc += " — " + String(item["desc"])
 	rewards.append({ "type": "equip", "data": item, "color": item.get("rarity_color", Color.WHITE),
 		"label": "%s %s" % [Data.SLOT_GLYPH[slot], item["name"]],
-		"desc": "%s — %s" % [item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])] })
+		"desc": idesc })
 	var amt: int = (8 + floor_num * 3) * (2 if is_elite else 1)
 	rewards.append({ "type": "shards", "value": amt, "color": Color(1.0, 0.85, 0.35),
 		"label": "✦ %d Éclats" % amt,
@@ -978,11 +981,15 @@ func apply_weaken(target: Entity, turns: int, amount: float) -> void:
 func apply_confuse(target: Entity, turns: int) -> void:
 	target.add_status("confusion", turns)
 
-## Défense effective du joueur (réduite par le statut "weaken" des ennemis).
+## Défense effective du joueur (réduite par le statut "weaken" des ennemis,
+## augmentée par le préfixe d'armure "cuirasse" — réduction plate en plus de
+## la Défense normale).
 func _player_def() -> int:
 	var d: int = player.defense
 	if player.has_status("weaken"):
 		d -= int(round(player.status_value("weaken")))
+	if player.has_proc("cuirasse"):
+		d += int(round(player.proc_value("cuirasse")))
 	return maxi(0, d)
 
 ## Applique au joueur le statut "au contact" déclaré par un ennemi (def ai.on_hit).
@@ -1062,6 +1069,7 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		if healed > 0:
 			player.heal(healed)
 			add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
+	_trigger_weapon_prefixes(target)
 	if not target.is_alive():
 		on_enemy_killed(target)
 		return
@@ -1074,6 +1082,41 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 			player.heal(int(ceil(dealt2 * player.lifesteal_pct)))
 		if not target.is_alive():
 			on_enemy_killed(target)
+
+## Déclenche les préfixes de combat de l'ARME équipée (façon Dungeonmans),
+## indépendants des procs d'objets uniques : dégâts de feu bonus ("ardent"),
+## puis chances de ralentir/empoisonner/étourdir la cible touchée. N'agit
+## que sur le coup principal (pas sur la Frappe Double), comme le Venin/Vol
+## de vie déjà présents.
+func _trigger_weapon_prefixes(target: Entity) -> void:
+	if player.has_proc("ardent") and target.is_alive():
+		var fdmg: int = _fire_prefix_damage(target, player.proc_value("ardent"))
+		if fdmg > 0:
+			var extra: int = target.take_damage(fdmg)
+			run_best_hit = max(run_best_hit, extra)
+			add_message("[color=#ff9a5a]Brasier : %s subit -%d (feu).[/color]" % [target.display_name, extra])
+	if not target.is_alive():
+		return
+	if player.has_proc("givre") and rng.randf() < player.proc_value("givre"):
+		apply_slow(target, 2, 0.35)
+		add_message("[color=#9fdfff]%s est ralenti par le givre.[/color]" % target.display_name)
+	if player.has_proc("venimeux") and rng.randf() < player.proc_value("venimeux"):
+		apply_poison(target, 3, 3.0)
+		add_message("[color=#9fdf6a]%s est empoisonné par le venin.[/color]" % target.display_name)
+	if player.has_proc("foudroyant") and rng.randf() < player.proc_value("foudroyant"):
+		apply_stun(target, 1)
+		add_message("[color=#cdb8ff]%s est étourdi par la foudre ![/color]" % target.display_name)
+
+## Dégâts de feu instantanés bonus (préfixe "ardent") : respecte l'immunité et
+## la faiblesse au feu des ennemis (mêmes règles que apply_burn).
+func _fire_prefix_damage(target: Entity, avg: float) -> int:
+	if avg <= 0.0 or (not target.ai.is_empty() and target.ai.get("immune_fire", false)):
+		return 0
+	var v: float = avg + rng.randf_range(-1.0, 1.0)
+	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
+	if wf > 0.0:
+		v *= 1.0 + wf
+	return maxi(1, int(round(v)))
 
 ## Attaque d'un ENNEMI vers le joueur : gère esquive, défense (réduite par weaken),
 ## coups multiples (ai.atk_count), vol de vie (ai.lifesteal), statut au contact
@@ -1111,8 +1154,15 @@ func _enemy_hit_player(attacker: Entity) -> bool:
 		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
 		if not attacker.is_alive():
 			on_enemy_killed(attacker)
+	_trigger_armor_retaliation(attacker, dealt)
 	_check_revive()
 	return true
+
+## Préfixe d'armure "renvoi" : chance d'affaiblir l'attaquant au contact.
+func _trigger_armor_retaliation(attacker: Entity, dealt: int) -> void:
+	if dealt > 0 and attacker.is_alive() and player.has_proc("renvoi") and rng.randf() < player.proc_value("renvoi"):
+		apply_weaken(attacker, 3, 3.0)
+		add_message("[color=#ffb98a]Représailles : %s est affaibli.[/color]" % attacker.display_name)
 
 func _check_revive() -> void:
 	if player.hp <= 0 and player.revive_available():
@@ -1644,6 +1694,7 @@ func _enemy_ranged_attack(e: Entity) -> void:
 	var dealt: int = player.take_damage(max(1, _enemy_atk(e) - _player_def()))
 	add_message("[color=#ff8a8a]%s te touche (-%d).[/color]" % [e.display_name, dealt])
 	_apply_enemy_on_hit(e)
+	_trigger_armor_retaliation(e, dealt)
 	_check_revive()
 
 func _enemy_act_caster(e: Entity) -> void:

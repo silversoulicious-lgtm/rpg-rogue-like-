@@ -82,6 +82,45 @@ func _ready() -> void:
 	assert(rarities_seen.size() >= 2, "plusieurs raretés générées")
 	print("OK loot procédural: raretés vues = %s" % str(rarities_seen.keys()))
 
+	# --- Préfixes de combat (Dungeonmans-like) sur objets procéduraux -------------
+	var prng = RandomNumberGenerator.new(); prng.seed = 7
+	var weapon_prefixes_seen = {}
+	var armor_prefixes_seen = {}
+	for i in 400:
+		var wit = Data.generate_item("arme", 10, prng)
+		if not wit.get("unique", false) and wit.get("proc", "") != "":
+			weapon_prefixes_seen[wit["proc"]] = true
+			assert(wit.has("proc_val") and wit.has("desc") and wit["desc"] != "", "préfixe procédural a une valeur + description")
+		var ait = Data.generate_item("armure", 10, prng)
+		if not ait.get("unique", false) and ait.get("proc", "") != "":
+			armor_prefixes_seen[ait["proc"]] = true
+	assert(weapon_prefixes_seen.size() >= 3, "plusieurs préfixes d'arme différents tirés sur 400 essais")
+	assert(armor_prefixes_seen.size() >= 1, "au moins un préfixe d'armure tiré sur 400 essais")
+	print("OK préfixes de combat: arme=%s armure=%s" % [str(weapon_prefixes_seen.keys()), str(armor_prefixes_seen.keys())])
+
+	# --- Préfixes de combat : déclenchement en combat -----------------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	if main.enemies.is_empty():
+		main.enemies.append(main._make_enemy(Data.ENEMIES[0], 1, Vector2i(main.player.x + 1, main.player.y)))
+	var target: Entity = main.enemies[0]
+	# Ardent : dégâts de feu bonus instantanés (hors immunité/faiblesse au feu).
+	main.player.procs.append({ "id": "ardent", "value": 5.0 })
+	target.hp = target.max_hp
+	var hp0 := target.hp
+	main._trigger_weapon_prefixes(target)
+	assert(target.hp < hp0, "Ardent inflige des dégâts de feu bonus au coup suivant")
+	# Cuirasse : réduction plate de dégâts entrants, pliée dans _player_def().
+	var def0 := main._player_def()
+	main.player.procs.append({ "id": "cuirasse", "value": 4.0 })
+	assert(main._player_def() == def0 + 4, "Cuirasse augmente la défense effective de sa valeur")
+	# Renvoi : affaiblit l'attaquant au contact (forcé à 100% pour le test).
+	main.player.procs.append({ "id": "renvoi", "value": 1.0 })
+	target.hp = target.max_hp
+	main._trigger_armor_retaliation(target, 5)
+	assert(target.has_status("weaken"), "Renvoi affaiblit l'attaquant quand il déclenche")
+	print("OK préfixes de combat: Ardent/Cuirasse/Renvoi se déclenchent correctement")
+
 	# --- Objets uniques (Épique/Légendaire) ---------------------------------------
 	assert(Data.UNIQUE_ITEMS.size() >= 100, "au moins 100 objets uniques générés")
 	for slot in Data.SLOTS:

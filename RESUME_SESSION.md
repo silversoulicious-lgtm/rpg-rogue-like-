@@ -155,7 +155,44 @@ JSON dans `user://save.json`).
   Serments (toggle/contrainte/effet/récompense), Codex, Forge, Œil du Devin,
   écran de récompense de fin de nœud (choix standard/élite/Funeste), sprites
   directionnels (mapping facing→sprite et mise à jour de `player.facing`
-  après une action).
+  après une action), préfixes de combat (génération + valeur/desc +
+  déclenchement Ardent/Cuirasse/Renvoi en combat direct).
+
+### Préfixes de combat sur objets procéduraux (inspiré de Dungeonmans)
+Retour utilisateur : donner aux objets Commun/Rare (pas seulement aux
+Épiques/Légendaires curés) une chance de porter un effet de combat aléatoire,
+comme les préfixes/suffixes de *Dungeonmans*.
+- `Data.PREFIXES` (6 préfixes) + `Data.PREFIX_CHANCE` (Commun 12%, Rare 22%,
+  Épique/Légendaire n'en tirent pas — ils gardent leur effet curé propre) +
+  `Data._roll_prefix()` appelé depuis `_generate_procedural_item()`. Un
+  préfixe ajoute son nom à celui de l'objet (ex. *Épée de Force du Brasier*)
+  et pose `item.proc`/`proc_val`/`desc` exactement comme un objet unique —
+  `Entity.recompute_stats()` les collecte déjà génériquement depuis
+  n'importe quel slot équipé, donc aucun changement nécessaire côté Entity.
+  `Data._proc_desc()` étendu avec les 6 nouveaux ids.
+- 4 préfixes d'ARME (déclenchés dans `Main._trigger_weapon_prefixes()`,
+  appelé depuis `_player_attack` juste après le vol de vie) : *Ardent* (dégâts
+  de feu bonus instantanés via `_fire_prefix_damage()`, qui respecte
+  `immune_fire`/`weak_fire` comme `apply_burn`), *Givre* (chance d'appliquer
+  `slow`), *Venimeux* (chance d'appliquer `poison`), *Foudroyant* (chance
+  d'appliquer `stun`, 1 tour). Réutilisent les helpers `apply_*` déjà
+  génériques (entité-agnostiques) du reste du code.
+- 2 préfixes d'ARMURE : *Rempart* (`cuirasse`, réduction plate de dégâts,
+  repliée directement dans `Main._player_def()` — se propage automatiquement
+  aux 5 points d'appel existants de `_player_def()`, y compris capacités de
+  boss et pièges) et *Représailles* (`renvoi`, chance d'affaiblir
+  l'attaquant au contact via `Main._trigger_armor_retaliation()`, appelé
+  depuis `_enemy_hit_player` et `_enemy_ranged_attack`).
+- Fix de cohérence au passage : l'écran de récompense de fin d'étage
+  (`Main._make_floor_rewards()`) ne montrait jamais la description d'effet
+  d'un objet (ni pour les uniques existants, ni pour les nouveaux préfixes)
+  — seul un résumé de stats était affiché. Corrigé pour concaténer
+  `item.desc` quand il existe.
+- `_smoketest.gd` : génère 400 objets arme/armure et vérifie qu'au moins 3
+  préfixes d'arme et 1 préfixe d'armure distincts apparaissent avec une
+  desc non vide ; déclenche directement Ardent/Cuirasse/Renvoi sur un
+  ennemi de test pour vérifier les dégâts de feu, la réduction de défense
+  effective et le statut d'affaiblissement appliqué à l'attaquant.
 
 ## Ce qui reste à faire
 

@@ -71,7 +71,7 @@ Le butin apparaît au sol et se ramasse en marchant dessus.
 | Armure `]` | bleu | Défense, PV max |
 | Relique `=` | vert | Vitesse, Régén PV, mixte |
 
-L'équipement s'équipe automatiquement s'il est meilleur que l'actuel ; l'ancien est recyclé en Éclats.
+Le butin ramassé va dans le sac ; ouvre l'inventaire (`I`) pour l'équiper — l'ancien objet du slot repart dans le sac (ou est recyclé en Éclats si le sac est plein).
 
 **Rareté** : Commun et Rare restent **procéduraux** (stats de base + 0 ou 1 affixe aléatoire parmi ATK, MAG, DEF, VIT, PV, Régén, Critique, Esquive, Vol de vie, Épines) — c'est le loot courant.
 
@@ -79,8 +79,8 @@ L'équipement s'équipe automatiquement s'il est meilleur que l'actuel ; l'ancie
 
 | Rareté | Origine | Couleur |
 |---|---|---|
-| Commun | procédural, 0 affixe | gris |
-| Rare | procédural, 1 affixe | bleu |
+| Commun | procédural, 0 affixe, chance de préfixe de combat | gris |
+| Rare | procédural, 1 affixe, chance de préfixe de combat | bleu |
 | Épique | objet unique nommé + 1 effet de combat | violet |
 | Légendaire | objet unique amplifié + 1 effet de combat renforcé | or |
 
@@ -94,7 +94,18 @@ Effets de combat possibles sur les objets uniques :
 | Soif de Sang | Soigne un % des PV max à chaque ennemi tué |
 | Moisson | Éclats bonus à chaque ennemi tué |
 
-Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des consommables — l'effet de chaque objet unique est affiché sous ses stats.
+**Préfixes de combat** (inspirés de *Dungeonmans*) : même un objet Commun ou Rare peut tirer, en plus de son affixe de stat, un préfixe qui ajoute un **effet de combat** à son nom (ex. *Épée de Force du Brasier*). Indépendants de la bibliothèque d'objets uniques, ils rendent le loot courant plus intéressant sans l'égaler en puissance — Rare a plus de chances qu'un Commun d'en tirer un (22% contre 12%), et leur magnitude grandit un peu avec l'étage.
+
+| Préfixe | Slot | Effet |
+|---|---|---|
+| du Brasier | Arme | Dégâts de feu bonus à chaque attaque (~3 à 9 selon l'étage) |
+| du Givre | Arme | Chance de ralentir la cible touchée |
+| du Venin | Arme | Chance d'empoisonner la cible touchée |
+| de la Foudre | Arme | Chance d'étourdir la cible touchée (1 tour) |
+| du Rempart | Armure | Réduit chaque coup subi d'un montant fixe |
+| des Représailles | Armure | Chance d'affaiblir un attaquant au contact |
+
+Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des consommables — l'effet de chaque objet unique ou préfixe est affiché sous ses stats.
 
 **Artefacts** `✦` (capacités spéciales passives, cumulables) :
 | Artefact | Effet |
