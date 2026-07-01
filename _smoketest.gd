@@ -6,14 +6,10 @@ func _ready() -> void:
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
-	# --- Parties complètes pour chaque héros (via la carte) ---
+	# --- Parties complètes pour chaque héros (progression linéaire) ---
 	for hero in ["melee", "ranged", "magic"]:
 		main.start_run(hero)
-		assert(main.state == main.State.MAP, "run démarre sur la carte")
-		var reach = main.reachable_indices()
-		assert(reach.size() > 0, "nœuds accessibles au départ")
-		main.choose_map_node(reach[0])               # rangée 0 = combat
-		assert(main.state == main.State.PLAYING, "entrée en combat")
+		assert(main.state == main.State.PLAYING and main.current_node_type == "combat", "run démarre directement en combat")
 		var dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]]
 		for step in 200:
 			if main.state != main.State.PLAYING:
@@ -34,21 +30,26 @@ func _ready() -> void:
 			assert(GameState.shards == before + 7, "éclats banqués à la mort")
 		print("OK hero=%s state=%d banque=%d" % [hero, main.state, GameState.shards])
 
-	# --- Carte de strate : structure & connectivité ---
-	var mrng = RandomNumberGenerator.new(); mrng.seed = 5
-	var rm = RunMap.new(0, mrng)
-	assert(rm.nodes.size() == RunMap.ROWS, "nombre de rangées")
-	assert(rm.nodes[0][0]["type"] == "combat", "première rangée = combat")
-	assert(rm.nodes[RunMap.ROWS - 1].size() == 1 and rm.nodes[RunMap.ROWS - 1][0]["type"] == "boss", "boss au sommet")
-	for r in range(1, RunMap.ROWS):
-		for j in rm.nodes[r].size():
-			var has_parent = false
-			for n in rm.nodes[r - 1]:
-				if n["edges"].has(j):
-					has_parent = true
-					break
-			assert(has_parent, "chaque nœud est relié (pas d'orphelin)")
-	print("OK carte: %d rangées, graphe connecté" % rm.nodes.size())
+	# --- Progression linéaire des étages (remplace l'ancienne carte à embranchements) ---
+	main.start_run("melee")
+	assert(main.state == main.State.PLAYING and main.current_node_type == "combat", "run démarre directement sur un Combat")
+	assert(main.act_floor == 1, "le 1er étage réel compte pour l'acte courant")
+	main.act_floor = main.ACT_LENGTH
+	main._advance()
+	assert(main.current_node_type == "boss", "un Gardien est garanti après ACT_LENGTH étages réels")
+	var act_before: int = main.map_act
+	main._node_cleared()
+	assert(main.map_act == act_before + 1 and main.act_floor == 0, "Gardien vaincu : acte suivant, compteur remis à zéro")
+	assert(main.current_node_type == "combat", "après le Gardien, on repart sur un Combat de répit")
+	assert(not main._act_rest_done, "le drapeau de pause pré-Gardien est remis à zéro pour le nouvel acte")
+	# La pause Repos/Boutique juste avant le Gardien est garantie une seule fois.
+	main.act_floor = main.ACT_LENGTH - 1
+	main._act_rest_done = false
+	var t := main._roll_node_type()
+	assert((t == "rest" or t == "shop") and main._act_rest_done, "pause Repos/Boutique garantie juste avant le Gardien")
+	var t2 := main._roll_node_type()
+	assert(t2 != "boss", "la pause garantie ne se redéclenche pas en boucle avant le Gardien")
+	print("OK progression: 1er étage=combat, Gardien garanti à ACT_LENGTH, reset après victoire, pause pré-Gardien garantie")
 
 	# --- Salles spéciales : boutique / événement / repos ---
 	main.start_run("melee")
@@ -59,16 +60,17 @@ func _ready() -> void:
 	main.buy_shop_item(main.shop_stock[0])
 	assert(main.shop_stock.size() == stock0 - 1, "achat retire l'objet du stock")
 	main.leave_shop()
-	assert(main.state == main.State.MAP, "retour carte après boutique")
+	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE, "boutique quittée : avance automatiquement (plus de carte)")
 	main.open_event()
 	assert(main.state == main.State.CHOICE, "événement ouvert")
 	main.resolve_event(0)
-	assert(main.state == main.State.MAP or main.state == main.State.GAMEOVER, "événement résolu")
+	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE or main.state == main.State.GAMEOVER, "événement résolu : avance automatiquement")
 	main.open_rest()
 	var atk_r = main.player.atk
 	main.rest_choice("train")
-	assert(main.player.atk == atk_r + 3 and main.state == main.State.MAP, "repos: entraînement +3 ATK")
-	print("OK salles spéciales: boutique / événement / repos")
+	assert(main.player.atk == atk_r + 3, "repos: entraînement +3 ATK")
+	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE, "repos résolu : avance automatiquement")
+	print("OK salles spéciales: boutique / événement / repos (avancée automatique, sans carte)")
 
 	# --- Génération procédurale d'objets ---
 	var grng = RandomNumberGenerator.new(); grng.seed = 42
@@ -113,7 +115,6 @@ func _ready() -> void:
 
 	# --- Inventaire + talents (en combat) ---
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])     # -> PLAYING
 	main.unequip_item("arme")   # retire l'arme de loadout pour une base propre
 	main.inventory.clear()
 	var atk0 = main.player.atk
@@ -284,7 +285,6 @@ func _ready() -> void:
 
 	# --- Phase 1 : primitives de combat (AoE, rebond, dash, helpers de statut) -----
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])   # -> PLAYING (dungeon + ennemis)
 	var px = main.player.x; var py = main.player.y
 	main.enemies.clear()
 	var mk = func(dx, dy):
@@ -320,7 +320,6 @@ func _ready() -> void:
 
 	# Effets de compétences sur des cibles contrôlées.
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	var px2 = main.player.x; var py2 = main.player.y
 	var mk2 = func(dx, dy, defv):
 		var e = Entity.new()
@@ -362,7 +361,6 @@ func _ready() -> void:
 
 	# --- Phase 3 : pouvoirs passifs (cumul illimité, exclusions, drops) -----------
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])   # -> PLAYING (nécessaire pour pass_turn)
 	main.player.powers.clear()
 	var pdrone = {}
 	var pturret = {}
@@ -477,7 +475,6 @@ func _ready() -> void:
 	assert(GameState.buy_knowledge_node("oeil_du_devin"), "achat du nœud Œil du Devin")
 	main.active_oaths = []
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	assert(main.map_view.reveal_loot, "Œil du Devin actif sur la vue de carte")
 	var loot_explored = main.loot.is_empty()
 	for it in main.loot:
@@ -489,7 +486,6 @@ func _ready() -> void:
 	# --- Phase 4 : récompense de fin d'étage --------------------------------------
 	main.active_oaths = []
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	main.current_node_type = "combat"
 	main._open_floor_reward(false)
 	assert(main.state == main.State.CHOICE and main.pending_rewards.size() >= 2, "écran de récompense ouvert (>=2 choix)")
@@ -498,14 +494,14 @@ func _ready() -> void:
 		if main.pending_rewards[i]["type"] == "shards": pick = i
 	var sh0 = main.run_shards
 	main.resolve_floor_reward(pick)
-	assert(main.state == main.State.MAP, "récompense résolue -> retour carte")
+	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE, "récompense résolue -> avance automatiquement")
 	assert(main.run_shards >= sh0, "la récompense d'Éclats crédite le run")
 	# Élite : davantage de choix (parchemin/consommable bonus).
 	main.current_node_type = "elite"
 	main._open_floor_reward(true)
 	assert(main.pending_rewards.size() >= 3, "butin d'élite : davantage de choix")
 	main.resolve_floor_reward(1)
-	assert(main.state == main.State.MAP, "butin d'élite résolu")
+	assert(main.state == main.State.PLAYING or main.state == main.State.CHOICE, "butin d'élite résolu")
 	# Le Serment Funeste retire l'option de soin du butin.
 	main.active_oaths = ["funeste"]
 	main._open_floor_reward(false)
@@ -534,14 +530,12 @@ func _ready() -> void:
 	assert(mv._directional_sprite(gob)["name"] == "gobelin", "les autres entités gardent leur sprite unique")
 	# Une action oriente bien l'héroïne.
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	main.try_move(0, -1)
 	assert(main.player.facing == Vector2i(0, -1), "une action oriente le sprite de l'héroïne")
 	print("OK sprites directionnels: face/dos/profil + miroir, orientation par l'action")
 
 	# --- Nouveaux monstres : spawn + exécution de chaque comportement (Pass 1) -----
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	var new_count := 0
 	for edef in Data.ENEMIES:
 		if not edef.has("ai"):
@@ -593,7 +587,6 @@ func _ready() -> void:
 
 	# --- Boss Pass 2 : spawn (+ gardiens) + exécution des mécaniques --------------
 	main.start_run("melee")
-	main.choose_map_node(main.reachable_indices()[0])
 	for bi in Data.BOSSES.size():
 		var bdef: Dictionary = Data.BOSSES[bi]
 		main.enemies.clear()

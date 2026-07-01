@@ -1,10 +1,11 @@
 # Les Strates — Récapitulatif du projet (à jour)
 
 Roguelike au tour par tour en Godot 4.3 / GDScript. Une héroïne unique (Aria),
-build par arme, ascension de tour à étages, carte ramifiée. Séparation stricte
-logique/affichage/données : `Main.gd` (logique), `Hud.gd` (affichage),
-`Data.gd` (registre de données), `Entity.gd` (modèle pur), `GameState.gd`
-(autoload, sauvegarde persistante JSON dans `user://save.json`).
+build par arme, ascension de tour à étages en progression linéaire (RNG, plus
+de carte à embranchements). Séparation stricte logique/affichage/données :
+`Main.gd` (logique), `Hud.gd` (affichage), `Data.gd` (registre de données),
+`Entity.gd` (modèle pur), `GameState.gd` (autoload, sauvegarde persistante
+JSON dans `user://save.json`).
 
 ## Ce qui est fait
 
@@ -12,8 +13,9 @@ logique/affichage/données : `Main.gd` (logique), `Hud.gd` (affichage),
 - Système de tour par énergie/vitesse (`Entity.ACTION_COST`, `effective_speed()`).
 - Génération procédurale d'étages (`Dungeon.gd`) avec biomes, brouillard de
   guerre (`explored`/`visible`), eau/route/arbres/rochers/décor.
-- Carte ramifiée entre étages (`RunMap.gd` + `MapView.gd`) : nœuds combat,
-  élite, boutique, événement, repos, boss.
+- Progression entre étages : nœuds combat, élite, boutique, événement, repos,
+  boss (cf. Revue de code / juillet 2026 ci-dessous pour l'évolution vers une
+  chaîne linéaire tirée au sort, remplaçant la carte à embranchements).
 - Build par arme (équipement modifie le style de combat d'Aria).
 - Monnaie de run (Éclats) → améliorations de stats permanentes au Sanctuaire.
 
@@ -166,9 +168,9 @@ via deux passes de relecture ciblées. Correctifs appliqués suite à l'audit :
   statut ne s'applique plus que si au moins un coup a réellement porté.
 - **Design gap** : `RunMap._init(act, ...)` ignorait son paramètre `act` —
   la difficulté de carte (proportion Élite/Événement) était identique à
-  toute strate. `act` est maintenant utilisé dans `_roll_type()` pour
-  augmenter progressivement (plafonné) la part d'Élite/Événement au
-  détriment du Combat simple à mesure qu'on monte dans la tour.
+  toute strate. Corrigé alors dans `RunMap._roll_type()` ; **superseded**
+  ci-dessous par le retrait complet de la carte à embranchements (la logique
+  de scaling par `map_act` a été reportée dans `Main._roll_node_type()`).
 - **Feature incomplète** : la Forge (nœud de l'arbre de Connaissances)
   choisissait au hasard une pièce d'équipement à renforcer, sans écran.
   Remplacée par un vrai écran `Hud.show_forge()` : le joueur choisit
@@ -183,6 +185,44 @@ via deux passes de relecture ciblées. Correctifs appliqués suite à l'audit :
   La liste « Pistes suivantes » de README.md (loot/statuts/variété
   d'ennemis) était elle aussi obsolète — remplacée par un résumé aligné sur
   les Phases 6/7/8 ci-dessous.
+
+### Refonte de la progression — retrait de la carte à embranchements
+Retour utilisateur : la carte de strate (choix du prochain nœud parmi 2-4,
+façon *Slay the Spire*) sortait le joueur de l'immersion ; le vrai cœur du
+jeu est l'exploration en temps réel de l'étage ouvert, pas la planification
+méta d'un chemin. Décision : supprimer la carte, garder tout le reste
+(boutique/événement/repos/récompense de fin d'étage/Forge inchangés dans
+leur contenu) et enchaîner les étages automatiquement.
+- **Suppression** : `scripts/RunMap.gd` (fichier supprimé), l'état
+  `Main.State.MAP`, `Main.run_map`/`map_pos`/`reachable_indices()`/
+  `choose_map_node()`/`_enter_node()`/`_start_act()`/`_back_to_map()`,
+  et côté `Hud.gd` : `map_layer`/`map_root`/`_build_map()`/`show_map()`/
+  `hide_map()`/`NODE_LABELS`/`NODE_COLORS`/`NODE_PLAIN`/`_node_icon()`
+  (les PNG `assets/node_*.png` restent présents mais ne sont plus utilisés —
+  suppression des fichiers non faite, à décider séparément).
+- **Remplacement** : `Main._roll_node_type()` tire le type du prochain nœud
+  (Combat/Élite/Boutique/Événement/Repos, Boutique et Événement rendus plus
+  rares que dans l'ancienne carte — 8% chacun au lieu de 15% —, Repos monté
+  à 11%, part Élite qui grandit avec `map_act` comme dans l'ancien scaling
+  de `RunMap`) ; `Main._advance(forced_type)` enchaîne automatiquement vers
+  ce nœud (ou l'affiche s'il s'agit d'un écran de pause). Un Gardien est
+  garanti tous les `ACT_LENGTH` (5) étages réels via `Main.act_floor`, et le
+  tout premier étage de chaque strate (après le run et après chaque Gardien)
+  reste forcé en Combat, comme le faisait l'ancienne rangée 0 de `RunMap`.
+  Une pause Repos/Boutique est elle aussi garantie une fois par acte juste
+  avant le Gardien (`_act_rest_done`), pour reprendre la sécurité qu'offrait
+  l'ancienne rangée pré-boss forcée de `RunMap` — sans elle, ~20% des actes
+  auraient pu enchaîner 5 Combats/Élites d'affilée avant un Gardien à sec.
+- Tous les anciens appels à `_back_to_map()` (fin de boutique/événement/
+  repos/Forge/récompense de fin d'étage) redirigent maintenant vers
+  `_advance()`. Un bug a été intercepté en cours de route : `Hud.show_game()`
+  ne masquait pas `overlay_layer`, ce qui aurait laissé l'écran de boutique/
+  récompense affiché par-dessus un étage généré juste après — corrigé en
+  ajoutant `hud.hide_overlay()` en tête de `_advance()`.
+- `_smoketest.gd` mis à jour : les runs démarrent directement en Combat
+  (plus besoin de `choose_map_node`/`reachable_indices`), et un nouveau bloc
+  teste explicitement `act_floor`/`ACT_LENGTH`/le forçage du Gardien et la
+  remise à zéro après victoire.
 
 ### Phase 6 — Dialogues / PNJ
 - Système de dialogue (PNJ aux nœuds événement/boutique/repos), portraits,

@@ -3,7 +3,7 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { TITLE, LOADOUT, META, MAP, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
+enum State { TITLE, LOADOUT, META, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
 
 const MAX_LOG := 8
 const INV_CAP := 16
@@ -24,10 +24,13 @@ var messages: Array = []
 var inventory: Array = []        # sac : Array[item dict]
 var pending_levelups: int = 0
 
-# Carte de strate à embranchements
-var run_map: RunMap = null
-var map_act: int = 0
-var map_pos: Vector2i = Vector2i(-1, -1)   # (rangée, idx) ; -1 = pas encore entré
+# Progression des étages (linéaire, sans carte à embranchements) : le type du
+# prochain nœud est tiré au sort (cf. _roll_node_type/_advance), un Gardien est
+# garanti tous les ACT_LENGTH étages réels (Combat/Élite).
+const ACT_LENGTH := 5
+var map_act: int = 0       # nombre de Gardiens vaincus ce run (sélection du boss)
+var act_floor: int = 0     # étages réels complétés depuis le dernier Gardien
+var _act_rest_done: bool = false   # garantit 1 pause Repos/Boutique avant chaque Gardien
 var current_node_type: String = "combat"
 var shop_stock: Array = []
 var current_event: Dictionary = {}
@@ -151,9 +154,11 @@ func start_run(loadout_id: String = "melee") -> void:
 	loot.clear()
 	inventory.clear()
 	_grant_starting_bonuses()
-	add_message("[color=#9b8cff]Tu entres dans la Tour. Trace ta voie vers le Gardien.[/color]")
+	add_message("[color=#9b8cff]Tu entres dans la Tour. Quelque part au-dessus, un Gardien t'attend.[/color]")
 	map_act = 0
-	_start_act()
+	act_floor = 0
+	_act_rest_done = false
+	_advance("combat")
 
 ## Applique les bonus de départ : méta-progression (Héritage/Instinct), déblocages
 ## de l'Arbre (Pacte de Pouvoir) et Serments (Pauvreté annule, Fragilité réduit les PV).
@@ -225,33 +230,43 @@ func _pick_any_artifact() -> Dictionary:
 		return {}
 	return pool[rng.randi_range(0, pool.size() - 1)]
 
-# --- Carte de strate ----------------------------------------------------------
-func _start_act() -> void:
-	run_map = RunMap.new(map_act, rng)
-	map_pos = Vector2i(-1, -1)
-	enemies.clear()
-	dungeon = null
-	state = State.MAP
+# --- Progression des étages (RNG, sans carte à embranchements) ---------------
+## Tire le type du prochain nœud. Un Gardien est garanti tous les ACT_LENGTH
+## étages réels ; une pause Repos/Boutique est elle aussi garantie juste avant
+## (comme l'ancienne rangée pré-boss de RunMap), pour ne jamais foncer sur un
+## Gardien à sec. L'Élite devient plus fréquente à mesure que map_act
+## augmente. Boutique/Événement restent volontairement rares : ce sont des
+## pauses, pas le cœur du jeu.
+func _roll_node_type() -> String:
+	if act_floor >= ACT_LENGTH:
+		return "boss"
+	if act_floor == ACT_LENGTH - 1 and not _act_rest_done:
+		_act_rest_done = true
+		return "rest" if rng.randf() < 0.5 else "shop"
+	var elite_bonus: float = minf(0.12, map_act * 0.015)
+	var combat_top: float = maxf(0.46, 0.58 - elite_bonus)
+	var elite_top: float = combat_top + 0.15 + elite_bonus
+	var shop_top: float = elite_top + 0.08
+	var event_top: float = shop_top + 0.08
+	var roll: float = rng.randf()
+	if roll < combat_top:
+		return "combat"
+	elif roll < elite_top:
+		return "elite"
+	elif roll < shop_top:
+		return "shop"
+	elif roll < event_top:
+		return "event"
+	return "rest"
+
+## Avance vers le prochain nœud : plus de choix de chemin, la suite s'enchaîne
+## automatiquement (forced_type sert au tout premier étage et à celui suivant
+## un Gardien, toujours un Combat pour souffler après un affrontement dur).
+func _advance(forced_type: String = "") -> void:
+	hud.hide_overlay()
 	refresh()
-	hud.show_map(run_map, map_pos)
-
-func reachable_indices() -> Array:
-	var next_row: int = map_pos.x + 1
-	if run_map == null or next_row >= run_map.nodes.size():
-		return []
-	if map_pos.x < 0:
-		return range(run_map.nodes[0].size())
-	return run_map.nodes[map_pos.x][map_pos.y]["edges"]
-
-func choose_map_node(idx: int) -> void:
-	var next_row: int = map_pos.x + 1
-	if next_row >= run_map.nodes.size() or not reachable_indices().has(idx):
-		return
-	map_pos = Vector2i(next_row, idx)
-	_enter_node(run_map.nodes[next_row][idx])
-
-func _enter_node(node: Dictionary) -> void:
-	match node["type"]:
+	var t: String = forced_type if forced_type != "" else _roll_node_type()
+	match t:
 		"shop":
 			open_shop()
 		"event":
@@ -259,10 +274,10 @@ func _enter_node(node: Dictionary) -> void:
 		"rest":
 			open_rest()
 		_:
-			current_node_type = node["type"]
+			current_node_type = t
 			floor_num += 1
+			act_floor += 1
 			state = State.PLAYING
-			hud.hide_map()
 			hud.show_game()
 			generate_floor(current_node_type)
 
@@ -271,8 +286,10 @@ func _node_cleared() -> void:
 		var healed: int = 0 if has_oath("funeste") else int(round(player.max_hp * 0.2))
 		player.heal(healed)
 		map_act += 1
-		add_message("[color=#9b8cff]★ Strate franchie ! Tu pénètres dans la strate %d.[/color]" % (map_act + 1))
-		_start_act()
+		act_floor = 0
+		_act_rest_done = false
+		add_message("[color=#9b8cff]★ Gardien vaincu ! Tu poursuis l'ascension.[/color]")
+		_advance("combat")
 		return
 	# Combat / élite : récompense de fin d'étage au choix (Phase 4).
 	add_message("[color=#9b8cff]Voie dégagée. Choisis ta récompense.[/color]")
@@ -338,12 +355,7 @@ func resolve_floor_reward(idx: int) -> void:
 		"skill":
 			_acquire_skill(String(r["data"]))
 	pending_rewards = []
-	_back_to_map()
-
-func _back_to_map() -> void:
-	state = State.MAP
-	refresh()
-	hud.show_map(run_map, map_pos)
+	_advance()
 
 func _boss_alive() -> bool:
 	for e in enemies:
@@ -1785,7 +1797,6 @@ func open_shop() -> void:
 			pitem["kind"] = "power"
 			pitem["price"] = 40
 			shop_stock.append(pitem)
-	hud.hide_map()
 	hud.show_shop(shop_stock, run_shards)
 
 func buy_shop_item(item: Dictionary) -> void:
@@ -1810,13 +1821,12 @@ func buy_shop_heal() -> void:
 	hud.show_shop(shop_stock, run_shards)
 
 func leave_shop() -> void:
-	_back_to_map()
+	_advance()
 
 # --- Événement ----------------------------------------------------------------
 func open_event() -> void:
 	state = State.CHOICE
 	current_event = Data.EVENTS[rng.randi_range(0, Data.EVENTS.size() - 1)]
-	hud.hide_map()
 	hud.show_event(current_event)
 
 func resolve_event(choice_idx: int) -> void:
@@ -1824,7 +1834,7 @@ func resolve_event(choice_idx: int) -> void:
 	if not player.is_alive():
 		game_over()
 		return
-	_back_to_map()
+	_advance()
 
 func _apply_event_effect(ch: Dictionary) -> void:
 	match ch.get("type", "none"):
@@ -1886,7 +1896,6 @@ func _apply_event_effect(ch: Dictionary) -> void:
 # --- Repos (feu de camp) ------------------------------------------------------
 func open_rest() -> void:
 	state = State.CHOICE
-	hud.hide_map()
 	hud.show_rest()
 
 func rest_choice(kind: String) -> void:
@@ -1895,21 +1904,21 @@ func rest_choice(kind: String) -> void:
 			var amt: int = int(player.max_hp * 0.4)
 			player.heal(amt)
 			add_message("Repos : +%d PV." % amt)
-			_back_to_map()
+			_advance()
 		"forge":
 			open_forge()
 		_:
 			player.base_atk += 3
 			player.recompute_stats()
 			add_message("Entraînement : +3 ATK (ce run).")
-			_back_to_map()
+			_advance()
 
 ## Forge Itinérante (rest_choice "forge") : ouvre l'écran de choix de la pièce
 ## d'équipement à renforcer plutôt que d'en tirer une au hasard en silence.
 func open_forge() -> void:
 	if player.equipment.is_empty():
 		add_message("La forge reste froide : aucune pièce à renforcer.")
-		_back_to_map()
+		_advance()
 		return
 	state = State.CHOICE
 	hud.show_forge(player.equipment)
@@ -1917,7 +1926,7 @@ func open_forge() -> void:
 ## Renforce de ~30% les bonus de la pièce d'équipement choisie à la Forge.
 func forge_choice(slot: String) -> void:
 	if not player.equipment.has(slot):
-		_back_to_map()
+		_advance()
 		return
 	var it: Dictionary = player.equipment[slot]
 	var bonus: Dictionary = it.get("bonus", {})
@@ -1936,7 +1945,7 @@ func forge_choice(slot: String) -> void:
 	player.equipment[slot] = it
 	player.recompute_stats()
 	add_message("[color=#ffd24a]Forge : %s renforcé ![/color]" % it.get("name", "ton équipement"))
-	_back_to_map()
+	_advance()
 
 ## Annule le passage à la Forge et revient au choix du feu de camp.
 func forge_cancel() -> void:

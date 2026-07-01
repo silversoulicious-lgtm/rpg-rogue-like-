@@ -9,7 +9,7 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 ## 🎮 Concept
 
 - **Choisis un héros** au Pied de la Tour, puis grimpe.
-- **Carte de strate à embranchements** (façon *Slay the Spire*) : à chaque pas, choisis ta voie parmi des salles — Combat, **Élite** (dur, meilleur butin), **Boutique**, **Événement** (risque/récompense), **Repos**, et le **Gardien** au sommet de chaque strate.
+- **Progression linéaire et rythmée** : pas de carte à choisir, l'ascension s'enchaîne directement d'un étage au suivant — Combat, **Élite** (plus rare, plus dur, meilleur butin), **Boutique**, **Événement** (risque/récompense) et **Repos** sont tirés au sort (Boutique/Événement volontairement rares : ce sont des pauses, pas le cœur du jeu). Un **Gardien** garanti t'attend tous les 5 étages réels ; le premier étage de chaque strate est toujours un Combat, histoire de souffler après le précédent Gardien.
 - **Étages « open world »** : chaque combat se déroule sur une **carte ouverte** générée procéduralement, parsemée d'**arbres, rochers, étendues d'eau, routes et décor**. La caméra suit le héros : on **explore** vraiment l'étage pour trouver l'escalier. La **taille est ré-échantillonnée à chaque étage** (distribution triangulaire) : la plus fréquente est **320×200**, la minuscule **64×40** et l'immense **640×400** restant rares. Le nombre d'ennemis et de butin s'adapte à la surface pour qu'une grande carte ne soit jamais vide.
 - **Biomes** : tous les ~12 étages, on entre dans un **biome différent** qui change la palette, le terrain et les sprites — *Plaines verdoyantes*, *Forêt profonde*, *Désert de cendres dorées*, *Toundra gelée*, *Marais putride*, *Terres de feu*.
 - **Brouillard de guerre** : la vision est limitée à un **cercle autour du héros** (stat *Vision*). Les zones non vues sont noires, les zones déjà explorées restent en mémoire (assombries) mais ennemis et butin n'apparaissent que dans le champ de vision. La portée de Vision s'améliore via les talents **Clairvoyance** (+1) et **Œil de Lynx** (+2).
@@ -122,7 +122,6 @@ scripts/
   Ui.gd                Fabrique de widgets (label/button/styles) anti-boilerplate
   GameState.gd         Autoload : méta-progression persistante + sauvegarde
   Data.gd              Données (héros, ennemis, objets procéduraux, talents…)
-  RunMap.gd            Carte de strate à embranchements (graphe en couches)
   Dungeon.gd           Génération du terrain open-world biome + brouillard de guerre
   Entity.gd            Entité de grille + stats dérivées (héros / ennemi)
   MapView.gd           Rendu par tuiles biome + brouillard + caméra (repli ASCII)
