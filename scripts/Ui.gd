@@ -38,6 +38,7 @@ static func button(text: String = "", min_h: float = 0.0, size: int = 0, min_w: 
 	if mw > 0.0 or mh > 0.0:
 		b.custom_minimum_size = Vector2(mw, mh)
 	_style_button(b)
+	b.pressed.connect(func(): Sfx.play("ui"))
 	return b
 
 ## Bouton de menu : large, généreux, pour les écrans de lancement.

@@ -943,6 +943,73 @@ func _ready() -> void:
 	assert(main.state == main.State.TITLE, "Retour depuis un écran ouvert par le titre revient au titre")
 	print("OK Hub: déplacement, entrée de bâtiment, retour contextuel (Hub vs titre), bordure bloquante")
 
+	# --- Phase 3.2 : réglages persistants (volumes/tremblement) + Sfx sans crash --
+	GameState.settings["sfx_vol"] = 0.4
+	GameState.settings["screenshake"] = false
+	GameState.save_game()
+	GameState.settings = { "sfx_vol": 0.8, "music_vol": 0.8, "screenshake": true }
+	GameState.load_game()
+	assert(is_equal_approx(float(GameState.settings["sfx_vol"]), 0.4), "sfx_vol persiste à travers save/load")
+	assert(GameState.settings["screenshake"] == false, "screenshake persiste à travers save/load")
+	GameState.settings["sfx_vol"] = 0.8
+	GameState.settings["screenshake"] = true
+	GameState.save_game()
+	Sfx.play("son_qui_nexiste_pas")   # fichier absent : ne doit jamais planter
+	Sfx.play("hit")                  # fichier généré (si présent) : ne doit jamais planter
+	print("OK Phase 3.2: GameState.settings persiste (save/load) ; Sfx.play() ne plante jamais")
+
+	# --- Phase 3.5 : météo d'ambiance déclarée pour chaque biome -------------------
+	for b in Data.BIOMES:
+		var amb: Dictionary = b.get("ambient", {})
+		assert(not amb.is_empty(), "%s a une définition ambient" % b["id"])
+		assert(amb.has("color") and amb.has("count") and amb.has("vel") and amb.has("size"),
+			"%s : ambient complet (color/count/vel/size)" % b["id"])
+		assert(int(amb["count"]) > 0, "%s : au moins une particule" % b["id"])
+	print("OK Phase 3.5: les 6 biomes déclarent une météo d'ambiance (Data.BIOMES[*].ambient)")
+
+	# --- Phase 3.6 : récap de mort (source du coup fatal + chronologie du run) ----
+	main.active_oaths = []
+	main.start_run("melee")
+	main.player.dodge_chance = 0.0
+	main.enemies.clear()
+	var dr_enemy: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, main.player.pos() + Vector2i(2, 0))
+	main.enemies.append(dr_enemy)
+	main._enemy_hit_player(dr_enemy)
+	assert(main.last_damage_source == dr_enemy.display_name, "last_damage_source enregistre l'attaquant")
+	assert(main.run_timeline.size() > 0, "run_timeline contient au moins l'entrée d'entrée en biome")
+	main.player.hp = 1
+	main.game_over()
+	assert(GameState.last_run.get("killed_by", "") == dr_enemy.display_name, "le journal du run garde la source du coup fatal")
+	print("OK Phase 3.6: récap de mort — source du coup fatal + chronologie du run")
+
+	# --- Phase 3.7 : tirage de talents unifié sur Main.rng (sans doublon) ---------
+	main.active_oaths = []
+	main.start_run("melee")
+	var choices: Array = main.roll_talent_choices()
+	assert(choices.size() == mini(3, Data.TALENTS.size()), "roll_talent_choices tire jusqu'à 3 talents")
+	var seen_talent_ids: Dictionary = {}
+	for t in choices:
+		assert(not seen_talent_ids.has(t["id"]), "pas de talent en double dans le tirage")
+		seen_talent_ids[t["id"]] = true
+	print("OK Phase 3.7: roll_talent_choices tire 3 talents distincts via Main.rng (RNG unifiée)")
+
+	# --- Phase 3.7 : start_run(loadout, seed) est entièrement déterministe --------
+	main.active_oaths = []
+	main.start_run("melee", 12345)
+	assert(main.run_seed == 12345, "run_seed reflète la seed forcée")
+	var seed_start: Vector2i = main.dungeon.start
+	var seed_stairs: Vector2i = main.dungeon.stairs
+	var seed_enemy_count: int = main.enemies.size()
+	var seed_first_enemy: Vector2i = main.enemies[0].pos() if not main.enemies.is_empty() else Vector2i(-1, -1)
+	main.active_oaths = []
+	main.start_run("melee", 12345)
+	assert(main.dungeon.start == seed_start, "seed fixe : même entrée de donjon")
+	assert(main.dungeon.stairs == seed_stairs, "seed fixe : même escalier")
+	assert(main.enemies.size() == seed_enemy_count, "seed fixe : même nombre d'ennemis")
+	var seed_first_enemy2: Vector2i = main.enemies[0].pos() if not main.enemies.is_empty() else Vector2i(-1, -1)
+	assert(seed_first_enemy2 == seed_first_enemy, "seed fixe : même position du 1er ennemi")
+	print("OK Phase 3.7: start_run(loadout_id, seed) est entièrement déterministe pour une seed donnée")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

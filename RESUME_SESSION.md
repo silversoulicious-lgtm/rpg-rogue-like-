@@ -132,9 +132,31 @@ ne pas les confondre).
   panneau d'inspection au survol souris (`MapView.tile_at_mouse` →
   `Hud.show_inspect`, section INSPECTION dans la sidebar). Asserts de
   régression ajoutés dans `_smoketest.gd` pour les sept.
-- **Phases 3 à 8** (feel & polish, terrain élémentaire, équilibrage,
-  contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
-  voir `IMPLEMENTATION_GUIDE.md` pour le détail.
+- **Phase 3 — Feel & polish : FAITE sauf 3.1 (police pixel, différée).**
+  Effets sonores procéduraux (`_sfx_gen.gd` → `assets/sfx/*.wav`, 10
+  recettes synthétisées PCM16 ; autoload `Sfx` en tourniquet ; hooks coup/
+  critique/mort/butin/niveau/escalier/achat/soin/bouton) ; réglages
+  persistants (`GameState.settings` : sfx_vol/music_vol/screenshake, écran
+  Options) ; mouvement/combat "juice" dans `MapView` (glissé `_vis_pos`,
+  nombres de dégâts/soin flottants, hit-stop bref au critique, tremblement
+  de caméra sur critique/rage de boss — tout dans le rendu, la logique reste
+  instantanée) ; réactivité des entrées (mouvement en polling
+  `Main._process` avec délai initial + répétition, focus clavier automatique
+  sur le 1er bouton de chaque overlay) ; météo d'ambiance par biome
+  (`Data.BIOMES[*].ambient`, particules en espace écran) ; récap de mort
+  (source du coup fatal, écart au record, chronologie du run) ; journal
+  étendu à 200 lignes avec défilement, runs à seed reproductible
+  (`start_run(loadout, seed)`, affichée pause/journal), RNG de gameplay
+  unifiée sur `Main.rng` (tirage de talents sans doublon). Asserts de
+  régression ajoutés dans `_smoketest.gd`.
+  **3.1 (police pixel bitmap CC0/générée) différée** : pas d'accès réseau
+  pour vendorer une police CC0, et générer une police pixel lisible à la
+  main sans jamais pouvoir la voir rendue est trop risqué (texte illisible
+  possible sur TOUTE l'UI) — à faire dans une session avec accès à Godot
+  pour itérer visuellement.
+- **Phases 4 à 8** (terrain élémentaire, équilibrage, contenu, hygiène
+  d'ingénierie, direction artistique 64×64) : à faire, voir
+  `IMPLEMENTATION_GUIDE.md` pour le détail.
 - **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
   - Sprites directionnels pour les ennemis (seule Aria en a).
   - Variantes teintées pour les ennemis élite, sprite distinct pour le

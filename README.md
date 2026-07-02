@@ -26,24 +26,36 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 
 ## 🖥️ Interface
 
-- **Zone de jeu** (gauche) : la grille où l'on contrôle son personnage.
+- **Zone de jeu** (gauche) : la grille où l'on contrôle son personnage. Les
+  ennemis visibles affichent une icône d'**intention** (attaque, tir, charge,
+  invocation, fuite, sommeil...) au coin haut-droit de leur case.
 - **Sidebar permanente** (droite), toujours visible : titre, étage, héros,
   barre de PV, **statistiques** détaillées (ATK / MAG / DEF / VIT / Régén /
   **Vision** / Éclats / Banque), le **biome courant**, état de la **capacité**,
-  **page Équipement** (3 slots avec leurs bonus), **page Artefacts** (avec
-  descriptions) et **page Synergies** (synergies de procs actuellement actives).
-- **Journal de combat** (bas) : les derniers événements.
+  **page Inspection** (survole un ennemi à la souris pour son détail : PV,
+  ATK, VIT, comportement, statut au contact, résistances), **page Équipement**
+  (3 slots avec leurs bonus), **page Artefacts** (avec descriptions) et
+  **page Synergies** (synergies de procs actuellement actives).
+- **Bande d'ordre des tours** : juste au-dessus du journal, prévisualise qui
+  agit ensuite (économie de vitesse/énergie rendue visible).
+- **Journal de combat** (bas) : historique complet du run, défile à la
+  molette (les derniers événements restent visibles en bas).
 
 ## 🕹️ Contrôles
 
 | Action | Touches |
 |---|---|
-| Se déplacer / attaquer | `WASD`, flèches, ou `HJKL` |
+| Se déplacer / attaquer | `WASD`, flèches, ou `HJKL` (touche physique — indépendant du clavier) |
 | Utiliser la capacité | `ESPACE` (ou `E`) |
 | Attendre un tour | `.` |
 | Ouvrir / fermer l'inventaire | `I` (ou `Échap` pour fermer) |
+| Pause (reprendre / options / abandonner) | `Échap` |
+| Inspecter un ennemi | survol à la souris |
 
 Se déplacer **dans** un ennemi l'attaque. Marcher sur l'escalier `>` monte d'un étage.
+Abandonner l'ascension depuis la pause compte l'étage atteint pour les
+records, mais banque les Éclats à taux réduit — mieux vaut mourir en
+combattant.
 
 ## 🦸 Héroïne
 
@@ -125,22 +137,25 @@ Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des conso
 ## 🧱 Architecture
 
 ```
-project.godot          Config du projet + autoload GameState
+project.godot          Config du projet + autoloads GameState, Sfx
 scenes/Main.tscn       Scène principale (porte le contrôleur)
 scripts/
   Main.gd              Coordinateur : état, génération, combat, tour-par-tour, IA
   Hud.gd               Toute l'interface : sidebar, journal, hub, overlays
   Ui.gd                Fabrique de widgets (label/button/styles) anti-boilerplate
-  GameState.gd         Autoload : méta-progression persistante + sauvegarde
+  GameState.gd         Autoload : méta-progression persistante + sauvegarde + réglages
+  Sfx.gd               Autoload : lecture des effets sonores (assets/sfx/*.wav)
   Data.gd              Données (héros, ennemis, objets procéduraux, talents…)
-  Dungeon.gd           Génération du terrain open-world biome + brouillard de guerre
+  Dungeon.gd           Génération du terrain open-world biome + brouillard de guerre + A*
   Entity.gd            Entité de grille + stats dérivées (héros / ennemi)
-  MapView.gd           Rendu par tuiles biome + brouillard + caméra (repli ASCII)
+  MapView.gd           Rendu par tuiles biome + brouillard + caméra (repli ASCII), juice
   Town.gd              Disposition fixe du Hub (Pied de la Tour) : tuiles + bâtiments
   TownView.gd          Rendu du Hub (sans brouillard ni caméra de suivi)
   TitleBg.gd           Silhouette procédurale de repli pour le fond de l'écran-titre
 assets/                Sprites & textures pixel-art (PNG 32x32, générés)
-_assets_gen.gd         Générateur d'assets (régénère assets/ par code)
+assets/sfx/            Effets sonores (WAV, générés)
+_assets_gen.gd         Générateur d'assets visuels (régénère assets/ par code)
+_sfx_gen.gd            Générateur d'effets sonores (régénère assets/sfx/ par code)
 _smoketest.gd          Test de fumée headless (pilote une partie complète)
 ```
 
@@ -151,6 +166,16 @@ recréer (après avoir modifié les couleurs/formes) :
 
 ```bash
 godot --headless --path . --script res://_assets_gen.gd
+```
+
+### Régénérer les effets sonores
+
+Tous les sons sont synthétisés par code dans `_sfx_gen.gd` (bruit blanc,
+ondes carrées/en dents de scie, balayages de fréquence — aucun fichier audio
+vendored). Pour les recréer :
+
+```bash
+godot --headless --path . --script res://_sfx_gen.gd
 ```
 
 ### Tester sans interface (headless)

@@ -221,8 +221,8 @@ func _build_log() -> void:
 
 	log_label = RichTextLabel.new()
 	log_label.bbcode_enabled = true
-	log_label.fit_content = true
-	log_label.scroll_active = false
+	log_label.fit_content = false
+	log_label.scroll_active = true
 	panel.add_child(log_label)
 
 func _build_menu() -> void:
@@ -387,6 +387,7 @@ func show_shop(stock: Array, shards: int) -> void:
 	var leave := Ui.button("Quitter la boutique", 42)
 	leave.pressed.connect(game.leave_shop)
 	overlay_content.add_child(leave)
+	_focus_first_button()
 
 ## Récompense de fin d'étage (Phase 4) : choisir 1 butin parmi ceux proposés.
 func show_floor_reward(rewards: Array, is_elite: bool) -> void:
@@ -404,6 +405,7 @@ func show_floor_reward(rewards: Array, is_elite: bool) -> void:
 		overlay_content.add_child(btn)
 		if r.get("desc", "") != "":
 			overlay_content.add_child(Ui.label("   " + String(r["desc"]), 12, Color(0.7, 0.7, 0.78), false, true, 700))
+	_focus_first_button()
 
 func show_event(event: Dictionary) -> void:
 	overlay_layer.visible = true
@@ -415,6 +417,7 @@ func show_event(event: Dictionary) -> void:
 		var btn := Ui.button(event["choices"][i]["label"], 46, 17)
 		btn.pressed.connect(game.resolve_event.bind(i))
 		overlay_content.add_child(btn)
+	_focus_first_button()
 
 func show_rest() -> void:
 	overlay_layer.visible = true
@@ -432,6 +435,7 @@ func show_rest() -> void:
 		var b3 := Ui.button("Forger   (renforce une pièce d'équipement)", 46, 17)
 		b3.pressed.connect(game.rest_choice.bind("forge"))
 		overlay_content.add_child(b3)
+	_focus_first_button()
 
 ## Forge Itinérante (Phase 5) : choisir la pièce d'équipement à renforcer
 ## (~30% de bonus supplémentaires) plutôt qu'un choix aléatoire silencieux.
@@ -453,6 +457,7 @@ func show_forge(equipment: Dictionary) -> void:
 	var back := Ui.button("Renoncer", 40)
 	back.pressed.connect(game.forge_cancel)
 	overlay_content.add_child(back)
+	_focus_first_button()
 
 # --- Écran-titre --------------------------------------------------------------
 # Chemin de l'illustration finale (Aria devant la Tour). Tant qu'elle n'existe
@@ -811,13 +816,28 @@ func _build_run_journal(col: VBoxContainer) -> void:
 	if r.is_empty():
 		return
 	col.add_child(Ui.label("— Journal du run —", 16, Color(0.6, 0.85, 1.0), true))
+	var killed_by: String = str(r.get("killed_by", ""))
+	if killed_by != "":
+		col.add_child(Ui.label("Terrassée par %s." % killed_by, 15, Color(1.0, 0.55, 0.5), true))
 	col.add_child(Ui.label("Étage atteint : %d        Niveau : %d" % [int(r.get("floor", 1)), int(r.get("level", 1))], 15, Color(0.85, 0.85, 0.92), true))
+	var prev_best: int = int(r.get("prev_best_floor", GameState.best_floor))
+	var gap: int = prev_best - int(r.get("floor", 1))
+	if gap > 0 and gap <= 3:
+		col.add_child(Ui.label("À %d étage(s) de ton record." % gap, 14, Color(0.85, 0.75, 0.5), true))
 	col.add_child(Ui.label("Ennemis vaincus : %d        Meilleur coup : %d" % [int(r.get("kills", 0)), int(r.get("best_hit", 0))], 15, Color(0.85, 0.85, 0.92), true))
 	col.add_child(Ui.label("Éclats du run : %d   (banque : %d)" % [int(r.get("shards", 0)), GameState.shards], 15, Color(1.0, 0.85, 0.35), true))
 	var item_name: String = str(r.get("item", ""))
 	if item_name != "":
 		col.add_child(Ui.label("Objet le plus marquant : %s" % item_name, 15, Color.html(str(r.get("item_color", "d2d2e0"))), true))
 	col.add_child(Ui.label("Records — Étage %d · %d ennemis vaincus" % [GameState.best_floor, GameState.best_kills], 14, Color(0.7, 0.95, 0.7), true))
+	var timeline: Array = r.get("timeline", [])
+	if not timeline.is_empty():
+		col.add_child(_spacer(4))
+		col.add_child(Ui.label("— Chronologie —", 14, Color(0.6, 0.85, 1.0), true))
+		var start_i: int = maxi(0, timeline.size() - 10)
+		for i in range(start_i, timeline.size()):
+			col.add_child(Ui.label(str(timeline[i]), 12, Color(0.75, 0.75, 0.82), true))
+	col.add_child(Ui.label("Seed du run : %d" % int(r.get("seed", 0)), 11, Color(0.5, 0.5, 0.58), true))
 
 # --- Options (overlay au-dessus du menu) --------------------------------------
 func show_options() -> void:
@@ -827,15 +847,38 @@ func show_options() -> void:
 	var fs := Ui.button(_fullscreen_label(), 46, 17)
 	fs.pressed.connect(_toggle_fullscreen)
 	overlay_content.add_child(fs)
-	overlay_content.add_child(Ui.label("Volume musique / effets — à venir dans une prochaine mise à jour.", 13, Ui.MUTED))
+	overlay_content.add_child(HSeparator.new())
+	overlay_content.add_child(_volume_row("Volume effets", "sfx_vol"))
+	overlay_content.add_child(_volume_row("Volume musique", "music_vol"))
+	var shake := CheckButton.new()
+	shake.text = "Tremblement d'écran"
+	shake.button_pressed = bool(GameState.settings.get("screenshake", true))
+	shake.toggled.connect(func(v): GameState.settings["screenshake"] = v; GameState.save_game())
+	overlay_content.add_child(shake)
 	overlay_content.add_child(HSeparator.new())
 	overlay_content.add_child(Ui.label("Commandes", 16, Color(0.6, 0.85, 1.0)))
 	overlay_content.add_child(Ui.label("Déplacer : WASD / flèches / HJKL    Capacité : ESPACE", 13, Ui.MUTED))
-	overlay_content.add_child(Ui.label("Attendre : .    Inventaire : I    Retour menu : Échap", 13, Ui.MUTED))
+	overlay_content.add_child(Ui.label("Attendre : .    Inventaire : I    Pause : Échap", 13, Ui.MUTED))
 	overlay_content.add_child(HSeparator.new())
 	var back := Ui.button("Retour", 44, 16)
 	back.pressed.connect(hide_overlay)
 	overlay_content.add_child(back)
+
+func _volume_row(label_txt: String, key: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(Ui.label(label_txt, 14, Ui.INK, false, false, 130))
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = float(GameState.settings.get(key, 0.8))
+	slider.custom_minimum_size = Vector2(180, 0)
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(func(v): GameState.settings[key] = v)
+	slider.drag_ended.connect(func(_changed): GameState.save_game(); Sfx.play("ui"))
+	row.add_child(slider)
+	return row
 
 func _fullscreen_label() -> String:
 	var mode := DisplayServer.window_get_mode()
@@ -863,19 +906,23 @@ func show_pause() -> void:
 	var abandon := Ui.button("✖  Abandonner l'ascension", 46, 16)
 	abandon.pressed.connect(game.abandon_run)
 	overlay_content.add_child(abandon)
+	overlay_content.add_child(HSeparator.new())
+	overlay_content.add_child(Ui.label("Seed du run : %d" % game.run_seed, 12, Ui.MUTED))
+	var copy_seed := Ui.button("Copier la seed dans le journal", 36, 13)
+	copy_seed.pressed.connect(func(): game.add_message("Seed du run : %d" % game.run_seed))
+	overlay_content.add_child(copy_seed)
+	_focus_first_button()
 
 # --- Overlay : montée de niveau ----------------------------------------------
 func show_levelup(level: int) -> void:
 	overlay_layer.visible = true
 	_overlay_clear()
 	_overlay_title("★ NIVEAU %d — choisis un talent" % level, Color(0.7, 1.0, 0.7))
-	var pool: Array = Data.TALENTS.duplicate()
-	pool.shuffle()
-	for i in min(3, pool.size()):
-		var t: Dictionary = pool[i]
+	for t in game.roll_talent_choices():
 		var btn := Ui.button("%s — %s" % [t["name"], t["desc"]], 46, 18)
 		btn.pressed.connect(game.pick_talent.bind(t))
 		overlay_content.add_child(btn)
+	_focus_first_button()
 
 # --- Overlay : inventaire -----------------------------------------------------
 func show_inventory() -> void:
@@ -1003,6 +1050,23 @@ func _overlay_title(txt: String, col: Color) -> void:
 func _overlay_label(txt: String, col: Color) -> void:
 	overlay_content.add_child(Ui.label(txt, 15, col))
 
+## Navigation clavier des overlays : place le focus sur le 1er bouton du
+## panneau — la chaîne de focus native de Godot (flèches/Tab + Entrée) fait
+## le reste sans code supplémentaire. À appeler en fin de chaque show_*.
+func _focus_first_button() -> void:
+	var btn: Button = _first_button(overlay_content)
+	if btn != null:
+		btn.grab_focus()
+
+func _first_button(node: Node) -> Button:
+	for c in node.get_children():
+		if c is Button:
+			return c
+		var found: Button = _first_button(c)
+		if found != null:
+			return found
+	return null
+
 # --- Rafraîchissement (lecture de l'état du jeu) ------------------------------
 func refresh() -> void:
 	var player = game.player
@@ -1054,6 +1118,7 @@ func refresh() -> void:
 	_rebuild_statuses()
 	_rebuild_turn_strip()
 	log_label.text = "\n".join(game.messages)
+	log_label.scroll_to_line(log_label.get_line_count() - 1)
 
 ## Ne reconstruit la bande d'ordre des tours que si l'ordre calculé a changé
 ## (cache une liste d'instance_id) — évite de recréer des TextureRect à chaque
