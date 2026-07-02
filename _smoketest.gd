@@ -3,6 +3,9 @@ extends Node
 # (les autoloads sont donc chargés -> GameState disponible).
 
 func _ready() -> void:
+	# Phase 7.1 : la section marche aléatoire utilise la RNG globale — on la
+	# fixe pour que le test soit déterministe en CI.
+	seed(4242)
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
