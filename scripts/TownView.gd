@@ -8,7 +8,6 @@ extends Node2D
 const CELL := 32
 const BW := 64   # doit rester en phase avec BW/BH de _assets_gen.gd
 const BH := 88
-const VIEW := Vector2(1280, 720)
 const COLOR_GRASS := Color(0.10, 0.14, 0.10)
 const COLOR_ROAD := Color(0.16, 0.14, 0.12)
 const COLOR_WALL := Color(0.05, 0.045, 0.07)
@@ -38,14 +37,15 @@ func refresh(t: Town, pos: Vector2i) -> void:
 func _draw() -> void:
 	if town == null:
 		return
+	var view: Vector2 = get_viewport_rect().size
 	# Fond plein écran défensif : la ville (petite, fixe) ne couvre pas tout
 	# l'écran, ce rectangle évite qu'un rendu de donjon résiduel ne transparaisse
 	# dans les marges si jamais la visibilité de map_view n'était pas à jour.
-	draw_rect(Rect2(0, 0, VIEW.x, VIEW.y), Color(0.045, 0.055, 0.05))
+	draw_rect(Rect2(0, 0, view.x, view.y), Color(0.045, 0.055, 0.05))
 	var tw: float = Town.WIDTH * CELL
 	var th: float = Town.HEIGHT * CELL
-	var ox: float = round((VIEW.x - tw) * 0.5)
-	var oy: float = round((VIEW.y - th) * 0.5)
+	var ox: float = round((view.x - tw) * 0.5)
+	var oy: float = round((view.y - th) * 0.5)
 
 	for y in Town.HEIGHT:
 		for x in Town.WIDTH:

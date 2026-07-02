@@ -3,11 +3,12 @@
 ## à Hud (scripts/Hud.gd). "Les Strates" — roguelike d'ascension de tour.
 extends Node2D
 
-enum State { TITLE, LOADOUT, META, HUB, PLAYING, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
+enum State { TITLE, LOADOUT, META, HUB, PLAYING, PAUSED, CHOICE, LEVELUP, INVENTORY, GAMEOVER }
 
 const MAX_LOG := 8
 const INV_CAP := 16
 const NO_TILE := Vector2i(-9999, -9999)   # sentinelle "aucune case trouvée"
+const ABANDON_SHARD_MULT := 0.75          # pénalité d'Éclats en cas d'abandon volontaire
 
 var state: int = State.TITLE
 var rng := RandomNumberGenerator.new()
@@ -69,6 +70,7 @@ var hud                          # instance de Hud (scripts/Hud.gd)
 
 func _ready() -> void:
 	rng.randomize()
+	_setup_input_actions()
 	map_view = Node2D.new()
 	map_view.set_script(load("res://scripts/MapView.gd"))
 	add_child(map_view)
@@ -82,7 +84,38 @@ func _ready() -> void:
 	add_child(hud)
 	hud.setup(self)
 	map_view.view_size = hud.play_area()
+	get_viewport().size_changed.connect(_on_viewport_resized)
 	return_to_title()
+
+## La fenêtre a changé de taille/ratio : recale la zone de jeu et force la
+## vignette (mise en cache à la 1re taille) à se régénérer.
+func _on_viewport_resized() -> void:
+	if map_view == null or hud == null:
+		return
+	map_view.view_size = hud.play_area()
+	map_view._vignette_tex = null
+	refresh()
+
+## Actions liées par touche PHYSIQUE (position sur le clavier, pas le
+## caractère produit) : WASD/flèches/HJKL fonctionnent quelle que soit la
+## disposition (AZERTY, QWERTY...).
+func _setup_input_actions() -> void:
+	_bind_action("move_up", [KEY_W, KEY_UP, KEY_K])
+	_bind_action("move_down", [KEY_S, KEY_DOWN, KEY_J])
+	_bind_action("move_left", [KEY_A, KEY_LEFT, KEY_H])
+	_bind_action("move_right", [KEY_D, KEY_RIGHT, KEY_L])
+	_bind_action("wait", [KEY_PERIOD, KEY_KP_5])
+	_bind_action("ability", [KEY_SPACE, KEY_E])
+	_bind_action("inventory", [KEY_I])
+	_bind_action("cancel", [KEY_ESCAPE])
+
+func _bind_action(action: String, keys: Array) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	for key in keys:
+		var ev := InputEventKey.new()
+		ev.physical_keycode = key
+		InputMap.action_add_event(action, ev)
 
 # --- Flux d'écrans ------------------------------------------------------------
 ## Écran-titre (point d'entrée du jeu).
@@ -219,7 +252,7 @@ func start_run(loadout_id: String = "melee") -> void:
 
 	# Serments : ne garder que ceux réellement débloqués (sécurité).
 	active_oaths = active_oaths.filter(func(id): return _oath_available(id))
-	floor_num = 1
+	floor_num = 0
 	run_shards = 0 if has_oath("pauvrete") else GameState.bonus_start_shards()
 	run_kills = 0
 	run_best_hit = 0
@@ -251,13 +284,13 @@ func _grant_starting_bonuses() -> void:
 			var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
 			player.talents.append(t)
 			add_message("[color=#9fff9f]Instinct : talent de départ — %s.[/color]" % t["name"])
+		if GameState.starts_with_power():
+			var pw: Dictionary = _pick_power_def()
+			if not pw.is_empty():
+				player.powers.append(pw)
+				add_message("[color=#ffb84a]Ω Pacte de Pouvoir : %s[/color]" % pw["name"])
 	elif GameState.oaths_unlocked():
 		add_message("[color=#d88a8a]Serment de Pauvreté : aucun bonus de départ.[/color]")
-	if GameState.starts_with_power():
-		var pw: Dictionary = _pick_power_def()
-		if not pw.is_empty():
-			player.powers.append(pw)
-			add_message("[color=#ffb84a]Ω Pacte de Pouvoir : %s[/color]" % pw["name"])
 	if has_oath("fragilite"):
 		player.base_max_hp = maxi(10, int(round(player.base_max_hp * 0.75)))
 		add_message("[color=#d88a8a]Serment de Fragilité : −25% PV max.[/color]")
@@ -531,7 +564,7 @@ func _boss_on_spawn(boss: Entity, occupied: Array) -> void:
 		return
 	var count: int = int(g.get("count", 3))
 	var spr: String = String(g.get("sprite", "ame"))
-	for sp in dungeon.random_floor_tiles(count, rng, occupied):
+	for sp in dungeon.random_floor_tiles_near(boss.pos(), 6, count, rng, occupied):
 		var gd := Entity.new()
 		gd.display_name = "Chaudron" if spr == "chaudron" else "Âme-bouclier"
 		gd.glyph = "*"
@@ -728,51 +761,66 @@ func _update_camera() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventKey) or not event.pressed or event.echo:
 		return
-	var k: int = event.keycode
 	if state == State.INVENTORY:
-		if k == KEY_I or k == KEY_ESCAPE:
+		if event.is_action_pressed("inventory") or event.is_action_pressed("cancel"):
 			close_inventory()
 		return
 	# Navigation clavier dans les écrans de menu (Échap = revenir en arrière,
 	# vers le Hub ou l'écran-titre selon d'où l'écran a été ouvert).
 	if state == State.LOADOUT or state == State.META:
-		if k == KEY_ESCAPE:
+		if event.is_action_pressed("cancel"):
 			return_to_previous()
 		return
 	if state == State.GAMEOVER:
-		if k == KEY_ESCAPE or k == KEY_ENTER or k == KEY_KP_ENTER:
+		var k: int = event.keycode
+		if event.is_action_pressed("cancel") or k == KEY_ENTER or k == KEY_KP_ENTER:
 			return_to_title()
 		return
 	if state == State.HUB:
-		match k:
-			KEY_W, KEY_UP, KEY_K:
-				_hub_try_move(0, -1)
-			KEY_S, KEY_DOWN, KEY_J:
-				_hub_try_move(0, 1)
-			KEY_A, KEY_LEFT, KEY_H:
-				_hub_try_move(-1, 0)
-			KEY_D, KEY_RIGHT, KEY_L:
-				_hub_try_move(1, 0)
-			KEY_ESCAPE:
-				return_to_title()
+		if event.is_action_pressed("move_up"):
+			_hub_try_move(0, -1)
+		elif event.is_action_pressed("move_down"):
+			_hub_try_move(0, 1)
+		elif event.is_action_pressed("move_left"):
+			_hub_try_move(-1, 0)
+		elif event.is_action_pressed("move_right"):
+			_hub_try_move(1, 0)
+		elif event.is_action_pressed("cancel"):
+			return_to_title()
+		return
+	if state == State.PAUSED:
+		if event.is_action_pressed("cancel"):
+			close_pause()
 		return
 	if state != State.PLAYING:
 		return
-	match k:
-		KEY_W, KEY_UP, KEY_K:
-			try_move(0, -1)
-		KEY_S, KEY_DOWN, KEY_J:
-			try_move(0, 1)
-		KEY_A, KEY_LEFT, KEY_H:
-			try_move(-1, 0)
-		KEY_D, KEY_RIGHT, KEY_L:
-			try_move(1, 0)
-		KEY_PERIOD, KEY_KP_5:
-			pass_turn()
-		KEY_SPACE, KEY_E:
-			use_ability()
-		KEY_I:
-			open_inventory()
+	if event.is_action_pressed("move_up"):
+		try_move(0, -1)
+	elif event.is_action_pressed("move_down"):
+		try_move(0, 1)
+	elif event.is_action_pressed("move_left"):
+		try_move(-1, 0)
+	elif event.is_action_pressed("move_right"):
+		try_move(1, 0)
+	elif event.is_action_pressed("wait"):
+		pass_turn()
+	elif event.is_action_pressed("ability"):
+		use_ability()
+	elif event.is_action_pressed("inventory"):
+		open_inventory()
+	elif event.is_action_pressed("cancel"):
+		open_pause()
+
+## Met le run en pause (overlay Reprendre/Options/Abandonner).
+func open_pause() -> void:
+	state = State.PAUSED
+	hud.show_pause()
+
+## Referme la pause et reprend le run là où il en était.
+func close_pause() -> void:
+	state = State.PLAYING
+	hud.hide_overlay()
+	refresh()
 
 # --- Actions du joueur --------------------------------------------------------
 ## Si l'héroïne est paralysée, toute action lui fait perdre son tour.
@@ -1296,13 +1344,23 @@ func on_enemy_killed(e: Entity) -> void:
 		if hits > 0:
 			add_message("[color=#ff8a4a]✹ %s explose au contact de la mort.[/color]" % e.display_name)
 	if e.is_boss:
+		var bid: int = e.get_instance_id()
+		var had_guardians: bool = false
+		for g in enemies.duplicate():
+			if int(g.ai.get("guard_for", 0)) == bid:
+				had_guardians = true
+				if map_view != null:
+					map_view.fx_death(g)
+				enemies.erase(g)
+		if had_guardians:
+			add_message("[color=#c8b0ff]Les gardiens se dissipent avec leur maître.[/color]")
 		run_bosses += 1
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
 		_bag_add(reward)
 		_drop_skill(death_pos, true)        # le boss lâche aussi une compétence
-		if floor_num % 15 == 0:
+		if run_bosses % 2 == 0:
 			_drop_power(death_pos)
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
@@ -1708,7 +1766,9 @@ func _enemy_atk(e: Entity) -> int:
 	if e.ai.get("pack", false):
 		var allies: int = _count_allies_near(e, 2)
 		a += int(round(float(e.ai.get("pack_bonus", 2)) * float(mini(allies, 3))))
-	return a
+	if e.has_status("weaken"):
+		a -= int(round(e.status_value("weaken")))
+	return maxi(1, a)
 
 func _free_adjacent(p: Vector2i) -> Vector2i:
 	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
@@ -2074,7 +2134,11 @@ func forge_choice(slot: String) -> void:
 	var boosted := false
 	for stat in bonus.keys():
 		var v = bonus[stat]
-		if typeof(v) == TYPE_INT and int(v) != 0:
+		if typeof(v) == TYPE_INT and int(v) <= 0:
+			continue
+		elif typeof(v) == TYPE_FLOAT and float(v) <= 0.0:
+			continue
+		elif typeof(v) == TYPE_INT and int(v) != 0:
 			bonus[stat] = int(v) + maxi(1, int(round(abs(int(v)) * 0.3))) * signi(int(v))
 			boosted = true
 		elif typeof(v) == TYPE_FLOAT and float(v) != 0.0:
@@ -2092,15 +2156,21 @@ func forge_choice(slot: String) -> void:
 func forge_cancel() -> void:
 	open_rest()
 
-func game_over() -> void:
+## `abandoned` : la joueuse a quitté volontairement (pause -> Abandonner
+## l'ascension) plutôt que d'être vaincue — l'étage atteint compte quand même
+## pour les records, mais les Éclats banqués sont réduits (ABANDON_SHARD_MULT).
+func game_over(abandoned := false) -> void:
 	var stats := {
 		"floor": floor_num, "level": player.level, "kills": run_kills,
 		"best_hit": run_best_hit, "shards": run_shards,
 		"item": str(run_best_item.get("name", "")),
 		"item_color": run_best_item.get("rarity_color", Color(0.82, 0.82, 0.88)).to_html(false),
 	}
-	# Serments : multiplie les Éclats banqués.
-	var banked: int = int(round(run_shards * oath_shard_mult()))
+	# Serments : multiplie les Éclats banqués (réduits en plus en cas d'abandon).
+	var shard_mult: float = oath_shard_mult()
+	if abandoned:
+		shard_mult *= ABANDON_SHARD_MULT
+	var banked: int = int(round(run_shards * shard_mult))
 	GameState.add_shards(banked)
 	# Connaissances : récompense le progrès (étages au-delà du record) et la nouveauté
 	# (Gardiens vaincus), + bonus des Serments. Calculé AVANT record_run (qui maj le record).
@@ -2110,10 +2180,18 @@ func game_over() -> void:
 	stats["knowledge"] = knowledge_gained
 	GameState.record_run(stats)
 	state = State.GAMEOVER
-	var summary: String = "Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level]
+	var summary: String
+	if abandoned:
+		summary = "Tu renonces à l'Étage %d." % floor_num
+	else:
+		summary = "Tu es tombé à l'Étage %d (niveau %d)." % [floor_num, player.level]
 	if knowledge_gained > 0:
 		summary += "   ✶ +%d Connaissance(s) acquise(s)." % knowledge_gained
 	hud.show_gameover(summary)
+
+## Quitte volontairement l'ascension en cours (depuis la pause).
+func abandon_run() -> void:
+	game_over(true)
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:

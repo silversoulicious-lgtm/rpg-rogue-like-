@@ -6,6 +6,66 @@ func _ready() -> void:
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
+	# --- Phase 1.7 : entrées liées par touche physique (indépendantes du clavier) ---
+	for action in ["move_up", "move_down", "move_left", "move_right", "wait", "ability", "inventory", "cancel"]:
+		assert(InputMap.has_action(action) and not InputMap.action_get_events(action).is_empty(), "action '%s' liée" % action)
+	print("OK Phase 1.7: actions de déplacement/interaction liées par touche physique")
+
+	# --- Phase 1.1 : plus d'off-by-one sur le numéro d'étage --------------------
+	main.start_run("melee")
+	assert(main.floor_num == 1, "le 1er étage réel affiche floor_num == 1 (pas 2)")
+	print("OK Phase 1.1: floor_num == 1 sur le 1er étage")
+
+	# --- Phase 1.5 : plafonds de dodge/crit/vol de vie ---------------------------
+	main.player.talents = []
+	for i in 3:
+		main.player.talents.append({ "id": "test_dodge_%d" % i, "name": "Test", "desc": "", "mods": { "dodge_chance": 0.30 } })
+	main.player.recompute_stats()
+	assert(is_equal_approx(main.player.dodge_chance, Data.CAP_DODGE), "l'esquive est plafonnée à CAP_DODGE malgré le cumul")
+	main.player.talents = []
+	main.player.recompute_stats()
+	print("OK Phase 1.5: dodge_chance/crit_chance/lifesteal_pct plafonnés dans recompute_stats")
+
+	# --- Phase 1.6 : la Forge n'amplifie plus les maluses -------------------------
+	main.start_run("melee")
+	main.player.equipment["arme"] = { "kind": "equip", "name": "Test", "slot": "arme", "salvage": 5, "bonus": { "atk": 4, "speed": -5 } }
+	main.forge_choice("arme")
+	var forged: Dictionary = main.player.equipment["arme"]["bonus"]
+	assert(int(forged["speed"]) == -5, "Forge : le malus de vitesse n'est pas amplifié")
+	assert(int(forged["atk"]) > 4, "Forge : le bonus positif est toujours amplifié")
+	print("OK Phase 1.6: Forge amplifie les bonus mais laisse les maluses intacts")
+
+	# --- Phase 1.10 : Serment de Pauvreté annule aussi le Pacte de Pouvoir --------
+	GameState.knowledge_nodes = ["pacte_pouvoir"]
+	main.active_oaths = ["pauvrete"]
+	main.start_run("melee")
+	assert(main.player.powers.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
+	main.active_oaths = []
+	GameState.knowledge_nodes = []
+	print("OK Phase 1.10: le Serment de Pauvreté annule bien le Pacte de Pouvoir")
+
+	# --- Phase 1.8 : pause et abandon volontaire d'ascension -----------------------
+	main.start_run("melee")
+	main.run_shards = 100
+	main.active_oaths = []
+	main.open_pause()
+	assert(main.state == main.State.PAUSED, "la pause suspend le run")
+	main.close_pause()
+	assert(main.state == main.State.PLAYING, "reprendre la pause revient au jeu")
+	var shards_before: int = GameState.shards
+	main.abandon_run()
+	assert(main.state == main.State.GAMEOVER, "abandonner l'ascension termine le run")
+	assert(GameState.shards == shards_before + int(round(100 * main.ABANDON_SHARD_MULT * main.oath_shard_mult())), "abandon : Éclats banqués réduits de ABANDON_SHARD_MULT")
+	print("OK Phase 1.8: pause (suspendre/reprendre) + abandon volontaire (pénalité d'Éclats)")
+
+	# --- Phase 1.9 : la zone de jeu suit un redimensionnement de fenêtre ----------
+	main.start_run("melee")
+	main.map_view._vignette_tex = main.map_view._make_vignette(4, 4)
+	main._on_viewport_resized()
+	assert(main.map_view.view_size == main.hud.play_area(), "la zone de jeu se recale sur la taille de viewport courante")
+	assert(main.map_view._vignette_tex == null, "la vignette en cache est invalidée pour se régénérer à la nouvelle taille")
+	print("OK Phase 1.9: recalage de la zone de jeu + invalidation de la vignette au redimensionnement")
+
 	# --- Parties complètes pour chaque héros (progression linéaire) ---
 	for hero in ["melee", "ranged", "magic"]:
 		main.start_run(hero)
@@ -125,6 +185,11 @@ func _ready() -> void:
 	target.hp = target.max_hp
 	main._trigger_armor_retaliation(target, 5)
 	assert(target.has_status("weaken"), "Renvoi affaiblit l'attaquant quand il déclenche")
+	# Phase 1.3 : weaken doit aussi réduire l'attaque effective de l'ennemi
+	# (sinon Renvoi n'a aucun effet réel en combat).
+	var weaken_val: int = int(round(target.status_value("weaken")))
+	assert(main._enemy_atk(target) == maxi(1, target.atk - weaken_val), "weaken réduit l'attaque effective de l'ennemi (_enemy_atk)")
+	print("OK Phase 1.3: weaken réduit désormais l'attaque effective d'un ennemi")
 	print("OK préfixes de combat: Ardent/Cuirasse/Renvoi se déclenchent correctement")
 
 	# --- Objets uniques (Épique/Légendaire) ---------------------------------------
@@ -663,6 +728,11 @@ func _ready() -> void:
 		assert(boss.is_boss, "%s est un boss" % bdef["name"])
 		if boss.ai.has("guardians"):
 			assert(main._living_guardians(boss) > 0, "%s protégé par des gardiens" % bdef["name"])
+			# Phase 1.4 : les gardiens apparaissent désormais près du boss (rayon 6), pas n'importe où.
+			for g in main.enemies:
+				if int(g.ai.get("guard_for", 0)) == boss.get_instance_id():
+					var d: int = maxi(absi(g.x - boss.x), absi(g.y - boss.y))
+					assert(d <= 6, "%s : gardien à distance de Tchebychev %d (> 6) du boss" % [bdef["name"], d])
 		for _t in 16:
 			if main.state != main.State.PLAYING:
 				break
@@ -673,6 +743,38 @@ func _ready() -> void:
 		main.state = main.State.PLAYING
 	assert(Data.BOSSES.size() == 10, "10 boss définis (vu %d)" % Data.BOSSES.size())
 	print("OK boss Pass 2: %d boss (gardiens, ponte, phases, charge, souffle) sans crash" % Data.BOSSES.size())
+
+	# --- Phase 1.4 (2/2) : les gardiens survivants se dissipent à la mort du boss --
+	main.start_run("melee")
+	main.enemies.clear()
+	var g_boss = main._make_enemy(Data.BOSSES[1], 10, main.player.pos() + Vector2i(3, 0), true)
+	main.enemies.append(g_boss)
+	main._boss_on_spawn(g_boss, [g_boss.pos(), main.player.pos()])
+	if g_boss.ai.has("guardians"):
+		assert(main._living_guardians(g_boss) > 0, "gardiens de test posés avant de tuer le boss")
+		main.run_bosses = 0
+		main.on_enemy_killed(g_boss)
+		var leftover := false
+		for g in main.enemies:
+			if int(g.ai.get("guard_for", 0)) == g_boss.get_instance_id():
+				leftover = true
+		assert(not leftover, "les gardiens sont retirés quand leur boss meurt")
+		print("OK Phase 1.4: gardiens dans un rayon de 6 du boss + dissipés à sa mort")
+
+	# --- Phase 1.2 : le butin de pouvoir garanti du boss n'est plus du code mort ---
+	main.start_run("melee")
+	main.enemies.clear()
+	main.loot.clear()
+	var p_boss = main._make_enemy(Data.BOSSES[0], 10, main.player.pos() + Vector2i(2, 0), true)
+	main.enemies.append(p_boss)
+	main.run_bosses = 1
+	main.on_enemy_killed(p_boss)
+	var power_dropped := false
+	for it in main.loot:
+		if it.get("kind", "") == "power":
+			power_dropped = true
+	assert(power_dropped, "un Gardien pair (run_bosses devenant pair) lâche garantit un pouvoir")
+	print("OK Phase 1.2: le pouvoir garanti tombe désormais un Gardien sur deux")
 
 	# --- Hub (Pied de la Tour) : déplacement libre + entrée dans les bâtiments ----
 	main.enter_hub()

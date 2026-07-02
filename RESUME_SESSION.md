@@ -73,6 +73,12 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
   nouveaux PNG — sans repasse d'import, les nouveaux fichiers restent
   invisibles à `load()`, repli silencieux). `_SmokeTest.tscn` tourne
   ensuite avec `--headless --path . res://_SmokeTest.tscn`.
+  **Note (Phase 1)** : indisponible dans certains bacs à sable dont la
+  politique réseau bloque `github.com` (téléchargement du binaire refusé,
+  403) — c'était le cas pour la session qui a implémenté la Phase 1 ;
+  les corrections et leurs asserts de régression ont été revus
+  manuellement mais **pas exécutés**. À lancer en priorité dans un
+  environnement qui a l'accès réseau avant de fusionner/poursuivre.
 - **Rendu réel / captures d'écran** : `--headless` seul utilise un pilote
   factice (aucun pixel produit). Pour un vrai rendu logiciel sans GPU,
   Mesa llvmpipe est installé : lancer via `xvfb-run` SANS `--headless`,
@@ -89,27 +95,41 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
 
 ## Ce qui reste à faire
 
-1. **Forge du Hub** — nouveau système de progression permanente (pas un
-   renommage du Sanctuaire) : dépense les Éclats banqués pour des
-   déblocages durables (tiers de Forge in-run améliorés, garantie de type
-   de préfixe, nouveaux objets de départ...).
-2. **Boutique du Hub** — objets cosmétiques/de confort (palettes d'Aria,
-   emplacement de sac supplémentaire) contre Éclats banqués, sans effet sur
-   la puissance de combat.
-3. **Phase 6 — Dialogues/PNJ** : système de dialogue aux nœuds
-   événement/boutique/repos, portraits, choix liés aux Serments/Connaissances.
-4. **Phase 7 — Lore + fins multiples** : texte de lore par étages/Codex,
-   plusieurs fins selon progression/Serments/% Codex complété.
-5. **Phase 8 — Finition** : équilibrage (dégâts/HP/drop/coût des nœuds),
-   polish UI/UX, sons/musique, écran titre/crédits.
-6. **Suivis mineurs (non bloquants)** :
-   - Sprites directionnels pour les ennemis (seule Aria en a).
-   - Variantes teintées pour les ennemis élite, sprite distinct pour le
-     boss légendaire (actuellement `boss` générique).
-   - Représentation visuelle des pouvoirs actifs en combat (juste listés
-     en sidebar texte).
-   - Armurerie et Porte de la Tour mènent toutes deux au même écran de
-     Loadout — redondance mineure, probablement correcte telle quelle.
-   - Nettoyage de 3 branches GitHub redondantes (ancêtres fusionnés de la
-     branche actuelle), bloqué sur un changement de branche par défaut
-     à faire depuis les Settings GitHub (hors accès outillé).
+La feuille de route détaillée (algorithmes, points d'intégration, pièges,
+asserts par tâche) vit désormais dans `IMPLEMENTATION_GUIDE.md` — exécutée
+phase par phase, avec `AUDIT.md`/`VISION.md`/`ART_GENERATOR_SPEC.md` en
+appui. Elle **remplace** la liste ad hoc ci-dessous (numérotation différente,
+ne pas les confondre).
+
+- **Phase 1 — Corrections de bugs confirmés : FAITE.** floor_num
+  démarrait à 2 au lieu de 1 ; le pouvoir garanti du boss ne tombait
+  jamais (condition `floor_num % 15` sur un multiple impossible, remplacée
+  par `run_bosses % 2`) ; le statut *weaken* n'affaiblissait pas les
+  ennemis (préfixe Représailles inerte) ; les gardiens-boucliers de boss
+  pouvaient apparaître n'importe où sur la carte et restaient en vie après
+  la mort du boss (désormais rayon 6 + dissipation) ; esquive/critique/vol
+  de vie n'étaient pas plafonnés (immortalité possible par cumul) ; la
+  Forge amplifiait aussi les maluses d'objet ; les contrôles étaient liés
+  au caractère du clavier (cassés en AZERTY, remplacés par des actions
+  liées à la touche physique) ; aucune pause ni moyen d'abandonner un run
+  proprement (ajout d'un état PAUSED + abandon avec pénalité d'Éclats) ;
+  l'UI supposait un viewport fixe 1280×720 (sidebar/journal désormais
+  ancrés, recalés au redimensionnement) ; le Serment de Pauvreté laissait
+  filtrer le bonus de départ du Pacte de Pouvoir. Asserts de régression
+  ajoutés dans `_smoketest.gd` pour les dix ; README corrigé (sprites
+  32×32, Gardien tous les 6 étages réels).
+- **Phase 2 — Équité du combat** (ligne de vue partagée joueur/ennemis,
+  zone d'agro, évitement d'obstacles, intentions télégraphiées, bande
+  d'ordre des tours, inspection d'ennemi) : à faire.
+- **Phases 3 à 8** (feel & polish, terrain élémentaire, équilibrage,
+  contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
+  voir `IMPLEMENTATION_GUIDE.md` pour le détail.
+- **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
+  - Sprites directionnels pour les ennemis (seule Aria en a).
+  - Variantes teintées pour les ennemis élite, sprite distinct pour le
+    boss légendaire (actuellement `boss` générique).
+  - Armurerie et Porte de la Tour mènent toutes deux au même écran de
+    Loadout — redondance mineure, probablement correcte telle quelle.
+  - Nettoyage de 3 branches GitHub redondantes (ancêtres fusionnés de la
+    branche actuelle), bloqué sur un changement de branche par défaut
+    à faire depuis les Settings GitHub (hors accès outillé).

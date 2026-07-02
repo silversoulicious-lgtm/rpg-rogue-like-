@@ -65,7 +65,7 @@ func setup(game_ref) -> void:
 	_build_hub_ui()
 
 func play_area() -> Vector2:
-	return Vector2(VIEW.x - SIDEBAR_W, VIEW.y - LOG_H)
+	return get_viewport().get_visible_rect().size - Vector2(SIDEBAR_W, LOG_H)
 
 # --- Construction -------------------------------------------------------------
 func _build_hud() -> void:
@@ -76,8 +76,9 @@ func _build_hud() -> void:
 
 func _build_sidebar() -> void:
 	var panel := PanelContainer.new()
-	panel.position = Vector2(VIEW.x - SIDEBAR_W, 0)
-	panel.size = Vector2(SIDEBAR_W, VIEW.y)
+	panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	panel.offset_left = -SIDEBAR_W
+	panel.offset_right = 0
 	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.072, 0.065, 0.115)))
 	hud_layer.add_child(panel)
 
@@ -185,10 +186,12 @@ func _stat_cell(sid: String, glyph: String, col: Color, tip: String) -> Control:
 	return cell
 
 func _build_log() -> void:
-	var play_w := VIEW.x - SIDEBAR_W
 	var panel := PanelContainer.new()
-	panel.position = Vector2(12, VIEW.y - LOG_H)
-	panel.size = Vector2(play_w - 24, LOG_H - 10)
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	panel.offset_left = 12
+	panel.offset_right = -SIDEBAR_W - 12
+	panel.offset_top = -LOG_H
+	panel.offset_bottom = -10
 	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.08, 0.07, 0.11)))
 	hud_layer.add_child(panel)
 
@@ -196,7 +199,6 @@ func _build_log() -> void:
 	log_label.bbcode_enabled = true
 	log_label.fit_content = true
 	log_label.scroll_active = false
-	log_label.custom_minimum_size = Vector2(play_w - 48, LOG_H - 32)
 	panel.add_child(log_label)
 
 func _build_menu() -> void:
@@ -300,7 +302,8 @@ func _build_hub_ui() -> void:
 	hint.add_child(Ui.label("⛫ Pied de la Tour — approche un bâtiment pour y entrer.", 15, Ui.INK))
 
 	var back := Ui.button("↩ Menu principal", 40, 14)
-	back.position = Vector2(VIEW.x - 216, 20)
+	back.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	back.position = Vector2(-216, 20)
 	back.pressed.connect(game.return_to_title)
 	hub_layer.add_child(back)
 
@@ -820,6 +823,22 @@ func _toggle_fullscreen() -> void:
 	var on: bool = mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if on else DisplayServer.WINDOW_MODE_FULLSCREEN)
 	show_options()
+
+# --- Overlay : pause -----------------------------------------------------------
+func show_pause() -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("⏸  PAUSE", Ui.ACCENT_SOFT)
+	var resume := Ui.button("▶  Reprendre", 46, 18)
+	resume.pressed.connect(game.close_pause)
+	overlay_content.add_child(resume)
+	var opts := Ui.button("⚙  Options", 46, 17)
+	opts.pressed.connect(show_options)
+	overlay_content.add_child(opts)
+	overlay_content.add_child(HSeparator.new())
+	var abandon := Ui.button("✖  Abandonner l'ascension", 46, 16)
+	abandon.pressed.connect(game.abandon_run)
+	overlay_content.add_child(abandon)
 
 # --- Overlay : montée de niveau ----------------------------------------------
 func show_levelup(level: int) -> void:

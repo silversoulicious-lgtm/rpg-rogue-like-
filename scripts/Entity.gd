@@ -252,6 +252,9 @@ func recompute_stats() -> void:
 	speed = max(20, speed)
 	ability_cd_max = max(0, ability_cd_max)
 	vision = max(1, vision)
+	dodge_chance = minf(dodge_chance, Data.CAP_DODGE)
+	crit_chance = minf(crit_chance, Data.CAP_CRIT)
+	lifesteal_pct = minf(lifesteal_pct, Data.CAP_LIFESTEAL)
 	hp = min(hp, max_hp)
 
 ## Active les synergies dont TOUS les procs requis sont équipés, et amplifie la

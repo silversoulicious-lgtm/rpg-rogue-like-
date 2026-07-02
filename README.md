@@ -9,7 +9,7 @@ Un **RPG roguelike tour-par-tour** où tu gravis une **tour géante façon Aincr
 ## 🎮 Concept
 
 - **Pied de la Tour** : un Hub explorable (petite ville, WASD/flèches) au bas de la Tour. Marche jusqu'à un bâtiment pour y entrer — Armurerie (choix d'arme et Serments), Bibliothèque (Arbre de Connaissances + Codex), Sanctuaire (améliorations permanentes), Porte de la Tour (lancer l'ascension). Forge et Boutique sont visibles mais pas encore ouvertes (systèmes à venir).
-- **Progression linéaire et rythmée** : pas de carte à choisir, l'ascension s'enchaîne directement d'un étage au suivant — Combat, **Élite** (plus rare, plus dur, meilleur butin), **Boutique**, **Événement** (risque/récompense) et **Repos** sont tirés au sort (Boutique/Événement volontairement rares : ce sont des pauses, pas le cœur du jeu). Un **Gardien** garanti t'attend tous les 5 étages réels ; le premier étage de chaque strate est toujours un Combat, histoire de souffler après le précédent Gardien.
+- **Progression linéaire et rythmée** : pas de carte à choisir, l'ascension s'enchaîne directement d'un étage au suivant — Combat, **Élite** (plus rare, plus dur, meilleur butin), **Boutique**, **Événement** (risque/récompense) et **Repos** sont tirés au sort (Boutique/Événement volontairement rares : ce sont des pauses, pas le cœur du jeu). Un **Gardien** garanti t'attend tous les 6 étages réels ; le premier étage de chaque strate est toujours un Combat, histoire de souffler après le précédent Gardien.
 - **Étages « open world »** : chaque combat se déroule sur une **carte ouverte** générée procéduralement, parsemée d'**arbres, rochers, étendues d'eau, routes et décor**. La caméra suit le héros : on **explore** vraiment l'étage pour trouver l'escalier. La **taille est ré-échantillonnée à chaque étage** (distribution triangulaire) : la plus fréquente est **320×200**, la minuscule **64×40** et l'immense **640×400** restant rares. Le nombre d'ennemis et de butin s'adapte à la surface pour qu'une grande carte ne soit jamais vide.
 - **Biomes** : tous les ~12 étages, on entre dans un **biome différent** qui change la palette, le terrain et les sprites — *Plaines verdoyantes*, *Forêt profonde*, *Désert de cendres dorées*, *Toundra gelée*, *Marais putride*, *Terres de feu*.
 - **Brouillard de guerre** : la vision est limitée à un **cercle autour du héros** (stat *Vision*). Les zones non vues sont noires, les zones déjà explorées restent en mémoire (assombries) mais ennemis et butin n'apparaissent que dans le champ de vision. La portée de Vision s'améliore via les talents **Clairvoyance** (+1) et **Œil de Lynx** (+2).
@@ -139,7 +139,7 @@ scripts/
   Town.gd              Disposition fixe du Hub (Pied de la Tour) : tuiles + bâtiments
   TownView.gd          Rendu du Hub (sans brouillard ni caméra de suivi)
   TitleBg.gd           Silhouette procédurale de repli pour le fond de l'écran-titre
-assets/                Sprites & textures pixel-art (PNG 24x24, générés)
+assets/                Sprites & textures pixel-art (PNG 32x32, générés)
 _assets_gen.gd         Générateur d'assets (régénère assets/ par code)
 _smoketest.gd          Test de fumée headless (pilote une partie complète)
 ```

@@ -249,6 +249,33 @@ func random_floor_tiles(count: int, rng: RandomNumberGenerator, exclude: Array) 
 		result.append(p)
 	return result
 
+## Comme random_floor_tiles, mais restreint aux cases à distance de Tchebychev
+## <= radius de `center` (pour éviter des gardiens de boss à l'autre bout de la carte).
+## Complète depuis l'échantillon global si le voisinage n'a pas assez de cases.
+func random_floor_tiles_near(center: Vector2i, radius: int, count: int,
+		rng: RandomNumberGenerator, exclude: Array) -> Array:
+	var near: Array = []
+	for p in reachable_tiles:
+		if maxi(absi(p.x - center.x), absi(p.y - center.y)) <= radius:
+			near.append(p)
+	var used: Dictionary = {}
+	for p in exclude:
+		used[p] = true
+	var result: Array = []
+	var tries: int = 0
+	var budget: int = count * 40 + 50
+	while result.size() < count and tries < budget and not near.is_empty():
+		tries += 1
+		var p: Vector2i = near[rng.randi_range(0, near.size() - 1)]
+		if used.has(p):
+			continue
+		used[p] = true
+		result.append(p)
+	if result.size() < count:
+		for p in random_floor_tiles(count - result.size(), rng, exclude + result):
+			result.append(p)
+	return result
+
 func _reachable_set(a: Vector2i) -> Dictionary:
 	var seen: Dictionary = {}
 	if not is_walkable(a.x, a.y):

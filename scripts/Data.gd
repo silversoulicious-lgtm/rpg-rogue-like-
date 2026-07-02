@@ -105,6 +105,12 @@ static func infer_weapon_type(item_name: String, stat: Dictionary) -> String:
 # "Clairvoyance" / "Œil de Lynx" (mod "vision").
 const BASE_VISION := 4
 
+# --- PLAFONDS DE STATS DÉRIVÉES ------------------------------------------------
+# Empêche le cumul d'artefacts/talents/affixes de rendre le héros invincible.
+const CAP_DODGE := 0.60
+const CAP_CRIT := 0.75
+const CAP_LIFESTEAL := 0.50
+
 # --- BIOMES (terrain "open world" par étage) ----------------------------------
 # Le biome change tous les BIOME_SPAN étages et détermine la palette, la densité
 # des éléments de terrain (arbres/rochers/eau/décor) et les sprites utilisés.
