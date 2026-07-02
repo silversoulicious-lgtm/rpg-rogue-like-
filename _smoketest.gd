@@ -6,6 +6,209 @@ func _ready() -> void:
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
+	# --- Phase 1.7 : entrées liées par touche physique (indépendantes du clavier) ---
+	for action in ["move_up", "move_down", "move_left", "move_right", "wait", "ability", "inventory", "cancel"]:
+		assert(InputMap.has_action(action) and not InputMap.action_get_events(action).is_empty(), "action '%s' liée" % action)
+	print("OK Phase 1.7: actions de déplacement/interaction liées par touche physique")
+
+	# --- Phase 1.1 : plus d'off-by-one sur le numéro d'étage --------------------
+	main.start_run("melee")
+	assert(main.floor_num == 1, "le 1er étage réel affiche floor_num == 1 (pas 2)")
+	print("OK Phase 1.1: floor_num == 1 sur le 1er étage")
+
+	# --- Phase 1.5 : plafonds de dodge/crit/vol de vie ---------------------------
+	main.player.talents = []
+	for i in 3:
+		main.player.talents.append({ "id": "test_dodge_%d" % i, "name": "Test", "desc": "", "mods": { "dodge_chance": 0.30 } })
+	main.player.recompute_stats()
+	assert(is_equal_approx(main.player.dodge_chance, Data.CAP_DODGE), "l'esquive est plafonnée à CAP_DODGE malgré le cumul")
+	main.player.talents = []
+	main.player.recompute_stats()
+	print("OK Phase 1.5: dodge_chance/crit_chance/lifesteal_pct plafonnés dans recompute_stats")
+
+	# --- Phase 1.6 : la Forge n'amplifie plus les maluses -------------------------
+	main.start_run("melee")
+	main.player.equipment["arme"] = { "kind": "equip", "name": "Test", "slot": "arme", "salvage": 5, "bonus": { "atk": 4, "speed": -5 } }
+	main.forge_choice("arme")
+	var forged: Dictionary = main.player.equipment["arme"]["bonus"]
+	assert(int(forged["speed"]) == -5, "Forge : le malus de vitesse n'est pas amplifié")
+	assert(int(forged["atk"]) > 4, "Forge : le bonus positif est toujours amplifié")
+	print("OK Phase 1.6: Forge amplifie les bonus mais laisse les maluses intacts")
+
+	# --- Phase 1.10 : Serment de Pauvreté annule aussi le Pacte de Pouvoir --------
+	GameState.knowledge_nodes = ["pacte_pouvoir"]
+	main.active_oaths = ["pauvrete"]
+	main.start_run("melee")
+	assert(main.player.powers.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
+	main.active_oaths = []
+	GameState.knowledge_nodes = []
+	print("OK Phase 1.10: le Serment de Pauvreté annule bien le Pacte de Pouvoir")
+
+	# --- Phase 1.8 : pause et abandon volontaire d'ascension -----------------------
+	main.start_run("melee")
+	main.run_shards = 100
+	main.active_oaths = []
+	main.open_pause()
+	assert(main.state == main.State.PAUSED, "la pause suspend le run")
+	main.close_pause()
+	assert(main.state == main.State.PLAYING, "reprendre la pause revient au jeu")
+	var shards_before: int = GameState.shards
+	main.abandon_run()
+	assert(main.state == main.State.GAMEOVER, "abandonner l'ascension termine le run")
+	assert(GameState.shards == shards_before + int(round(100 * main.ABANDON_SHARD_MULT * main.oath_shard_mult())), "abandon : Éclats banqués réduits de ABANDON_SHARD_MULT")
+	print("OK Phase 1.8: pause (suspendre/reprendre) + abandon volontaire (pénalité d'Éclats)")
+
+	# --- Phase 1.9 : la zone de jeu suit un redimensionnement de fenêtre ----------
+	main.start_run("melee")
+	main.map_view._vignette_tex = main.map_view._make_vignette(4, 4)
+	main._on_viewport_resized()
+	assert(main.map_view.view_size == main.hud.play_area(), "la zone de jeu se recale sur la taille de viewport courante")
+	assert(main.map_view._vignette_tex == null, "la vignette en cache est invalidée pour se régénérer à la nouvelle taille")
+	print("OK Phase 1.9: recalage de la zone de jeu + invalidation de la vignette au redimensionnement")
+
+	# --- Phase 2.1/2.2 : ligne de vue partagée + vision >= portée max des tireurs --
+	assert(Data.BASE_VISION >= 6, "vision de base relevée pour couvrir les ennemis à portée 7")
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var los_origin: Vector2i = main.player.pos()
+	var los_wall: Vector2i = los_origin + Vector2i(1, 0)
+	var los_far: Vector2i = los_origin + Vector2i(2, 0)
+	if main.dungeon.is_walkable(los_wall.x, los_wall.y) and main.dungeon.is_walkable(los_far.x, los_far.y):
+		main.dungeon.tiles[los_wall.y][los_wall.x] = Dungeon.ROCK
+		main.dungeon.reveal(los_origin, main.player.vision)
+		var shooter: Entity = main._make_enemy(main._enemy_def_by_sprite("dullahan"), 8, los_far)
+		shooter.awake = true
+		shooter.ai_cd = 0
+		main.enemies.append(shooter)
+		var hp0_los: int = main.player.hp
+		main._enemy_act(shooter)
+		assert(main.player.hp == hp0_los, "un mur bloque le tir d'un ennemi (pas de tir depuis le néant)")
+		assert(main._nearest_enemy_in_range(10) == null, "le même mur bloque l'auto-visée du joueur (LoS partagée)")
+		main.dungeon.tiles[los_wall.y][los_wall.x] = Dungeon.FLOOR
+		print("OK Phase 2.1/2.2: Dungeon.has_los bloque tirs ennemis et auto-visée joueuse à travers un mur")
+
+	# --- Phase 2.3 : zone d'agro (l'IA n'est plus omnisciente) ---------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	var agro_rng := RandomNumberGenerator.new(); agro_rng.seed = 21
+	var agro_map := Dungeon.new(80, 50, agro_rng, Data.biome_for_floor(1))
+	main.dungeon = agro_map
+	main.player.x = agro_map.start.x
+	main.player.y = agro_map.start.y
+	agro_map.reveal(main.player.pos(), main.player.vision)
+	main.enemies.clear()
+	var far_pos: Vector2i = Vector2i(clampi(main.player.x + 30, 1, agro_map.width - 2), main.player.y)
+	if not agro_map.is_walkable(far_pos.x, far_pos.y):
+		far_pos = Vector2i(clampi(main.player.x - 30, 1, agro_map.width - 2), main.player.y)
+	var dormant: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, far_pos)
+	dormant.awake = false
+	main.enemies.append(dormant)
+	var dormant_start: Vector2i = dormant.pos()
+	for i in 5:
+		main.pass_turn()
+	assert(dormant.pos() == dormant_start, "un ennemi endormi à 30 cases reste immobile après 5 tours d'attente")
+	assert(not dormant.awake, "il reste endormi : ni vu, ni blessé, ni dans son rayon d'agro")
+	print("OK Phase 2.3: zone d'agro — un ennemi hors vue/portée reste endormi et immobile")
+
+	# --- Phase 2.4 : évitement d'obstacle (A* pour boss/élites, ai.smart_path) -----
+	main.active_oaths = []
+	main.start_run("melee")
+	var obs_rng := RandomNumberGenerator.new(); obs_rng.seed = 33
+	var obs_map := Dungeon.new(20, 10, obs_rng, Data.biome_for_floor(1))
+	for y in range(1, obs_map.height - 1):
+		for x in range(1, obs_map.width - 1):
+			obs_map.tiles[y][x] = Dungeon.FLOOR
+	# Mare de 5 cases séparant joueur et boss, avec un passage libre au-dessus et en dessous.
+	for y in range(2, 7):
+		obs_map.tiles[y][9] = Dungeon.WATER
+	main.dungeon = obs_map
+	main.player.x = 2
+	main.player.y = 4
+	obs_map.reveal(main.player.pos(), main.player.vision)
+	main.enemies.clear()
+	var obs_boss: Entity = main._make_enemy(Data.BOSSES[4], 1, Vector2i(16, 4), true)
+	obs_boss.ai["smart_path"] = true
+	main.enemies.append(obs_boss)
+	var reached := false
+	for i in 25:
+		main.pass_turn()
+		if main.state != main.State.PLAYING:
+			break
+		if main._chebyshev(obs_boss.pos(), main.player.pos()) <= 1:
+			reached = true
+			break
+	assert(reached, "le boss (A* smart_path) contourne une mare de 5 cases et atteint la joueuse en <= 25 tours")
+	main.state = main.State.PLAYING
+	print("OK Phase 2.4: évitement d'obstacle — un boss/élite contourne un obstacle via l'A* (Dungeon.next_step)")
+
+	# --- Phase 2.5 : intentions ennemies télégraphiées -----------------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var adj_pos: Vector2i = Vector2i(-9999, -9999)
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var cand: Vector2i = main.player.pos() + d
+		if main.dungeon.is_walkable(cand.x, cand.y):
+			adj_pos = cand
+			break
+	var adj_enemy: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, adj_pos)
+	adj_enemy.awake = true
+	main.enemies.append(adj_enemy)
+	assert(main.enemy_intent(adj_enemy) == "attack", "intention d'un ennemi adjacent et éveillé = attack")
+	var dormant2: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	dormant2.awake = false
+	main.enemies.append(dormant2)
+	assert(main.enemy_intent(dormant2) == "sleep", "intention d'un ennemi endormi = sleep")
+	var mimic: Entity = main._make_enemy(main._enemy_def_by_sprite("mimic"), 1, _find_spot(main, main.player.pos()))
+	mimic.awake = true
+	mimic.revealed = false
+	main.enemies.append(mimic)
+	assert(main.enemy_intent(mimic) == "", "un mimic non démasqué ne révèle jamais d'intention, même éveillé")
+	print("OK Phase 2.5: intentions télégraphiées — attack/sleep/mimic masqué")
+
+	# --- Phase 2.6 : bande d'ordre des tours (simulation pure) ---------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var slow_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	slow_e.speed = 100
+	slow_e.energy = 0
+	slow_e.awake = true
+	var fast_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	fast_e.speed = 200
+	fast_e.energy = 0
+	fast_e.awake = true
+	main.enemies.append(slow_e)
+	main.enemies.append(fast_e)
+	var p_energy_before: int = main.player.energy
+	var s_energy_before: int = slow_e.energy
+	var f_energy_before: int = fast_e.energy
+	var order2: Array = main.preview_turn_order(12)
+	assert(main.player.energy == p_energy_before and slow_e.energy == s_energy_before and fast_e.energy == f_energy_before,
+		"preview_turn_order ne touche à aucune entité réelle (simulation pure)")
+	assert(order2[0] == main.player, "la joueuse (tête de file énergie, generate_floor) agit en 1ère dans la prévisualisation")
+	var fast_count := 0
+	var slow_count := 0
+	for e in order2:
+		if e == fast_e: fast_count += 1
+		elif e == slow_e: slow_count += 1
+	assert(fast_count > slow_count, "un ennemi 2x plus rapide agit plus souvent dans la bande d'ordre des tours")
+	print("OK Phase 2.6: bande d'ordre des tours — simulation pure, joueuse en tête, vitesse respectée")
+
+	# --- Phase 2.7 : inspection d'ennemi au survol (panneau côté Hud) --------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.hud.show_inspect(null)
+	assert(main.hud.inspect_box.get_child_count() > 0, "placeholder affiché quand rien n'est survolé")
+	main.enemies.clear()
+	var insp_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	main.enemies.append(insp_e)
+	main.hud.show_inspect(insp_e)
+	assert(main.hud.inspect_box.get_child_count() >= 4, "le panneau d'inspection affiche nom/PV/ATK/VIT/comportement")
+	main.hud.show_inspect(null)
+	print("OK Phase 2.7: panneau d'inspection (survol souris) — remplissage à la demande")
+
 	# --- Parties complètes pour chaque héros (progression linéaire) ---
 	for hero in ["melee", "ranged", "magic"]:
 		main.start_run(hero)
@@ -125,6 +328,11 @@ func _ready() -> void:
 	target.hp = target.max_hp
 	main._trigger_armor_retaliation(target, 5)
 	assert(target.has_status("weaken"), "Renvoi affaiblit l'attaquant quand il déclenche")
+	# Phase 1.3 : weaken doit aussi réduire l'attaque effective de l'ennemi
+	# (sinon Renvoi n'a aucun effet réel en combat).
+	var weaken_val: int = int(round(target.status_value("weaken")))
+	assert(main._enemy_atk(target) == maxi(1, target.atk - weaken_val), "weaken réduit l'attaque effective de l'ennemi (_enemy_atk)")
+	print("OK Phase 1.3: weaken réduit désormais l'attaque effective d'un ennemi")
 	print("OK préfixes de combat: Ardent/Cuirasse/Renvoi se déclenchent correctement")
 
 	# --- Objets uniques (Épique/Légendaire) ---------------------------------------
@@ -663,6 +871,11 @@ func _ready() -> void:
 		assert(boss.is_boss, "%s est un boss" % bdef["name"])
 		if boss.ai.has("guardians"):
 			assert(main._living_guardians(boss) > 0, "%s protégé par des gardiens" % bdef["name"])
+			# Phase 1.4 : les gardiens apparaissent désormais près du boss (rayon 6), pas n'importe où.
+			for g in main.enemies:
+				if int(g.ai.get("guard_for", 0)) == boss.get_instance_id():
+					var d: int = maxi(absi(g.x - boss.x), absi(g.y - boss.y))
+					assert(d <= 6, "%s : gardien à distance de Tchebychev %d (> 6) du boss" % [bdef["name"], d])
 		for _t in 16:
 			if main.state != main.State.PLAYING:
 				break
@@ -673,6 +886,38 @@ func _ready() -> void:
 		main.state = main.State.PLAYING
 	assert(Data.BOSSES.size() == 10, "10 boss définis (vu %d)" % Data.BOSSES.size())
 	print("OK boss Pass 2: %d boss (gardiens, ponte, phases, charge, souffle) sans crash" % Data.BOSSES.size())
+
+	# --- Phase 1.4 (2/2) : les gardiens survivants se dissipent à la mort du boss --
+	main.start_run("melee")
+	main.enemies.clear()
+	var g_boss = main._make_enemy(Data.BOSSES[1], 10, main.player.pos() + Vector2i(3, 0), true)
+	main.enemies.append(g_boss)
+	main._boss_on_spawn(g_boss, [g_boss.pos(), main.player.pos()])
+	if g_boss.ai.has("guardians"):
+		assert(main._living_guardians(g_boss) > 0, "gardiens de test posés avant de tuer le boss")
+		main.run_bosses = 0
+		main.on_enemy_killed(g_boss)
+		var leftover := false
+		for g in main.enemies:
+			if int(g.ai.get("guard_for", 0)) == g_boss.get_instance_id():
+				leftover = true
+		assert(not leftover, "les gardiens sont retirés quand leur boss meurt")
+		print("OK Phase 1.4: gardiens dans un rayon de 6 du boss + dissipés à sa mort")
+
+	# --- Phase 1.2 : le butin de pouvoir garanti du boss n'est plus du code mort ---
+	main.start_run("melee")
+	main.enemies.clear()
+	main.loot.clear()
+	var p_boss = main._make_enemy(Data.BOSSES[0], 10, main.player.pos() + Vector2i(2, 0), true)
+	main.enemies.append(p_boss)
+	main.run_bosses = 1
+	main.on_enemy_killed(p_boss)
+	var power_dropped := false
+	for it in main.loot:
+		if it.get("kind", "") == "power":
+			power_dropped = true
+	assert(power_dropped, "un Gardien pair (run_bosses devenant pair) lâche garantit un pouvoir")
+	print("OK Phase 1.2: le pouvoir garanti tombe désormais un Gardien sur deux")
 
 	# --- Hub (Pied de la Tour) : déplacement libre + entrée dans les bâtiments ----
 	main.enter_hub()
@@ -697,6 +942,73 @@ func _ready() -> void:
 	main.return_to_previous()
 	assert(main.state == main.State.TITLE, "Retour depuis un écran ouvert par le titre revient au titre")
 	print("OK Hub: déplacement, entrée de bâtiment, retour contextuel (Hub vs titre), bordure bloquante")
+
+	# --- Phase 3.2 : réglages persistants (volumes/tremblement) + Sfx sans crash --
+	GameState.settings["sfx_vol"] = 0.4
+	GameState.settings["screenshake"] = false
+	GameState.save_game()
+	GameState.settings = { "sfx_vol": 0.8, "music_vol": 0.8, "screenshake": true }
+	GameState.load_game()
+	assert(is_equal_approx(float(GameState.settings["sfx_vol"]), 0.4), "sfx_vol persiste à travers save/load")
+	assert(GameState.settings["screenshake"] == false, "screenshake persiste à travers save/load")
+	GameState.settings["sfx_vol"] = 0.8
+	GameState.settings["screenshake"] = true
+	GameState.save_game()
+	Sfx.play("son_qui_nexiste_pas")   # fichier absent : ne doit jamais planter
+	Sfx.play("hit")                  # fichier généré (si présent) : ne doit jamais planter
+	print("OK Phase 3.2: GameState.settings persiste (save/load) ; Sfx.play() ne plante jamais")
+
+	# --- Phase 3.5 : météo d'ambiance déclarée pour chaque biome -------------------
+	for b in Data.BIOMES:
+		var amb: Dictionary = b.get("ambient", {})
+		assert(not amb.is_empty(), "%s a une définition ambient" % b["id"])
+		assert(amb.has("color") and amb.has("count") and amb.has("vel") and amb.has("size"),
+			"%s : ambient complet (color/count/vel/size)" % b["id"])
+		assert(int(amb["count"]) > 0, "%s : au moins une particule" % b["id"])
+	print("OK Phase 3.5: les 6 biomes déclarent une météo d'ambiance (Data.BIOMES[*].ambient)")
+
+	# --- Phase 3.6 : récap de mort (source du coup fatal + chronologie du run) ----
+	main.active_oaths = []
+	main.start_run("melee")
+	main.player.dodge_chance = 0.0
+	main.enemies.clear()
+	var dr_enemy: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, main.player.pos() + Vector2i(2, 0))
+	main.enemies.append(dr_enemy)
+	main._enemy_hit_player(dr_enemy)
+	assert(main.last_damage_source == dr_enemy.display_name, "last_damage_source enregistre l'attaquant")
+	assert(main.run_timeline.size() > 0, "run_timeline contient au moins l'entrée d'entrée en biome")
+	main.player.hp = 1
+	main.game_over()
+	assert(GameState.last_run.get("killed_by", "") == dr_enemy.display_name, "le journal du run garde la source du coup fatal")
+	print("OK Phase 3.6: récap de mort — source du coup fatal + chronologie du run")
+
+	# --- Phase 3.7 : tirage de talents unifié sur Main.rng (sans doublon) ---------
+	main.active_oaths = []
+	main.start_run("melee")
+	var choices: Array = main.roll_talent_choices()
+	assert(choices.size() == mini(3, Data.TALENTS.size()), "roll_talent_choices tire jusqu'à 3 talents")
+	var seen_talent_ids: Dictionary = {}
+	for t in choices:
+		assert(not seen_talent_ids.has(t["id"]), "pas de talent en double dans le tirage")
+		seen_talent_ids[t["id"]] = true
+	print("OK Phase 3.7: roll_talent_choices tire 3 talents distincts via Main.rng (RNG unifiée)")
+
+	# --- Phase 3.7 : start_run(loadout, seed) est entièrement déterministe --------
+	main.active_oaths = []
+	main.start_run("melee", 12345)
+	assert(main.run_seed == 12345, "run_seed reflète la seed forcée")
+	var seed_start: Vector2i = main.dungeon.start
+	var seed_stairs: Vector2i = main.dungeon.stairs
+	var seed_enemy_count: int = main.enemies.size()
+	var seed_first_enemy: Vector2i = main.enemies[0].pos() if not main.enemies.is_empty() else Vector2i(-1, -1)
+	main.active_oaths = []
+	main.start_run("melee", 12345)
+	assert(main.dungeon.start == seed_start, "seed fixe : même entrée de donjon")
+	assert(main.dungeon.stairs == seed_stairs, "seed fixe : même escalier")
+	assert(main.enemies.size() == seed_enemy_count, "seed fixe : même nombre d'ennemis")
+	var seed_first_enemy2: Vector2i = main.enemies[0].pos() if not main.enemies.is_empty() else Vector2i(-1, -1)
+	assert(seed_first_enemy2 == seed_first_enemy, "seed fixe : même position du 1er ennemi")
+	print("OK Phase 3.7: start_run(loadout_id, seed) est entièrement déterministe pour une seed donnée")
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

@@ -201,6 +201,36 @@ func is_walkable(x: int, y: int) -> bool:
 	var t: int = tiles[y][x]
 	return t == FLOOR or t == ROAD
 
+## Ligne de vue de `a` vers `b` (Bresenham entier, cf. _assets_gen.gd::_line).
+## Teste chaque case intermédiaire (a et b exclus) ; bloquée par WALL/TREE/ROCK
+## (l'EAU ne bloque pas la vue). Pas symétrique entre octants — convention :
+## toujours appeler has_los(attaquant, cible).
+func has_los(a: Vector2i, b: Vector2i) -> bool:
+	var dx: int = absi(b.x - a.x)
+	var dy: int = -absi(b.y - a.y)
+	var sx: int = 1 if a.x < b.x else -1
+	var sy: int = 1 if a.y < b.y else -1
+	var err: int = dx + dy
+	var x: int = a.x
+	var y: int = a.y
+	while true:
+		if x == b.x and y == b.y:
+			return true
+		var e2: int = 2 * err
+		if e2 >= dy:
+			err += dy
+			x += sx
+		if e2 <= dx:
+			err += dx
+			y += sy
+		if x == b.x and y == b.y:
+			return true
+		if not _in_bounds(x, y):
+			return false
+		var t: int = tiles[y][x]
+		if t == WALL or t == TREE or t == ROCK:
+			return false
+
 ## Met à jour le brouillard de guerre : tout dans le rayon devient visible+exploré.
 ## N'efface que les cases précédemment visibles (rapide même sur immense carte).
 func reveal(center: Vector2i, radius: int) -> void:
@@ -248,6 +278,79 @@ func random_floor_tiles(count: int, rng: RandomNumberGenerator, exclude: Array) 
 		used[p] = true
 		result.append(p)
 	return result
+
+## Comme random_floor_tiles, mais restreint aux cases à distance de Tchebychev
+## <= radius de `center` (pour éviter des gardiens de boss à l'autre bout de la carte).
+## Complète depuis l'échantillon global si le voisinage n'a pas assez de cases.
+func random_floor_tiles_near(center: Vector2i, radius: int, count: int,
+		rng: RandomNumberGenerator, exclude: Array) -> Array:
+	var near: Array = []
+	for p in reachable_tiles:
+		if maxi(absi(p.x - center.x), absi(p.y - center.y)) <= radius:
+			near.append(p)
+	var used: Dictionary = {}
+	for p in exclude:
+		used[p] = true
+	var result: Array = []
+	var tries: int = 0
+	var budget: int = count * 40 + 50
+	while result.size() < count and tries < budget and not near.is_empty():
+		tries += 1
+		var p: Vector2i = near[rng.randi_range(0, near.size() - 1)]
+		if used.has(p):
+			continue
+		used[p] = true
+		result.append(p)
+	if result.size() < count:
+		for p in random_floor_tiles(count - result.size(), rng, exclude + result):
+			result.append(p)
+	return result
+
+## A* 4-connexe (heuristique de Manhattan) : renvoie la PROCHAINE case vers
+## laquelle avancer depuis `from` pour rejoindre `to` (pas le chemin entier).
+## Seul le terrain compte — les autres entités sont traitées comme praticables,
+## la collision se résout déjà au moment du déplacement. S'arrête après
+## `max_nodes` expansions (petites arènes, appelé au plus 1x/tour/entité) et
+## renvoie `from` (aucun mouvement) si aucun chemin n'est trouvé à temps.
+func next_step(from: Vector2i, to: Vector2i, max_nodes: int = 400) -> Vector2i:
+	if from == to or not is_walkable(to.x, to.y):
+		return from
+	var open: Array = [from]
+	var g_score: Dictionary = { from: 0 }
+	var came_from: Dictionary = {}
+	var closed: Dictionary = {}
+	var expansions: int = 0
+	while not open.is_empty() and expansions < max_nodes:
+		var best_i: int = 0
+		var best_f: int = g_score[open[0]] + _manhattan_h(open[0], to)
+		for i in range(1, open.size()):
+			var f: int = g_score[open[i]] + _manhattan_h(open[i], to)
+			if f < best_f:
+				best_f = f
+				best_i = i
+		var current: Vector2i = open[best_i]
+		open.remove_at(best_i)
+		if current == to:
+			var step: Vector2i = current
+			while came_from.has(step) and came_from[step] != from:
+				step = came_from[step]
+			return step
+		closed[current] = true
+		expansions += 1
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = current + d
+			if closed.has(n) or not is_walkable(n.x, n.y):
+				continue
+			var tentative_g: int = g_score[current] + 1
+			if not g_score.has(n) or tentative_g < g_score[n]:
+				g_score[n] = tentative_g
+				came_from[n] = current
+				if not open.has(n):
+					open.append(n)
+	return from
+
+func _manhattan_h(a: Vector2i, b: Vector2i) -> int:
+	return absi(a.x - b.x) + absi(a.y - b.y)
 
 func _reachable_set(a: Vector2i) -> Dictionary:
 	var seen: Dictionary = {}

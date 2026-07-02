@@ -38,6 +38,7 @@ static func button(text: String = "", min_h: float = 0.0, size: int = 0, min_w: 
 	if mw > 0.0 or mh > 0.0:
 		b.custom_minimum_size = Vector2(mw, mh)
 	_style_button(b)
+	b.pressed.connect(func(): Sfx.play("ui"))
 	return b
 
 ## Bouton de menu : large, généreux, pour les écrans de lancement.
@@ -70,6 +71,11 @@ static func _btn_box(bg: Color, border: Color) -> StyleBoxFlat:
 
 static func vbox(separation: int = 6) -> VBoxContainer:
 	var b := VBoxContainer.new()
+	b.add_theme_constant_override("separation", separation)
+	return b
+
+static func hbox(separation: int = 6) -> HBoxContainer:
+	var b := HBoxContainer.new()
 	b.add_theme_constant_override("separation", separation)
 	return b
 

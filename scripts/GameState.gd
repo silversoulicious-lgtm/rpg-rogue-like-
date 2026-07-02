@@ -22,6 +22,8 @@ var best_kills: int = 0
 var last_run: Dictionary = {}
 # Dernier loadout (type d'arme de départ) choisi : "melee" / "ranged" / "magic"
 var last_loadout: String = "melee"
+# Réglages persistants (volumes, tremblement d'écran) — écran Options.
+var settings: Dictionary = { "sfx_vol": 0.8, "music_vol": 0.8, "screenshake": true }
 
 func _ready() -> void:
 	for key in Data.UPGRADE_ORDER:
@@ -140,6 +142,7 @@ func save_game() -> void:
 		"best_floor": best_floor,
 		"best_kills": best_kills,
 		"last_loadout": last_loadout,
+		"settings": settings,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -172,3 +175,8 @@ func load_game() -> void:
 	var saved_up = parsed.get("upgrades", {})
 	for key in Data.UPGRADE_ORDER:
 		upgrades[key] = int(saved_up.get(key, 0))
+	var saved_settings = parsed.get("settings", {})
+	if typeof(saved_settings) == TYPE_DICTIONARY:
+		for key in settings.keys():
+			if saved_settings.has(key):
+				settings[key] = saved_settings[key]
