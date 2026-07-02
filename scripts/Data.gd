@@ -93,14 +93,6 @@ static func make_starter_weapon(wtype: String) -> Dictionary:
 		"proc": d["proc"], "proc_val": d["proc_val"], "desc": _proc_desc(d["proc"], d["proc_val"]),
 	}
 
-## Déduit le type d'une arme (procédurale ou unique) à partir de son nom/stats.
-static func infer_weapon_type(item_name: String, stat: Dictionary) -> String:
-	if "Arc" in item_name or "Tir" in item_name:
-		return "ranged"
-	if stat.has("magic") and int(stat.get("atk", 0)) == 0:
-		return "magic"
-	return "melee"
-
 # --- VISION / BROUILLARD DE GUERRE --------------------------------------------
 # Rayon de vision initial du héros (en cases). Améliorable via les talents
 # "Clairvoyance" / "Œil de Lynx" (mod "vision").
@@ -480,24 +472,24 @@ const UNIQUE_EPITHETS := [
 # "soif_de_sang"  : soigne val% PV max à chaque ennemi tué.
 # "moisson"       : +val Éclats à chaque ennemi tué.
 const UNIQUE_BASES := [
-	# --- ARME (17) ---
-	{ "name": "Lame des Damnés",      "slot": "arme", "stat": { "atk": 6 },                "proc": "execution",     "val": 0.50 },
-	{ "name": "Hache du Bourreau",    "slot": "arme", "stat": { "atk": 8, "speed": -4 },    "proc": "frenesie",      "val": 0.30 },
-	{ "name": "Dague du Silence",     "slot": "arme", "stat": { "atk": 3, "speed": 10 },    "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Marteau du Tyran",     "slot": "arme", "stat": { "atk": 9, "defense": 1 },   "proc": "frappe_double", "val": 0.25 },
-	{ "name": "Croc Ancestral",       "slot": "arme", "stat": { "atk": 5 },                 "proc": "soif_de_sang",  "val": 0.12 },
-	{ "name": "Faux du Faucheur",     "slot": "arme", "stat": { "atk": 7 },                 "proc": "moisson",       "val": 4.0 },
-	{ "name": "Épée du Sacrifice",    "slot": "arme", "stat": { "atk": 8, "max_hp": -6 },   "proc": "execution",     "val": 0.65 },
-	{ "name": "Bâton des Cendres",    "slot": "arme", "stat": { "magic": 6 },               "proc": "frenesie",      "val": 0.35 },
-	{ "name": "Arc du Vent",          "slot": "arme", "stat": { "atk": 4, "speed": 12 },    "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Sceptre Runique",      "slot": "arme", "stat": { "magic": 7, "defense": 1 }, "proc": "frappe_double", "val": 0.22 },
-	{ "name": "Lame Jumelle",         "slot": "arme", "stat": { "atk": 5, "speed": 6 },     "proc": "soif_de_sang",  "val": 0.14 },
-	{ "name": "Hallebarde de Garde",  "slot": "arme", "stat": { "atk": 6, "defense": 2 },   "proc": "moisson",       "val": 5.0 },
-	{ "name": "Poignard Vicieux",     "slot": "arme", "stat": { "atk": 4 },                 "proc": "execution",     "val": 0.55 },
-	{ "name": "Fléau Sacré",          "slot": "arme", "stat": { "atk": 7, "magic": 2 },     "proc": "frenesie",      "val": 0.30 },
-	{ "name": "Bâton du Sage Fou",    "slot": "arme", "stat": { "magic": 8, "speed": -3 },  "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Lame Spectrale",       "slot": "arme", "stat": { "atk": 5, "speed": 8 },     "proc": "frappe_double", "val": 0.28 },
-	{ "name": "Glaive du Crépuscule", "slot": "arme", "stat": { "atk": 8 },                 "proc": "moisson",       "val": 4.0 },
+	# --- ARME (17) --- wtype explicite (Arc = ranged ; Bâton/Sceptre = magic ; reste melee)
+	{ "name": "Lame des Damnés",      "slot": "arme", "wtype": "melee",  "stat": { "atk": 6 },                "proc": "execution",     "val": 0.50 },
+	{ "name": "Hache du Bourreau",    "slot": "arme", "wtype": "melee",  "stat": { "atk": 8, "speed": -4 },    "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Dague du Silence",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 3, "speed": 10 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Marteau du Tyran",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 9, "defense": 1 },   "proc": "frappe_double", "val": 0.25 },
+	{ "name": "Croc Ancestral",       "slot": "arme", "wtype": "melee",  "stat": { "atk": 5 },                 "proc": "soif_de_sang",  "val": 0.12 },
+	{ "name": "Faux du Faucheur",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 7 },                 "proc": "moisson",       "val": 4.0 },
+	{ "name": "Épée du Sacrifice",    "slot": "arme", "wtype": "melee",  "stat": { "atk": 8, "max_hp": -6 },   "proc": "execution",     "val": 0.65 },
+	{ "name": "Bâton des Cendres",    "slot": "arme", "wtype": "magic",  "stat": { "magic": 6 },               "proc": "frenesie",      "val": 0.35 },
+	{ "name": "Arc du Vent",          "slot": "arme", "wtype": "ranged", "stat": { "atk": 4, "speed": 12 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Sceptre Runique",      "slot": "arme", "wtype": "magic",  "stat": { "magic": 7, "defense": 1 }, "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Lame Jumelle",         "slot": "arme", "wtype": "melee",  "stat": { "atk": 5, "speed": 6 },     "proc": "soif_de_sang",  "val": 0.14 },
+	{ "name": "Hallebarde de Garde",  "slot": "arme", "wtype": "melee",  "stat": { "atk": 6, "defense": 2 },   "proc": "moisson",       "val": 5.0 },
+	{ "name": "Poignard Vicieux",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 4 },                 "proc": "execution",     "val": 0.55 },
+	{ "name": "Fléau Sacré",          "slot": "arme", "wtype": "melee",  "stat": { "atk": 7, "magic": 2 },     "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Bâton du Sage Fou",    "slot": "arme", "wtype": "magic",  "stat": { "magic": 8, "speed": -3 },  "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Lame Spectrale",       "slot": "arme", "wtype": "melee",  "stat": { "atk": 5, "speed": 8 },     "proc": "frappe_double", "val": 0.28 },
+	{ "name": "Glaive du Crépuscule", "slot": "arme", "wtype": "melee",  "stat": { "atk": 8 },                 "proc": "moisson",       "val": 4.0 },
 	# --- ARMURE (17) ---
 	{ "name": "Cuirasse des Damnés",  "slot": "armure", "stat": { "defense": 5, "max_hp": 8 },  "proc": "execution",     "val": 0.45 },
 	{ "name": "Plastron du Tyran",    "slot": "armure", "stat": { "defense": 7, "speed": -6 },  "proc": "frenesie",      "val": 0.32 },
@@ -630,7 +622,7 @@ static func _make_unique_item(slot: String, floor: int, rarity: Dictionary, uniq
 		"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
 	}
 	if slot == "arme":
-		item["weapon_type"] = infer_weapon_type(uniq["name"], uniq["stat"])
+		item["weapon_type"] = String(uniq.get("wtype", "melee"))
 	return item
 
 static func rarity_by_id(id: String) -> Dictionary:

@@ -38,7 +38,7 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
   souffle, copie du joueur...).
 - **Identité visuelle** "Les Strates" façon Moonring : palette néon
   restreinte, glow/bloom, dithering Bayer, sprites 32×32 générés par code
-  (`_assets_gen.gd`, mirroré par `gen.py` en repli Python). Aria a des vues
+  (`_assets_gen.gd`, seule source de vérité). Aria a des vues
   directionnelles (face/dos/profil). Ambiance en jeu : pool de torche +
   vignette (`MapView.gd`).
 - **Écran-titre refondu** : composition en couches (logo/menu/profil),
@@ -87,11 +87,9 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
   `root.get_texture().get_image().save_png(...)`. Plus lent qu'un pur
   `--headless` mais seule façon fiable de vérifier visuellement de l'UI/du
   `_draw()`.
-- **`gen.py`** (repli Python, mêmes primitives que `_assets_gen.gd`) tenu à
-  jour en parallèle. Écart connu et non bloquant : le `round()` de Python
-  (arrondi au pair) diffère de celui de Godot (arrondi à l'écart de zéro)
-  sur les cas .5 exacts — préexistant dans tout le fichier, impact
-  observé : 1 pixel de bord sur de rares sprites, imperceptible.
+- **`gen.py`** (ancien repli Python) **supprimé** (Phase 7.4 du guide) :
+  `_assets_gen.gd` est désormais l'unique source de vérité de l'art généré,
+  plus de miroir à tenir à jour.
 
 ## Ce qui reste à faire
 
@@ -174,9 +172,20 @@ ne pas les confondre).
 - **Phase 7.1 — CI : FAITE.** `.github/workflows/smoke.yml` (Godot 4.3
   headless en cache, passe d'import, test de fumée, grep « SMOKETEST
   PASSED ») ; RNG globale du smoke test fixée (`seed(4242)`).
-- **Phases 5, 6, 7 (reste), 8** (équilibrage, contenu, hygiène
-  d'ingénierie, direction artistique 64×64) : à faire, voir
-  `IMPLEMENTATION_GUIDE.md` pour le détail.
+- **Phase 7.4 — Gel de `gen.py` : FAITE.** L'ancien miroir Python est
+  supprimé ; `_assets_gen.gd` est l'unique source de vérité (prérequis
+  Phase 8).
+- **Phase 7.6 — `wtype` explicite sur les armes uniques : FAITE.** Les 17
+  entrées arme de `UNIQUE_BASES` portent désormais un champ `wtype` lu par
+  `_make_unique_item` ; `infer_weapon_type` (déduction fragile par le nom
+  français) supprimée. Refactor à comportement identique (les valeurs
+  explicites reproduisent exactement l'ancienne inférence).
+- **Phases 5, 6, 7 (reste : 7.2/7.3/7.5/7.7/7.8), 8** (équilibrage,
+  contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
+  voir `IMPLEMENTATION_GUIDE.md` pour le détail. NB : la Phase 5
+  (harnais d'auto-jeu + tuning) et le tuning associé exigent un Godot
+  exécutable pour produire/lire les CSV — à faire dans une session avec
+  accès à Godot.
 - **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
   - Sprites directionnels pour les ennemis (seule Aria en a).
   - Variantes teintées pour les ennemis élite, sprite distinct pour le
