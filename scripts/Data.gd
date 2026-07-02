@@ -103,7 +103,7 @@ static func infer_weapon_type(item_name: String, stat: Dictionary) -> String:
 # --- VISION / BROUILLARD DE GUERRE --------------------------------------------
 # Rayon de vision initial du héros (en cases). Améliorable via les talents
 # "Clairvoyance" / "Œil de Lynx" (mod "vision").
-const BASE_VISION := 4
+const BASE_VISION := 6
 
 # --- PLAFONDS DE STATS DÉRIVÉES ------------------------------------------------
 # Empêche le cumul d'artefacts/talents/affixes de rendre le héros invincible.

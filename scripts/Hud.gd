@@ -7,6 +7,8 @@ extends Node
 const VIEW := Vector2(1280, 720)
 const SIDEBAR_W := 384
 const LOG_H := 88
+const TURN_STRIP_H := 34    # bande d'ordre des tours, juste au-dessus du journal
+const TURN_STRIP_N := 8     # nombre de tours prévisualisés
 const VERSION := "v0.5 — accès anticipé"
 
 # Pitch court par type d'arme, affiché sur la fiche de loadout.
@@ -42,6 +44,8 @@ var overlay_layer: CanvasLayer
 var overlay_content: VBoxContainer
 var log_label: RichTextLabel
 var hub_layer: CanvasLayer
+var turn_strip: HBoxContainer
+var _turn_strip_ids: Array = []      # cache : ne reconstruit que si l'ordre a changé
 # Sidebar
 var sb_floor: Label
 var sb_hero: Label
@@ -56,6 +60,7 @@ var artifact_box: VBoxContainer
 var power_box: VBoxContainer
 var synergy_box: VBoxContainer
 var status_box: VBoxContainer
+var inspect_box: VBoxContainer
 
 func setup(game_ref) -> void:
 	game = game_ref
@@ -65,13 +70,14 @@ func setup(game_ref) -> void:
 	_build_hub_ui()
 
 func play_area() -> Vector2:
-	return get_viewport().get_visible_rect().size - Vector2(SIDEBAR_W, LOG_H)
+	return get_viewport().get_visible_rect().size - Vector2(SIDEBAR_W, LOG_H + TURN_STRIP_H)
 
 # --- Construction -------------------------------------------------------------
 func _build_hud() -> void:
 	hud_layer = CanvasLayer.new()
 	add_child(hud_layer)
 	_build_sidebar()
+	_build_turn_strip()
 	_build_log()
 
 func _build_sidebar() -> void:
@@ -131,6 +137,9 @@ func _build_sidebar() -> void:
 	sb_ability = Ui.label("", 13, Color.WHITE, false, true, SIDEBAR_W - 56); v.add_child(sb_ability)
 	v.add_child(_section("ÉTATS"))
 	status_box = Ui.vbox(3); v.add_child(status_box)
+	v.add_child(_section("INSPECTION"))
+	inspect_box = Ui.vbox(3); v.add_child(inspect_box)
+	show_inspect(null)
 	v.add_child(_section("ÉQUIPEMENT"))
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
 	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
@@ -184,6 +193,21 @@ func _stat_cell(sid: String, glyph: String, col: Color, tip: String) -> Control:
 	cell.add_child(val)
 	stat_labels[sid] = val
 	return cell
+
+## Bande d'ordre des tours : n mini-portraits juste au-dessus du journal,
+## rendent visible l'économie d'énergie/vitesse (cf. Main.preview_turn_order).
+func _build_turn_strip() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	panel.offset_left = 12
+	panel.offset_right = -SIDEBAR_W - 12
+	panel.offset_top = -(LOG_H + TURN_STRIP_H)
+	panel.offset_bottom = -LOG_H
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	hud_layer.add_child(panel)
+
+	turn_strip = Ui.hbox(4)
+	panel.add_child(turn_strip)
 
 func _build_log() -> void:
 	var panel := PanelContainer.new()
@@ -1028,7 +1052,45 @@ func refresh() -> void:
 	_rebuild_powers()
 	_rebuild_synergies()
 	_rebuild_statuses()
+	_rebuild_turn_strip()
 	log_label.text = "\n".join(game.messages)
+
+## Ne reconstruit la bande d'ordre des tours que si l'ordre calculé a changé
+## (cache une liste d'instance_id) — évite de recréer des TextureRect à chaque
+## rafraîchissement (plusieurs fois par tour).
+func _rebuild_turn_strip() -> void:
+	var order: Array = game.preview_turn_order(TURN_STRIP_N)
+	var ids: Array = []
+	for e in order:
+		ids.append(e.get_instance_id())
+	if ids == _turn_strip_ids:
+		return
+	_turn_strip_ids = ids
+	for c in turn_strip.get_children():
+		turn_strip.remove_child(c)
+		c.queue_free()
+	for e in order:
+		var is_player: bool = e.faction == Entity.Faction.PLAYER
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(26, 26)
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(0.08, 0.07, 0.11, 0.9)
+		box.set_border_width_all(2 if is_player else 1)
+		box.border_color = Ui.ACCENT if is_player else Color(0.4, 0.38, 0.5, 0.6)
+		box.set_corner_radius_all(4)
+		box.set_content_margin_all(1)
+		slot.add_theme_stylebox_override("panel", box)
+		var path := "res://assets/%s.png" % e.sprite
+		if e.sprite != "" and ResourceLoader.exists(path):
+			var tr := TextureRect.new()
+			tr.texture = load(path)
+			tr.custom_minimum_size = Vector2(22, 22)
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			slot.add_child(tr)
+		else:
+			slot.add_child(Ui.label(e.glyph, 14, e.color, true))
+		turn_strip.add_child(slot)
 
 func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
@@ -1091,3 +1153,47 @@ func _rebuild_statuses() -> void:
 			txt += " ×%d" % stacks
 		txt += "  (%d t)" % int(s["turns"])
 		status_box.add_child(Ui.label(txt, 14, meta[1]))
+
+const BEHAVIOR_LABEL := {
+	"melee": "Corps à corps", "ranged": "Tireur", "caster": "Invocateur/Hurleuse",
+	"charger": "Chargeur", "fleer": "Fuyard", "teleporter": "Insaisissable",
+	"ambush": "Mimique", "stationary": "Gardien lié",
+}
+
+## Section INSPECTION (survol souris, cf. MapView.tile_at_mouse) : détail de
+## l'ennemi visible survolé. `e` peut être null (rien survolé -> placeholder).
+## TODO parité clavier : pas d'inspection au clavier pour l'instant, souris seule.
+func show_inspect(e) -> void:
+	for c in inspect_box.get_children():
+		c.queue_free()
+	if e == null:
+		inspect_box.add_child(Ui.label("— survole un ennemi —", 12, Color(0.5, 0.5, 0.58)))
+		return
+	inspect_box.add_child(Ui.label(str(e.display_name), 14, e.color, false, true, SIDEBAR_W - 60))
+	inspect_box.add_child(Ui.label("PV %d / %d" % [e.hp, e.max_hp], 12, Color(0.85, 0.85, 0.92)))
+	var atk_line: String = "ATK %d" % e.atk
+	if e.ai.get("pack", false):
+		atk_line += "  (meute)"
+	inspect_box.add_child(Ui.label(atk_line, 12, Color(0.85, 0.85, 0.92)))
+	inspect_box.add_child(Ui.label("VIT %d" % e.speed, 12, Color(0.85, 0.85, 0.92)))
+	var behavior: String = String(e.ai.get("behavior", "melee"))
+	inspect_box.add_child(Ui.label(BEHAVIOR_LABEL.get(behavior, behavior), 12, Color(0.7, 0.85, 1.0)))
+	var oh: Dictionary = e.ai.get("on_hit", {})
+	if not oh.is_empty():
+		var sid: String = String(oh.get("id", ""))
+		var slabel: String = str(STATUS_LABEL.get(sid, [sid, Color.WHITE])[0])
+		inspect_box.add_child(Ui.label("Au contact : %s (%d t)" % [slabel, int(oh.get("turns", 1))], 12, Color(0.9, 0.75, 0.55)))
+	var rp: float = float(e.ai.get("resist_phys", 0.0))
+	if rp > 0.0:
+		inspect_box.add_child(Ui.label("Résiste au physique %d%%" % int(round(rp * 100.0)), 12, Color(0.6, 0.75, 0.9)))
+	elif rp < 0.0:
+		inspect_box.add_child(Ui.label("Vulnérable au physique", 12, Color(0.9, 0.6, 0.6)))
+	var rm: float = float(e.ai.get("resist_magic", 0.0))
+	if rm > 0.0:
+		inspect_box.add_child(Ui.label("Résiste à la magie %d%%" % int(round(rm * 100.0)), 12, Color(0.6, 0.75, 0.9)))
+	elif rm < 0.0:
+		inspect_box.add_child(Ui.label("Vulnérable à la magie", 12, Color(0.9, 0.6, 0.6)))
+	if e.ai.get("immune_fire", false):
+		inspect_box.add_child(Ui.label("Insensible au feu", 12, Color(0.6, 0.75, 0.9)))
+	elif float(e.ai.get("weak_fire", 0.0)) > 0.0:
+		inspect_box.add_child(Ui.label("Craint le feu", 12, Color(0.9, 0.6, 0.5)))

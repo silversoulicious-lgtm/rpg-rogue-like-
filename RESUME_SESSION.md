@@ -118,9 +118,20 @@ ne pas les confondre).
   filtrer le bonus de départ du Pacte de Pouvoir. Asserts de régression
   ajoutés dans `_smoketest.gd` pour les dix ; README corrigé (sprites
   32×32, Gardien tous les 6 étages réels).
-- **Phase 2 — Équité du combat** (ligne de vue partagée joueur/ennemis,
-  zone d'agro, évitement d'obstacles, intentions télégraphiées, bande
-  d'ordre des tours, inspection d'ennemi) : à faire.
+- **Phase 2 — Équité du combat : FAITE.** `Dungeon.has_los` (Bresenham) partagée
+  entre l'auto-visée joueuse et les tirs/cris ennemis (plus de tir depuis le
+  néant, plus de mimic détecté à travers un mur) ; `BASE_VISION` 4→6 pour
+  couvrir les tireurs à portée 7 ; zone d'agro (`Entity.awake`, IA plus
+  omnisciente : un ennemi dort jusqu'à être vu/blessé/à portée d'agro, ou
+  alerté par le cri d'un voisin réveillé — mimics jamais criés ni réveillés) ;
+  évitement d'obstacle minimal partout (`_enemy_step_toward` tente les deux
+  perpendiculaires à l'axe dominant) + A* (`Dungeon.next_step`) pour
+  boss/élites (`ai.smart_path`) ; intentions ennemies télégraphiées
+  (`Main.enemy_intent`, icône coin haut-droit dans `MapView`) ; bande d'ordre
+  des tours au-dessus du journal (`Main.preview_turn_order`, simulation pure) ;
+  panneau d'inspection au survol souris (`MapView.tile_at_mouse` →
+  `Hud.show_inspect`, section INSPECTION dans la sidebar). Asserts de
+  régression ajoutés dans `_smoketest.gd` pour les sept.
 - **Phases 3 à 8** (feel & polish, terrain élémentaire, équilibrage,
   contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
   voir `IMPLEMENTATION_GUIDE.md` pour le détail.

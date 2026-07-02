@@ -66,6 +66,149 @@ func _ready() -> void:
 	assert(main.map_view._vignette_tex == null, "la vignette en cache est invalidée pour se régénérer à la nouvelle taille")
 	print("OK Phase 1.9: recalage de la zone de jeu + invalidation de la vignette au redimensionnement")
 
+	# --- Phase 2.1/2.2 : ligne de vue partagée + vision >= portée max des tireurs --
+	assert(Data.BASE_VISION >= 6, "vision de base relevée pour couvrir les ennemis à portée 7")
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var los_origin: Vector2i = main.player.pos()
+	var los_wall: Vector2i = los_origin + Vector2i(1, 0)
+	var los_far: Vector2i = los_origin + Vector2i(2, 0)
+	if main.dungeon.is_walkable(los_wall.x, los_wall.y) and main.dungeon.is_walkable(los_far.x, los_far.y):
+		main.dungeon.tiles[los_wall.y][los_wall.x] = Dungeon.ROCK
+		main.dungeon.reveal(los_origin, main.player.vision)
+		var shooter: Entity = main._make_enemy(main._enemy_def_by_sprite("dullahan"), 8, los_far)
+		shooter.awake = true
+		shooter.ai_cd = 0
+		main.enemies.append(shooter)
+		var hp0_los: int = main.player.hp
+		main._enemy_act(shooter)
+		assert(main.player.hp == hp0_los, "un mur bloque le tir d'un ennemi (pas de tir depuis le néant)")
+		assert(main._nearest_enemy_in_range(10) == null, "le même mur bloque l'auto-visée du joueur (LoS partagée)")
+		main.dungeon.tiles[los_wall.y][los_wall.x] = Dungeon.FLOOR
+		print("OK Phase 2.1/2.2: Dungeon.has_los bloque tirs ennemis et auto-visée joueuse à travers un mur")
+
+	# --- Phase 2.3 : zone d'agro (l'IA n'est plus omnisciente) ---------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	var agro_rng := RandomNumberGenerator.new(); agro_rng.seed = 21
+	var agro_map := Dungeon.new(80, 50, agro_rng, Data.biome_for_floor(1))
+	main.dungeon = agro_map
+	main.player.x = agro_map.start.x
+	main.player.y = agro_map.start.y
+	agro_map.reveal(main.player.pos(), main.player.vision)
+	main.enemies.clear()
+	var far_pos: Vector2i = Vector2i(clampi(main.player.x + 30, 1, agro_map.width - 2), main.player.y)
+	if not agro_map.is_walkable(far_pos.x, far_pos.y):
+		far_pos = Vector2i(clampi(main.player.x - 30, 1, agro_map.width - 2), main.player.y)
+	var dormant: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, far_pos)
+	dormant.awake = false
+	main.enemies.append(dormant)
+	var dormant_start: Vector2i = dormant.pos()
+	for i in 5:
+		main.pass_turn()
+	assert(dormant.pos() == dormant_start, "un ennemi endormi à 30 cases reste immobile après 5 tours d'attente")
+	assert(not dormant.awake, "il reste endormi : ni vu, ni blessé, ni dans son rayon d'agro")
+	print("OK Phase 2.3: zone d'agro — un ennemi hors vue/portée reste endormi et immobile")
+
+	# --- Phase 2.4 : évitement d'obstacle (A* pour boss/élites, ai.smart_path) -----
+	main.active_oaths = []
+	main.start_run("melee")
+	var obs_rng := RandomNumberGenerator.new(); obs_rng.seed = 33
+	var obs_map := Dungeon.new(20, 10, obs_rng, Data.biome_for_floor(1))
+	for y in range(1, obs_map.height - 1):
+		for x in range(1, obs_map.width - 1):
+			obs_map.tiles[y][x] = Dungeon.FLOOR
+	# Mare de 5 cases séparant joueur et boss, avec un passage libre au-dessus et en dessous.
+	for y in range(2, 7):
+		obs_map.tiles[y][9] = Dungeon.WATER
+	main.dungeon = obs_map
+	main.player.x = 2
+	main.player.y = 4
+	obs_map.reveal(main.player.pos(), main.player.vision)
+	main.enemies.clear()
+	var obs_boss: Entity = main._make_enemy(Data.BOSSES[4], 1, Vector2i(16, 4), true)
+	obs_boss.ai["smart_path"] = true
+	main.enemies.append(obs_boss)
+	var reached := false
+	for i in 25:
+		main.pass_turn()
+		if main.state != main.State.PLAYING:
+			break
+		if main._chebyshev(obs_boss.pos(), main.player.pos()) <= 1:
+			reached = true
+			break
+	assert(reached, "le boss (A* smart_path) contourne une mare de 5 cases et atteint la joueuse en <= 25 tours")
+	main.state = main.State.PLAYING
+	print("OK Phase 2.4: évitement d'obstacle — un boss/élite contourne un obstacle via l'A* (Dungeon.next_step)")
+
+	# --- Phase 2.5 : intentions ennemies télégraphiées -----------------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var adj_pos: Vector2i = Vector2i(-9999, -9999)
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var cand: Vector2i = main.player.pos() + d
+		if main.dungeon.is_walkable(cand.x, cand.y):
+			adj_pos = cand
+			break
+	var adj_enemy: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, adj_pos)
+	adj_enemy.awake = true
+	main.enemies.append(adj_enemy)
+	assert(main.enemy_intent(adj_enemy) == "attack", "intention d'un ennemi adjacent et éveillé = attack")
+	var dormant2: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	dormant2.awake = false
+	main.enemies.append(dormant2)
+	assert(main.enemy_intent(dormant2) == "sleep", "intention d'un ennemi endormi = sleep")
+	var mimic: Entity = main._make_enemy(main._enemy_def_by_sprite("mimic"), 1, _find_spot(main, main.player.pos()))
+	mimic.awake = true
+	mimic.revealed = false
+	main.enemies.append(mimic)
+	assert(main.enemy_intent(mimic) == "", "un mimic non démasqué ne révèle jamais d'intention, même éveillé")
+	print("OK Phase 2.5: intentions télégraphiées — attack/sleep/mimic masqué")
+
+	# --- Phase 2.6 : bande d'ordre des tours (simulation pure) ---------------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.enemies.clear()
+	var slow_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	slow_e.speed = 100
+	slow_e.energy = 0
+	slow_e.awake = true
+	var fast_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	fast_e.speed = 200
+	fast_e.energy = 0
+	fast_e.awake = true
+	main.enemies.append(slow_e)
+	main.enemies.append(fast_e)
+	var p_energy_before: int = main.player.energy
+	var s_energy_before: int = slow_e.energy
+	var f_energy_before: int = fast_e.energy
+	var order2: Array = main.preview_turn_order(12)
+	assert(main.player.energy == p_energy_before and slow_e.energy == s_energy_before and fast_e.energy == f_energy_before,
+		"preview_turn_order ne touche à aucune entité réelle (simulation pure)")
+	assert(order2[0] == main.player, "la joueuse (tête de file énergie, generate_floor) agit en 1ère dans la prévisualisation")
+	var fast_count := 0
+	var slow_count := 0
+	for e in order2:
+		if e == fast_e: fast_count += 1
+		elif e == slow_e: slow_count += 1
+	assert(fast_count > slow_count, "un ennemi 2x plus rapide agit plus souvent dans la bande d'ordre des tours")
+	print("OK Phase 2.6: bande d'ordre des tours — simulation pure, joueuse en tête, vitesse respectée")
+
+	# --- Phase 2.7 : inspection d'ennemi au survol (panneau côté Hud) --------------
+	main.active_oaths = []
+	main.start_run("melee")
+	main.hud.show_inspect(null)
+	assert(main.hud.inspect_box.get_child_count() > 0, "placeholder affiché quand rien n'est survolé")
+	main.enemies.clear()
+	var insp_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, _find_spot(main, main.player.pos()))
+	main.enemies.append(insp_e)
+	main.hud.show_inspect(insp_e)
+	assert(main.hud.inspect_box.get_child_count() >= 4, "le panneau d'inspection affiche nom/PV/ATK/VIT/comportement")
+	main.hud.show_inspect(null)
+	print("OK Phase 2.7: panneau d'inspection (survol souris) — remplissage à la demande")
+
 	# --- Parties complètes pour chaque héros (progression linéaire) ---
 	for hero in ["melee", "ranged", "magic"]:
 		main.start_run(hero)

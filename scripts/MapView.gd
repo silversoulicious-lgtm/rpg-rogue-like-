@@ -19,10 +19,26 @@ const GLOW_TINT := Color(1.0, 0.88, 0.66)         # halo chaud près de l'héro�
 const GLOW_MAX_A := 0.13
 const VIGNETTE_MAX_A := 0.55
 
+# --- Intentions ennemies télégraphiées (cf. Main.enemy_intent) ----------------
+# Glyphes ASCII-safe (remplacés par des icônes générées en Phase 8.A.6).
+const INTENT_GLYPH := {
+	"sleep": "z", "attack": "!", "shoot": "↣", "charge": "»",
+	"cast": "✦", "summon": "✦", "flee": "…",
+}
+const INTENT_COLOR := {
+	"sleep": Color(0.62, 0.62, 0.68), "attack": Color(0.95, 0.35, 0.35),
+	"shoot": Color(0.95, 0.65, 0.30), "charge": Color(0.95, 0.35, 0.35),
+	"cast": Color(0.72, 0.52, 1.0), "summon": Color(0.72, 0.52, 1.0),
+	"flee": Color(0.62, 0.62, 0.68),
+}
+
 var dungeon: Dungeon = null
 var entities: Array = []
 var loot: Array = []
 var hazards: Array = []            # pièges au sol (dessinés comme glyphes discrets)
+var intents: Dictionary = {}       # instance_id -> intention ("attack"/"shoot"/... ; cf. Main.enemy_intent)
+var hud = null                     # référence pour transmettre l'inspection au survol (UI seulement)
+var _last_hover_id: int = -1       # évite de reconstruire le panneau d'inspection à chaque frame
 var reveal_loot: bool = false      # Œil du Devin : montre le butin à travers le brouillard
 var tex: Dictionary = {}
 var view_size: Vector2 = Vector2(896, 570)        # zone de jeu visible (réglée par Main)
@@ -106,17 +122,40 @@ func _load_textures() -> void:
 		if ResourceLoader.exists(path):
 			tex[n] = load(path)
 
-func refresh(d: Dungeon, ents: Array, loot_items: Array, hazard_items: Array = []) -> void:
+func refresh(d: Dungeon, ents: Array, loot_items: Array, hazard_items: Array = [], intent_map: Dictionary = {}) -> void:
 	dungeon = d
 	entities = ents
 	loot = loot_items
 	hazards = hazard_items
+	intents = intent_map
 	queue_redraw()
+
+## Case (grille) sous le curseur. Les coordonnées locales incluent déjà le
+## décalage de caméra puisque `position` EST la caméra (cf. _update_camera).
+func tile_at_mouse() -> Vector2i:
+	return Vector2i((get_local_mouse_position() / CELL).floor())
+
+## Ennemi visible et vivant sous le curseur (mimic non démasqué exclu), ou null.
+func _hovered_enemy() -> Entity:
+	var mt: Vector2i = tile_at_mouse()
+	for e in entities:
+		if e.faction == Entity.Faction.ENEMY and e.is_alive() and e.x == mt.x and e.y == mt.y \
+				and dungeon.is_visible(e.x, e.y):
+			if String(e.ai.get("behavior", "")) == "ambush" and not e.revealed:
+				continue
+			return e
+	return null
 
 # --- Animation/feedback : pilotage temps réel ---------------------------------
 func _process(delta: float) -> void:
 	if dungeon == null:
 		return
+	if hud != null:
+		var hovered: Entity = _hovered_enemy()
+		var hid: int = hovered.get_instance_id() if hovered != null else -1
+		if hid != _last_hover_id:
+			_last_hover_id = hid
+			hud.show_inspect(hovered)
 	_anim_t += delta
 	# Purge des effets transitoires expirés.
 	for k in _fx.keys():
@@ -269,6 +308,8 @@ func _draw() -> void:
 			if flash > 0.0:
 				draw_rect(_cell_rect(e.x, e.y), Color(1, 1, 1, 0.55 * flash), true)
 			_draw_hp_pip(e)
+			if e.faction == Entity.Faction.ENEMY:
+				_draw_intent(e)
 
 	_draw_atmosphere()
 
@@ -413,6 +454,24 @@ func _draw_glyph(gx: int, gy: int, ch: String, col: Color) -> void:
 		gy * CELL + (CELL + size.y) * 0.5 - size.y * 0.25
 	)
 	draw_char(_font, origin, ch, _font_size, col)
+
+## Icône d'intention (source : Main.enemy_intent, transmise via refresh) au
+## coin haut-droit de la case : fond sombre + glyphe ASCII-safe coloré.
+func _draw_intent(e: Entity) -> void:
+	if _font == null:
+		return
+	var intent: String = String(intents.get(e.get_instance_id(), ""))
+	if intent == "" or not INTENT_GLYPH.has(intent):
+		return
+	var badge := 10.0
+	var bx: float = e.x * CELL + CELL - badge
+	var by: float = float(e.y * CELL)
+	draw_rect(Rect2(bx, by, badge, badge), Color(0.92, 0.92, 0.98, 0.6), true)
+	var ch: String = INTENT_GLYPH[intent]
+	var col: Color = INTENT_COLOR.get(intent, Color.WHITE)
+	var size := _font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, 10)
+	var origin := Vector2(bx + (badge - size.x) * 0.5, by + (badge + size.y) * 0.5 - size.y * 0.25)
+	draw_char(_font, origin, ch, 10, col)
 
 func _draw_hp_pip(e: Entity) -> void:
 	if e.hp >= e.max_hp and e.faction == Entity.Faction.ENEMY:

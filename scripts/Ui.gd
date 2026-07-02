@@ -73,6 +73,11 @@ static func vbox(separation: int = 6) -> VBoxContainer:
 	b.add_theme_constant_override("separation", separation)
 	return b
 
+static func hbox(separation: int = 6) -> HBoxContainer:
+	var b := HBoxContainer.new()
+	b.add_theme_constant_override("separation", separation)
+	return b
+
 static func panel_style(bg: Color) -> StyleBoxFlat:
 	var s := StyleBoxFlat.new()
 	s.bg_color = bg

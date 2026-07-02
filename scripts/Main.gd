@@ -83,6 +83,7 @@ func _ready() -> void:
 	hud.set_script(load("res://scripts/Hud.gd"))
 	add_child(hud)
 	hud.setup(self)
+	map_view.hud = hud
 	map_view.view_size = hud.play_area()
 	get_viewport().size_changed.connect(_on_viewport_resized)
 	return_to_title()
@@ -507,6 +508,7 @@ func generate_floor(node_type: String = "combat") -> void:
 			e.max_hp = int(e.max_hp * 1.25)
 			e.hp = e.max_hp
 			e.atk = int(e.atk * 1.2)
+			e.ai["smart_path"] = true
 		elif not is_boss and rng.randf() < _legendary_chance():
 			e.is_legendary = true
 			e.display_name = "Légendaire : " + e.display_name
@@ -522,6 +524,7 @@ func generate_floor(node_type: String = "combat") -> void:
 		if not boss_spots.is_empty():
 			var bdef: Dictionary = _pick_boss_def()
 			var boss: Entity = _make_enemy(bdef, floor_num, boss_spots[0], true)
+			boss.ai["smart_path"] = true
 			enemies.append(boss)
 			occupied.append(boss_spots[0])
 			_boss_on_spawn(boss, occupied)
@@ -1010,6 +1013,12 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 	for e in enemies:
 		if not e.is_alive():
 			continue
+		if not dungeon.is_visible(e.x, e.y):
+			continue        # fog
+		if e.ai.get("behavior", "") == "ambush" and not e.revealed:
+			continue        # mimic non démasqué
+		if not dungeon.has_los(player.pos(), e.pos()):
+			continue
 		var d: int = _chebyshev(player.pos(), e.pos())
 		if d <= rng_tiles and d < best_d:
 			best_d = d
@@ -1021,9 +1030,14 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 func aoe_attack(center: Vector2i, radius: int, base: int, verb: String) -> int:
 	var hits := 0
 	for e in enemies.duplicate():
-		if e.is_alive() and _chebyshev(center, e.pos()) <= radius:
-			_player_attack(e, base, verb)
-			hits += 1
+		if not e.is_alive() or _chebyshev(center, e.pos()) > radius:
+			continue
+		# À bout portant (rayon 1), les murs n'arrêtent pas le souffle ; au-delà,
+		# la ligne de vue doit être dégagée.
+		if radius >= 2 and not dungeon.has_los(center, e.pos()):
+			continue
+		_player_attack(e, base, verb)
+		hits += 1
 	return hits
 
 ## Transpercement : depuis `from`, avance selon `dir` et frappe tous les ennemis
@@ -1076,12 +1090,19 @@ func dash(dir: Vector2i, distance: int) -> int:
 		_pickup_loot_at(player.pos())
 	return moved
 
+## Cible du prochain saut de rebond/chaîne : mêmes filtres de visibilité que
+## _nearest_enemy_in_range, SAUF la ligne de vue (magie arquée entre les sauts
+## : on ignore volontairement has_los) — la cible du saut doit rester visible.
 func _nearest_enemy_excluding(from: Vector2i, rng_tiles: int, exclude: Dictionary) -> Entity:
 	var best: Entity = null
 	var best_d: int = 999999
 	for e in enemies:
 		if not e.is_alive() or exclude.has(e.get_instance_id()):
 			continue
+		if not dungeon.is_visible(e.x, e.y):
+			continue        # fog
+		if e.ai.get("behavior", "") == "ambush" and not e.revealed:
+			continue        # mimic non démasqué
 		var d: int = _chebyshev(from, e.pos())
 		if d <= rng_tiles and d < best_d:
 			best_d = d
@@ -1189,6 +1210,7 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 			if not smdef.is_empty():
 				var sm: Entity = _make_enemy(smdef, floor_num, ssp)
 				sm.energy = 0
+				sm.awake = true
 				enemies.append(sm)
 				target.spawned_count += 1
 				add_message("[color=#9fdf6a]%s pond une créature ![/color]" % target.display_name)
@@ -1684,6 +1706,24 @@ func _begin_turn(e: Entity) -> bool:
 ## Tour d'un ennemi : applique les traits passifs (rage/berserk, copie, aura,
 ## piège) puis route vers le comportement data-driven (ai.behavior).
 func _enemy_act(e: Entity) -> void:
+	# Zone d'agro : un ennemi endormi ignore tout (traits passifs compris) tant
+	# qu'il n'a pas été blessé, vu, ou alerté par un cri de meute proche.
+	if not e.awake:
+		if e.is_boss or String(e.ai.get("behavior", "")) == "stationary":
+			e.awake = true
+		elif e.hp < e.max_hp:
+			e.awake = true                                      # a pris des dégâts
+		elif dungeon.is_visible(e.x, e.y):
+			e.awake = true                                      # vu (réciproque de la vision joueuse)
+		elif _chebyshev(e.pos(), player.pos()) <= int(e.ai.get("aggro", 8)):
+			e.awake = true
+		if e.awake and String(e.ai.get("behavior", "")) != "ambush":
+			for o in enemies:                                   # cri d'alerte aux voisins
+				if o.is_alive() and not o.awake and String(o.ai.get("behavior", "")) != "ambush" \
+						and _chebyshev(e.pos(), o.pos()) <= 4:
+					o.awake = true
+		else:
+			return                                              # toujours endormi : tour passé
 	if e.ai_cd > 0:
 		e.ai_cd -= 1
 	# Boss à phases (Dieu-Bête) : ajuste le comportement selon les PV.
@@ -1721,9 +1761,89 @@ func _enemy_act(e: Entity) -> void:
 		"stationary": pass            # gardiens liés : inertes, à détruire
 		_: _enemy_act_melee(e)
 
+## Intention de l'ennemi à afficher (source unique, lue par MapView pour
+## télégraphier l'IA) : n'IMPLÉMENTE rien, n'inspecte que les mêmes champs
+## que les comportements réels ci-dessus, dans le même ordre de priorité.
+func enemy_intent(e: Entity) -> String:
+	if String(e.ai.get("behavior", "")) == "ambush" and not e.revealed:
+		return ""                      # ne jamais dévoiler un mimic non démasqué
+	if not e.awake:
+		return "sleep"
+	if _manhattan(e.pos(), player.pos()) == 1:
+		return "attack"
+	var behavior: String = String(e.ai.get("behavior", "melee"))
+	if behavior == "charger":
+		var dir: Vector2i = Vector2i.ZERO
+		if e.x == player.x:
+			dir = Vector2i(0, signi(player.y - e.y))
+		elif e.y == player.y:
+			dir = Vector2i(signi(player.x - e.x), 0)
+		if dir != Vector2i.ZERO:
+			var p: Vector2i = e.pos()
+			var steps: int = 0
+			while steps < 6:
+				var np: Vector2i = p + dir
+				if np == player.pos():
+					return "charge"
+				if not dungeon.is_walkable(np.x, np.y) or enemy_at(np.x, np.y) != null:
+					break
+				p = np
+				steps += 1
+	if behavior == "ranged":
+		var dist: int = _chebyshev(e.pos(), player.pos())
+		if dist <= int(e.ai.get("ranged_range", 5)) and e.ai_cd <= 0 and dungeon.has_los(e.pos(), player.pos()):
+			return "shoot"
+	if behavior == "caster":
+		var cdist: int = _chebyshev(e.pos(), player.pos())
+		if e.ai_cd <= 0 and cdist <= int(e.ai.get("cast_range", 6)):
+			return "summon" if String(e.ai.get("cast", "summon")) == "summon" else "cast"
+	if behavior == "fleer" and e.hp <= e.max_hp * 0.4:
+		return "flee"
+	return "approach"
+
+## Simule (sans toucher aux entités réelles) l'ordre des `n` prochaines
+## actions — joueuse + ennemis vivants ÉVEILLÉS seulement (un ennemi endormi
+## n'agit jamais). Pour la bande d'ordre des tours (Hud).
+func preview_turn_order(n: int = 8) -> Array:
+	var pool: Array = []
+	if player != null and player.is_alive():
+		pool.append({ "entity": player, "energy": float(player.energy), "speed": float(player.effective_speed()) })
+	for e in enemies:
+		if e.is_alive() and e.awake:
+			pool.append({ "entity": e, "energy": float(e.energy), "speed": float(e.effective_speed()) })
+	var order: Array = []
+	while order.size() < n and not pool.is_empty():
+		var best_i: int = -1
+		var best_ticks: int = 999999
+		for i in pool.size():
+			var c: Dictionary = pool[i]
+			if c["speed"] <= 0.0:
+				continue
+			var ticks: int = maxi(0, ceili((Entity.ACTION_COST - c["energy"]) / c["speed"]))
+			if ticks < best_ticks:
+				best_ticks = ticks
+				best_i = i
+		if best_i == -1:
+			break
+		for c in pool:
+			c["energy"] += float(best_ticks) * c["speed"]
+		pool[best_i]["energy"] -= float(Entity.ACTION_COST)
+		order.append(pool[best_i]["entity"])
+	return order
+
 # --- Briques de déplacement réutilisables -------------------------------------
 ## Avance d'une case vers `target` (axe dominant d'abord). Renvoie true si bougé.
+## Boss/élites (ai.smart_path) tentent d'abord un A* (Dungeon.next_step) pour
+## contourner de grands obstacles ; repli sur la marche gloutonne si aucun
+## chemin n'est trouvé (ou si la case indiquée vient d'être occupée).
 func _enemy_step_toward(e: Entity, target: Vector2i) -> bool:
+	if e.ai.get("smart_path", false):
+		var np: Vector2i = dungeon.next_step(e.pos(), target, 400)
+		if np != e.pos() and enemy_at(np.x, np.y) == null and player.pos() != np:
+			e.facing = np - e.pos()
+			e.x = np.x
+			e.y = np.y
+			return true
 	var dx: int = signi(target.x - e.x)
 	var dy: int = signi(target.y - e.y)
 	var tries: Array
@@ -1731,6 +1851,13 @@ func _enemy_step_toward(e: Entity, target: Vector2i) -> bool:
 		tries = [Vector2i(dx, 0), Vector2i(0, dy)]
 	else:
 		tries = [Vector2i(0, dy), Vector2i(dx, 0)]
+	# Évitement minimal d'obstacle : si les deux tentatives directes échouent
+	# (mur/arbre/rocher aligné), tente les deux directions perpendiculaires à
+	# l'axe dominant, en ordre aléatoire, pour ne pas rester bloquée en ligne droite.
+	var perp: Array = [Vector2i(0, 1), Vector2i(0, -1)] if tries[0].y == 0 else [Vector2i(1, 0), Vector2i(-1, 0)]
+	if rng.randf() < 0.5:
+		perp = [perp[1], perp[0]]
+	tries.append_array(perp)
 	for t in tries:
 		if t == Vector2i.ZERO:
 			continue
@@ -1828,7 +1955,11 @@ func _enemy_act_ranged(e: Entity) -> void:
 		_enemy_attack_player(e)
 		return
 	var dist: int = _chebyshev(e.pos(), player.pos())
-	if dist <= int(e.ai.get("ranged_range", 5)) and e.ai_cd <= 0:
+	# Pas de tir depuis le néant : l'ennemi doit être vu ET avoir la ligne de
+	# vue dégagée jusqu'à la joueuse (sinon il approche/kite comme s'il n'avait
+	# pas de portée disponible).
+	if dist <= int(e.ai.get("ranged_range", 5)) and e.ai_cd <= 0 \
+			and dungeon.is_visible(e.x, e.y) and dungeon.has_los(e.pos(), player.pos()):
 		_enemy_ranged_attack(e)
 		e.ai_cd = int(e.ai.get("cooldown", 1))
 		return
@@ -1852,7 +1983,11 @@ func _enemy_act_caster(e: Entity) -> void:
 		_enemy_sacrifice(e)
 		return
 	var dist: int = _chebyshev(e.pos(), player.pos())
-	if e.ai_cd <= 0 and dist <= int(e.ai.get("cast_range", 6)):
+	# Invoquer ne demande pas de visibilité (des renforts qui surgissent de
+	# l'obscurité, c'est correct) ; hurler/cibler la joueuse si.
+	var needs_los: bool = String(e.ai.get("cast", "summon")) != "summon"
+	var can_see: bool = not needs_los or (dungeon.is_visible(e.x, e.y) and dungeon.has_los(e.pos(), player.pos()))
+	if e.ai_cd <= 0 and dist <= int(e.ai.get("cast_range", 6)) and can_see:
 		_enemy_cast(e)
 		e.ai_cd = int(e.ai.get("cooldown", 3))
 		return
@@ -1886,6 +2021,7 @@ func _enemy_summon(e: Entity) -> void:
 		return
 	var m: Entity = _make_enemy(def, floor_num, spot)
 	m.energy = 0
+	m.awake = true
 	enemies.append(m)
 	e.spawned_count += 1
 	add_message("[color=#c8b0ff]%s invoque un(e) %s ![/color]" % [e.display_name, m.display_name])
@@ -2237,7 +2373,12 @@ func refresh() -> void:
 	if dungeon != null and player != null:
 		dungeon.reveal(player.pos(), player.vision)
 		_update_camera()
-	map_view.refresh(dungeon, [player] + enemies, loot, hazards)
+	var intent_map: Dictionary = {}
+	if dungeon != null and player != null:
+		for e in enemies:
+			if e.is_alive() and dungeon.is_visible(e.x, e.y):
+				intent_map[e.get_instance_id()] = enemy_intent(e)
+	map_view.refresh(dungeon, [player] + enemies, loot, hazards, intent_map)
 	hud.refresh()
 
 func add_message(msg: String) -> void:

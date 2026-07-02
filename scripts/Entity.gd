@@ -27,6 +27,7 @@ var ai: Dictionary = {}
 var ai_cd: int = 0               # recharge interne d'une capacité d'ennemi
 var spawned_count: int = 0       # invocations déjà produites (plafond summon_max)
 var revealed: bool = false       # mimic : démasqué une fois le joueur proche
+var awake: bool = false          # ennemi : endormi tant qu'il n'a pas été vu/blessé/alerté
 
 # --- Stats EFFECTIVES (base + équipement + artefacts + talents) ---
 var max_hp: int = 10
