@@ -154,7 +154,27 @@ ne pas les confondre).
   main sans jamais pouvoir la voir rendue est trop risqué (texte illisible
   possible sur TOUTE l'UI) — à faire dans une session avec accès à Godot
   pour itérer visuellement.
-- **Phases 4 à 8** (terrain élémentaire, équilibrage, contenu, hygiène
+- **Phase 4 — Terrain élémentaire : FAITE (4.0 à 4.3).** Substrat d'effets
+  (`Dungeon.effects/effect_timer/active_effects`, tick au rythme de la
+  joueuse) ; feu qui se propage dans les arbres et calcine (4.1) ; tags
+  d'élément sur les sorts (`Data.SKILLS[*].elem`) ; l'eau conduit la foudre
+  (flood-fill du plan d'eau plafonné à 500 cases, 50 % des dégâts aux autres
+  ennemis du rivage, une décharge max par lancer) ; le givre gèle l'eau en
+  pont de glace praticable (10 actions, fonte = relogement + 3 dégâts +
+  ralenti, le feu fait fondre instantanément) ; nuages toxiques à la mort
+  des serpents/zombies (30 %, poison par tour, 3 tours) ; la « lave » du
+  volcan brûle ce qu'on y pousse (8 + étage dégâts + brûlure, rebond) ;
+  knockback (`push_entity` : collisions, eau, lave, glissade sur glace,
+  pièges déclenchés contre l'ennemi poussé) via la nouvelle compétence
+  commune « Coup de bélier », les chargeurs (1 case) et le Bourreau
+  (2 cases). Asserts scriptés dans `_smoketest.gd` pour chaque règle.
+  Coupé (v1) : vent déplaçant les nuages, lave qui coule, entités
+  enflammées qui embrasent le terrain. NB : la session 4.2/4.3 n'avait pas
+  accès au binaire Godot (politique réseau) — validation via la CI (7.1).
+- **Phase 7.1 — CI : FAITE.** `.github/workflows/smoke.yml` (Godot 4.3
+  headless en cache, passe d'import, test de fumée, grep « SMOKETEST
+  PASSED ») ; RNG globale du smoke test fixée (`seed(4242)`).
+- **Phases 5, 6, 7 (reste), 8** (équilibrage, contenu, hygiène
   d'ingénierie, direction artistique 64×64) : à faire, voir
   `IMPLEMENTATION_GUIDE.md` pour le détail.
 - **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
