@@ -13,6 +13,14 @@ const WATER := 3
 const TREE := 4
 const ROCK := 5
 
+# Effets de terrain (Phase 4 — couche élémentaire). EFF_BURNT réécrit tiles[]
+# en FLOOR ; les autres sont purement additifs par-dessus le tile de base.
+const EFF_NONE := 0
+const EFF_BURNING := 1
+const EFF_BURNT := 2
+const EFF_FROZEN := 3
+const EFF_CLOUD := 4
+
 var width: int
 var height: int
 var tiles: Array = []           # tiles[y][x] -> type de tuile
@@ -24,6 +32,10 @@ var biome: Dictionary = {}      # biome courant (Data.BIOMES[i])
 var start: Vector2i = Vector2i.ZERO
 var stairs: Vector2i = Vector2i.ZERO
 var reachable_tiles: Array = []  # cases praticables atteignables (calculé une fois)
+
+var effects: Array = []             # effects[y][x] -> EFF_* (grille pleine, lecture O(1))
+var effect_timer: Array = []        # effect_timer[y][x] -> tours restants pour l'effet courant
+var active_effects: Array = []      # Array[Vector2i] : cases avec un effet actif — TOUJOURS itérer cette liste, jamais la grille pleine (640x400)
 
 var _rng: RandomNumberGenerator
 var _vis_cells: Array = []       # cases actuellement visibles (pour effacer vite)
@@ -42,6 +54,9 @@ func _generate(rng: RandomNumberGenerator) -> void:
 	obstacle = _make_grid("")
 	explored = _make_grid(false)
 	visible = _make_grid(false)
+	effects = _make_grid(EFF_NONE)
+	effect_timer = _make_grid(0)
+	active_effects = []
 
 	# Bordure infranchissable (cadre de la carte)
 	for x in width:
@@ -199,7 +214,19 @@ func is_walkable(x: int, y: int) -> bool:
 	if not _in_bounds(x, y):
 		return false
 	var t: int = tiles[y][x]
-	return t == FLOOR or t == ROAD
+	if t == FLOOR or t == ROAD:
+		return true
+	if t == WATER and effects[y][x] == EFF_FROZEN:
+		return true          # glace : praticable tant qu'elle n'a pas fondu
+	return false
+
+## Recalcule le cache de connexité (reachable_tiles) après une mutation de
+## terrain (arbre calciné, eau gelée/dégelée...). Le cache existant devient
+## silencieusement obsolète sinon — à appeler une seule fois par lot de
+## mutations (jamais par case individuelle).
+func rebuild_reachability() -> void:
+	var reach: Dictionary = _reachable_set(start)
+	reachable_tiles = reach.keys()
 
 ## Ligne de vue de `a` vers `b` (Bresenham entier, cf. _assets_gen.gd::_line).
 ## Teste chaque case intermédiaire (a et b exclus) ; bloquée par WALL/TREE/ROCK

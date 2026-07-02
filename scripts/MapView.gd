@@ -498,6 +498,7 @@ func _make_vignette(w: int, h: int) -> ImageTexture:
 
 func _draw_terrain(bid: String, x: int, y: int) -> void:
 	var t: int = dungeon.tiles[y][x]
+	var eff: int = dungeon.effects[y][x] if not dungeon.effects.is_empty() else Dungeon.EFF_NONE
 	match t:
 		Dungeon.WATER:
 			if not _blit(Data.biome_sprite(bid, "water"), x, y):
@@ -510,6 +511,8 @@ func _draw_terrain(bid: String, x: int, y: int) -> void:
 			_draw_ground(bid, x, y)
 			if not _blit(Data.biome_sprite(bid, "tree"), x, y):
 				_draw_glyph(x, y, "♣", dungeon.biome.get("leaf", Color(0.3, 0.6, 0.3)))
+			if eff == Dungeon.EFF_BURNING:
+				draw_rect(_cell_rect(x, y), Color(1.0, 0.4, 0.1, 0.45), true)
 		Dungeon.ROCK:
 			_draw_ground(bid, x, y)
 			var ov: String = dungeon.obstacle[y][x]
@@ -519,6 +522,8 @@ func _draw_terrain(bid: String, x: int, y: int) -> void:
 				draw_rect(_cell_rect(x, y).grow(-4), dungeon.biome.get("rock", Color(0.5, 0.5, 0.55)), true)
 		_:
 			_draw_ground(bid, x, y)
+			if eff == Dungeon.EFF_BURNT:
+				draw_rect(_cell_rect(x, y), Color(0.08, 0.06, 0.06, 0.55), true)   # sol calciné
 			var dn: String = dungeon.decor[y][x]
 			if dn != "":
 				_blit(dn, x, y)
