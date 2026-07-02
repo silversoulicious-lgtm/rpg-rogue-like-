@@ -56,6 +56,7 @@ var run_best_item: Dictionary = {}
 var run_bosses: int = 0          # Gardiens vaincus ce run (gain de Connaissances)
 var pending_rewards: Array = []  # récompenses de fin d'étage proposées (Phase 4)
 var last_damage_source: String = ""   # source du dernier coup encaissé (récap de mort)
+var _forest_fire_warned: bool = false  # message/son d'alerte incendie une seule fois par étage
 const RUN_TIMELINE_CAP := 40
 var run_timeline: Array = []     # [String] : grands jalons du run (entrée biome, boss, pouvoir...)
 var _last_timeline_biome: String = ""  # évite de spammer une entrée à chaque étage du même biome
@@ -499,6 +500,7 @@ func _boss_alive() -> bool:
 # --- Génération d'un combat (combat / élite / boss) ---------------------------
 func generate_floor(node_type: String = "combat") -> void:
 	first_strike_used = false
+	_forest_fire_warned = false
 	player.clear_statuses()
 	var msize: Vector2i = Data.random_map_size(rng)
 	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_floor(floor_num))
@@ -1012,6 +1014,8 @@ func _cast_skill(skill: Dictionary) -> bool:
 			var center: Vector2i = te.pos()
 			_player_attack(te, dmg, "%s touche" % name)
 			aoe_attack(center, int(skill.get("radius", 1)), int(round(dmg * 0.7)), "%s explose" % name)
+			if player.ability_id == "fireball":
+				ignite_area(center, int(skill.get("radius", 1)))
 			return true
 		"pierce":
 			var tp: Entity = _nearest_enemy_in_range(rng_tiles)
@@ -1042,6 +1046,8 @@ func _apply_skill_status(target: Entity, skill: Dictionary, dmg: int) -> void:
 		"burn":
 			apply_burn(target, turns, maxf(1.0, round(float(dmg) * float(skill.get("val", 0.3)))))
 			add_message("[color=#ff9a5a]%s prend feu.[/color]" % target.display_name)
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				ignite(target.pos() + d)
 		"poison":
 			apply_poison(target, turns, maxf(1.0, round(float(dmg) * float(skill.get("val", 0.3)))))
 			add_message("[color=#9fdf6a]%s est empoisonné.[/color]" % target.display_name)
@@ -1179,6 +1185,91 @@ func apply_weaken(target: Entity, turns: int, amount: float) -> void:
 func apply_confuse(target: Entity, turns: int) -> void:
 	target.add_status("confusion", turns)
 
+# --- Terrain élémentaire (Phase 4) --------------------------------------------
+## Embrase un ARBRE (case TREE, sans effet en cours). Renvoie false si la case
+## n'était pas éligible (hors bordure, pas un arbre, déjà en feu/calcinée...).
+func ignite(p: Vector2i) -> bool:
+	if dungeon == null:
+		return false
+	if p.x <= 0 or p.x >= dungeon.width - 1 or p.y <= 0 or p.y >= dungeon.height - 1:
+		return false
+	if dungeon.tiles[p.y][p.x] != Dungeon.TREE:
+		return false
+	if dungeon.effects[p.y][p.x] != Dungeon.EFF_NONE:
+		return false
+	dungeon.effects[p.y][p.x] = Dungeon.EFF_BURNING
+	dungeon.effect_timer[p.y][p.x] = 4
+	dungeon.active_effects.append(p)
+	if not _forest_fire_warned:
+		_forest_fire_warned = true
+		add_message("[color=#ff8a4a]Le feu prend dans les frondaisons.[/color]")
+		Sfx.play("danger")
+	return true
+
+## Ignite tous les arbres dans un rayon (Chebyshev) autour d'un centre —
+## utilisé par les explosions/zones de feu (boule de feu, mort de l'Élémentaire
+## de feu, sacrifice du Cultiste...).
+func ignite_area(center: Vector2i, radius: int) -> void:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			if maxi(absi(dx), absi(dy)) <= radius:
+				ignite(center + Vector2i(dx, dy))
+
+## Fait avancer la couche d'effets de terrain d'un cran — appelé une fois par
+## action du joueur (le terrain vit au rythme du joueur, avant que les
+## ennemis n'agissent). Ne parcourt QUE active_effects, jamais la grille
+## entière (640x400 cases existent sur les grandes cartes).
+func _tick_terrain() -> void:
+	if dungeon == null or dungeon.active_effects.is_empty():
+		return
+	var reach_dirty := false
+	# Duplique : ignite() ci-dessous ajoute à dungeon.active_effects (propagation) —
+	# itérer directement sur le tableau source ferait aussi traiter les cases
+	# fraîchement embrasées dans cette même passe.
+	for p in dungeon.active_effects.duplicate():
+		var eff: int = dungeon.effects[p.y][p.x]
+		if eff == Dungeon.EFF_BURNING:
+			dungeon.effect_timer[p.y][p.x] -= 1
+			# Dégâts à toute entité (joueur inclus) dans le voisinage 8-connexe.
+			for dy in range(-1, 2):
+				for dx in range(-1, 2):
+					if dx == 0 and dy == 0:
+						continue
+					var np: Vector2i = p + Vector2i(dx, dy)
+					var ent: Entity = _entity_at(np)
+					if ent != null and ent.is_alive():
+						apply_burn(ent, 2, 2.0 + floor_num * 0.2, 3)
+			# Propagation : chaque arbre 4-adjacent non touché a une chance de s'embraser.
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				var np2: Vector2i = p + d
+				if dungeon.tiles[np2.y][np2.x] == Dungeon.TREE and dungeon.effects[np2.y][np2.x] == Dungeon.EFF_NONE:
+					if rng.randf() < Data.FIRE_SPREAD_CHANCE:
+						ignite(np2)
+			if dungeon.effect_timer[p.y][p.x] <= 0:
+				dungeon.effects[p.y][p.x] = Dungeon.EFF_BURNT
+				dungeon.tiles[p.y][p.x] = Dungeon.FLOOR
+				dungeon.decor[p.y][p.x] = ""
+				reach_dirty = true
+				# EFF_BURNT reste marqué en permanence (pas de retour à EFF_NONE) :
+				# c'est une trace de sol calciné, pas une case active à re-traiter.
+	# Purge les cases qui ne sont plus BURNING/FROZEN/CLOUD (ex: calcinées ce
+	# tour) tout en conservant celles fraîchement embrasées par ignite()
+	# ci-dessus — on relit dungeon.active_effects (pas la copie) pour ça.
+	var still_active: Array = []   # Array[Vector2i]
+	for p in dungeon.active_effects:
+		var eff2: int = dungeon.effects[p.y][p.x]
+		if eff2 == Dungeon.EFF_BURNING or eff2 == Dungeon.EFF_FROZEN or eff2 == Dungeon.EFF_CLOUD:
+			still_active.append(p)
+	dungeon.active_effects = still_active
+	if reach_dirty:
+		dungeon.rebuild_reachability()
+
+## Entité (joueur ou ennemi vivant) sur une case donnée, ou null.
+func _entity_at(p: Vector2i) -> Entity:
+	if player != null and player.is_alive() and player.pos() == p:
+		return player
+	return enemy_at(p.x, p.y)
+
 ## Défense effective du joueur (réduite par le statut "weaken" des ennemis,
 ## augmentée par le préfixe d'armure "cuirasse" — réduction plate en plus de
 ## la Défense normale).
@@ -1307,6 +1398,10 @@ func _trigger_weapon_prefixes(target: Entity) -> void:
 			if map_view != null:
 				map_view.fx_damage(target.pos(), extra, "hit")
 			add_message("[color=#ff9a5a]Brasier : %s subit -%d (feu).[/color]" % [target.display_name, extra])
+		if rng.randf() < 0.25:   # (tune) chance d'embraser un arbre adjacent à la cible
+			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if ignite(target.pos() + d):
+					break
 	if not target.is_alive():
 		return
 	if player.has_proc("givre") and rng.randf() < player.proc_value("givre"):
@@ -1410,6 +1505,7 @@ func on_enemy_killed(e: Entity) -> void:
 	var exp: Dictionary = e.ai.get("explode", {}) if not e.ai.is_empty() else {}
 	if not exp.is_empty():
 		add_message("[color=#ff8a4a]✹ %s explose en mourant ![/color]" % e.display_name)
+		ignite_area(death_pos, int(exp.get("radius", 1)))
 		if _chebyshev(death_pos, player.pos()) <= int(exp.get("radius", 1)):
 			var ed: int = maxi(1, int(round(e.atk * float(exp.get("mult", 1.3)))) - _player_def())
 			last_damage_source = "l'explosion de %s" % e.display_name
@@ -1699,6 +1795,7 @@ func _trigger_powers() -> void:
 
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:
+	_tick_terrain()
 	player.energy -= Entity.ACTION_COST
 	_begin_turn(player)
 	player.tick_cooldown()
@@ -2101,6 +2198,7 @@ func _enemy_summon(e: Entity) -> void:
 
 func _enemy_sacrifice(e: Entity) -> void:
 	add_message("[color=#ff6a6a]%s se sacrifie dans une déflagration ![/color]" % e.display_name)
+	ignite_area(e.pos(), int(e.ai.get("sac_radius", 2)))
 	if _chebyshev(e.pos(), player.pos()) <= int(e.ai.get("sac_radius", 2)):
 		var dmg: int = maxi(1, int(round(e.atk * float(e.ai.get("sac_mult", 1.6)))) - _player_def())
 		last_damage_source = "le sacrifice de %s" % e.display_name

@@ -1010,6 +1010,40 @@ func _ready() -> void:
 	assert(seed_first_enemy2 == seed_first_enemy, "seed fixe : même position du 1er ennemi")
 	print("OK Phase 3.7: start_run(loadout_id, seed) est entièrement déterministe pour une seed donnée")
 
+	# --- Phase 4.0/4.1 : substrat d'effets de terrain + tranche verticale (feu, Forêt) ---
+	main.active_oaths = []
+	main.start_run("melee")
+	var fire_rng := RandomNumberGenerator.new(); fire_rng.seed = 44
+	var fire_map := Dungeon.new(20, 10, fire_rng, Data.biome_for_floor(1))
+	for y in range(1, fire_map.height - 1):
+		for x in range(1, fire_map.width - 1):
+			fire_map.tiles[y][x] = Dungeon.FLOOR
+	var fire_row_y := 4
+	for x in range(5, 10):
+		fire_map.tiles[fire_row_y][x] = Dungeon.TREE
+	fire_map.rebuild_reachability()
+	main.dungeon = fire_map
+	main.player.x = 5
+	main.player.y = fire_row_y + 2
+	main.enemies.clear()
+	var fire_witness: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(5, fire_row_y + 1))
+	fire_witness.awake = true
+	main.enemies.append(fire_witness)
+	var prev_spread_chance: float = Data.FIRE_SPREAD_CHANCE
+	Data.FIRE_SPREAD_CHANCE = 1.0   # propagation garantie : test déterministe
+	assert(main.ignite(Vector2i(5, fire_row_y)), "ignite() embrase le premier arbre de la rangée (case TREE, sans effet)")
+	assert(not main.ignite(Vector2i(5, fire_row_y)), "ré-ignite un arbre déjà en feu échoue (pas de double comptage)")
+	for i in 12:
+		main._tick_terrain()
+	for x in range(5, 10):
+		assert(fire_map.effects[fire_row_y][x] == Dungeon.EFF_BURNT, "l'arbre (%d,%d) a fini calciné après propagation en chaîne" % [x, fire_row_y])
+		assert(fire_map.tiles[fire_row_y][x] == Dungeon.FLOOR, "une case calcinée redevient du sol (FLOOR)")
+		assert(fire_map.is_walkable(x, fire_row_y), "une case calcinée redevient praticable")
+	assert(fire_witness.has_status("burn"), "une entité parquée à côté du foyer a accumulé des stacks de brûlure")
+	Data.FIRE_SPREAD_CHANCE = prev_spread_chance
+	main.dungeon = null
+	print("OK Phase 4.0/4.1: substrat d'effets de terrain (Dungeon.effects/active_effects) + tranche verticale — le feu se propage en chaîne dans la Forêt, calcine, redevient praticable")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

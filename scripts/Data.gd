@@ -63,10 +63,10 @@ const SKILLS := {
 	# === MAGIE ===
 	"bolt":            { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche.",             "wtype": "magic",  "rarity": "base",    "cd": 3, "range": 6, "effect": "single",      "power": 1.0 },
 	"arc_bolt":        { "name": "Double éclair",       "desc": "Deux éclairs sur la cible la plus proche.",     "wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "ranged_multi","hits": 2,   "power": 0.65 },
-	"fireball":        { "name": "Boule de feu",        "desc": "Explose autour de la cible (rayon 1).",         "wtype": "magic",  "rarity": "rare",    "cd": 4, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.2 },
+	"fireball":        { "name": "Boule de feu",        "desc": "Explose autour de la cible (rayon 1) et peut embraser les arbres alentour.", "wtype": "magic",  "rarity": "rare",    "cd": 4, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.2 },
 	"frost_nova":      { "name": "Éclat de givre",      "desc": "Touche et paralyse la cible (1 tour).",         "wtype": "magic",  "rarity": "epique",  "cd": 4, "range": 6, "effect": "status_shot", "status": "stun", "turns": 1, "power": 0.8 },
 	"chain_lightning": { "name": "Chaîne d'éclairs",    "desc": "Rebondit en chaîne entre les ennemis.",         "wtype": "magic",  "rarity": "rare",    "cd": 3, "range": 6, "effect": "chain",       "bounces": 3, "power": 0.9 },
-	"ember":           { "name": "Trait ardent",        "desc": "Touche et embrase la cible (brûlure, 3 tours).","wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "burn", "turns": 3, "val": 0.3, "power": 0.8 },
+	"ember":           { "name": "Trait ardent",        "desc": "Touche et embrase la cible (brûlure, 3 tours) ainsi que les arbres voisins.","wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "burn", "turns": 3, "val": 0.3, "power": 0.8 },
 }
 
 static func skill_rarity_color(id: String) -> Color:
@@ -110,6 +110,12 @@ const BASE_VISION := 6
 const CAP_DODGE := 0.60
 const CAP_CRIT := 0.75
 const CAP_LIFESTEAL := 0.50
+
+# --- TERRAIN ÉLÉMENTAIRE (Phase 4) ---------------------------------------------
+# Chance par tour, par arbre adjacent à une case en feu, de s'embraser à son
+# tour. `static var` (pas `const`) pour que le smoke test puisse la forcer à
+# 1.0 et vérifier la propagation de façon déterministe.
+static var FIRE_SPREAD_CHANCE := 0.35
 
 # --- BIOMES (terrain "open world" par étage) ----------------------------------
 # Le biome change tous les BIOME_SPAN étages et détermine la palette, la densité
@@ -526,7 +532,7 @@ static func _proc_desc(proc: String, val: float) -> String:
 		"frappe_double": return "Frappe Double : %d%% de chances de frapper une 2e fois (50%% dégâts)." % int(round(val * 100))
 		"soif_de_sang": return "Soif de Sang : soigne %d%% PV max à chaque ennemi tué." % int(round(val * 100))
 		"moisson": return "Moisson : +%d Éclats à chaque ennemi tué." % int(round(val))
-		"ardent": return "Brasier : inflige %d à %d dégâts de feu bonus par attaque." % [maxi(1, int(val) - 1), int(val) + 1]
+		"ardent": return "Brasier : inflige %d à %d dégâts de feu bonus par attaque et peut embraser un arbre voisin." % [maxi(1, int(val) - 1), int(val) + 1]
 		"givre": return "Givre : %d%% de chances de ralentir la cible touchée." % int(round(val * 100))
 		"venimeux": return "Venin : %d%% de chances d'empoisonner la cible touchée." % int(round(val * 100))
 		"foudroyant": return "Foudre : %d%% de chances d'étourdir la cible touchée (1 tour)." % int(round(val * 100))
