@@ -9,6 +9,9 @@
 *.pck
 *.zip
 
+# Claude Code — artefacts de session (le hook et settings.json restent versionnés)
+.claude/scheduled_tasks.lock
+
 # OS
 .DS_Store
 Thumbs.db
