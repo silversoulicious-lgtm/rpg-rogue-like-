@@ -3,8 +3,11 @@
 Roguelike au tour par tour en Godot 4.3 / GDScript. Une héroïne unique (Aria),
 build par arme, ascension linéaire d'une tour à étages (RNG, pas de carte à
 embranchements). Séparation stricte logique/affichage/données : `Main.gd`
-(logique), `Hud.gd` (affichage), `Data.gd` (registre de données), `Entity.gd`
-(modèle pur), `GameState.gd` (autoload, sauvegarde JSON `user://save.json`).
+(logique, état partagé) + 4 modules `RefCounted` extraits (Phase 7.3) —
+`EnemyAI.gd`, `CombatSystem.gd`, `LootSystem.gd`, `RunProgression.gd`,
+chacun `_init(game)` avec back-reference vers Main —, `Hud.gd` (affichage),
+`Data.gd` (registre de données), `Entity.gd` (modèle pur), `GameState.gd`
+(autoload, sauvegarde JSON `user://save.json`).
 
 ## Ce qui est fait
 
@@ -242,7 +245,15 @@ ne pas les confondre).
     tombé ; à sa mort, overlay pour réclamer UN objet de son équipement, puis
     écho consommé. Un seul stocké (le plus récent remplace).
   Asserts de régression ajoutés au smoke test pour chaque sous-phase.
-- **Reste : Phase 7 (7.3 refonte modulaire de `Main.gd` / 7.8), Phase 8
+- **7.3 FAITE.** `Main.gd` (2867 → 2095 lignes) éclaté en 4 modules
+  `RefCounted` (`EnemyAI.gd`, `CombatSystem.gd`, `LootSystem.gd`,
+  `RunProgression.gd`, ~1355 lignes au total), chacun `_init(game)` avec
+  back-reference ; Main garde des délégations minces pour tout appelant
+  externe (Hud.gd, MapView.gd, _smoketest.gd, modules pairs). Un commit par
+  extraction. Session sans binaire Godot exécutable : vérification
+  statique/textuelle uniquement (recherche exhaustive des sites d'appel),
+  pas de test de fumée exécuté.
+- **Reste : Phase 7 (7.8), Phase 8
   (art 64×64), et le réglage chiffré de la Phase 5** — voir
   `IMPLEMENTATION_GUIDE.md`. Tout ce qui exige d'itérer visuellement ou de
   produire des CSV attend une session avec un binaire Godot exécutable.
