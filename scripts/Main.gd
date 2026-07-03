@@ -267,8 +267,7 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	player.ability_cd = 0
 	player.equipment = { "arme": Data.make_starter_weapon(loadout_id) }
 	player.active_skill_id = Data.WEAPON_TYPE_BASE_SKILL[loadout_id]
-	player.artifacts = []
-	player.powers = []
+	player.relics = []
 	player.talents = []
 	player.level = 1
 	player.xp = 0
@@ -311,7 +310,7 @@ func _grant_starting_bonuses() -> void:
 		for i in GameState.start_artifacts():
 			var a: Dictionary = _pick_any_artifact()
 			if not a.is_empty():
-				player.artifacts.append(a)
+				player.relics.append(_tag_relic(a, "artifact"))
 				add_message("[color=#f0b8ff]✦ Héritage : %s[/color]" % a["name"])
 		for i in GameState.start_talents():
 			var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
@@ -320,7 +319,7 @@ func _grant_starting_bonuses() -> void:
 		if GameState.starts_with_power():
 			var pw: Dictionary = _pick_power_def()
 			if not pw.is_empty():
-				player.powers.append(pw)
+				player.relics.append(_tag_relic(pw, "power"))
 				add_message("[color=#ffb84a]Ω Pacte de Pouvoir : %s[/color]" % pw["name"])
 	elif GameState.oaths_unlocked():
 		add_message("[color=#d88a8a]Serment de Pauvreté : aucun bonus de départ.[/color]")
@@ -366,7 +365,7 @@ func oath_knowledge_bonus() -> int:
 func _pick_any_artifact() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ARTIFACTS:
-		if not player.has_artifact(def["id"]):
+		if not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
@@ -773,7 +772,7 @@ func _spawn_loot(p: Vector2i, force_good: bool = false) -> void:
 func _pick_artifact_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ARTIFACTS:
-		if def["min_floor"] <= floor_num and not player.has_artifact(def["id"]):
+		if def["min_floor"] <= floor_num and not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
@@ -1703,7 +1702,7 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 	elif crit:
 		flair = "  [color=#ffec5a]CRITIQUE![/color]"
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
-	if player.has_power("venin") and target.is_alive():
+	if player.has_relic("venin") and target.is_alive():
 		apply_poison(target, 3, maxf(1.0, round(float(dealt) * 0.25)))
 	# Huile ardente (Phase 6.3) : brûlure au contact tant que le buff est actif.
 	if oil_fire_turns > 0 and target.is_alive():
@@ -1876,7 +1875,7 @@ func on_enemy_killed(e: Entity) -> void:
 	var cloud_chance: float = float(e.ai.get("death_cloud", 0.0)) if not e.ai.is_empty() else 0.0
 	if cloud_chance > 0.0 and rng.randf() < cloud_chance:
 		spawn_poison_cloud(death_pos, 1)
-	if player.has_power("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
+	if player.has_relic("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
 		var boom: int = maxi(2, player.atk / 2 + player.ability_power)
 		var hits: int = aoe_attack(death_pos, 1, boom, "Détonation frappe")
 		if hits > 0:
@@ -2131,14 +2130,22 @@ func use_consumable(item: Dictionary) -> void:
 	inventory.erase(item)
 	refresh()
 
+## Phase 6.4 : copie une définition d'artefact/pouvoir en la taguant de son tier,
+## prête à être rangée dans player.relics (jamais la const partagée directement).
+func _tag_relic(def: Dictionary, tier: String) -> Dictionary:
+	var r: Dictionary = def.duplicate(true)
+	r["tier"] = tier
+	return r
+
 func _acquire_artifact(def: Dictionary) -> void:
-	if player.has_artifact(def["id"]):
+	if player.has_relic(def["id"]):
 		run_shards += 5
 		add_message("Artefact %s déjà actif (+5 Éclats)." % def["name"])
 		return
-	player.artifacts.append(def)
+	player.relics.append(_tag_relic(def, "artifact"))
 	player.recompute_stats()
 	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
+	_discover("relic", String(def["id"]), String(def["name"]))
 	refresh()
 
 # --- Pouvoirs passifs (Phase 3) ------------------------------------------------
@@ -2153,25 +2160,26 @@ func _drop_power(pos: Vector2i) -> void:
 func _pick_power_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.POWERS:
-		if not player.has_power(def["id"]):
+		if not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
 	return pool[rng.randi_range(0, pool.size() - 1)]
 
 ## Renvoie le pouvoir déjà actif qui s'exclut mutuellement avec `def` (vide si aucun).
+## N'inspecte que les reliques de tier "power" (les artefacts n'ont pas d'excludes).
 func _power_conflict(def: Dictionary) -> Dictionary:
 	for ex_id in def.get("excludes", []):
-		for p in player.powers:
+		for p in player.relics:
 			if p.get("id", "") == ex_id:
 				return p
-	for p in player.powers:
+	for p in player.relics:
 		if p.get("excludes", []).has(def["id"]):
 			return p
 	return {}
 
 func _acquire_power(def: Dictionary) -> void:
-	if player.has_power(def["id"]):
+	if player.has_relic(def["id"]):
 		run_shards += 10
 		add_message("Pouvoir %s déjà actif (+10 Éclats)." % def["name"])
 		return
@@ -2180,22 +2188,22 @@ func _acquire_power(def: Dictionary) -> void:
 		run_shards += 10
 		add_message("[color=#ff8a8a]%s est incompatible avec %s, déjà actif (+10 Éclats).[/color]" % [def["name"], conflict["name"]])
 		return
-	player.powers.append(def)
+	player.relics.append(_tag_relic(def, "power"))
 	player.recompute_stats()
 	add_message("[color=#ffb84a]Ω Pouvoir : %s — %s[/color]" % [def["name"], def["desc"]])
 	_push_timeline("Ω Pouvoir obtenu : %s" % def["name"])
-	_discover("power", String(def["id"]), String(def["name"]))
+	_discover("relic", String(def["id"]), String(def["name"]))
 	refresh()
 
 ## Déclenche les pouvoirs à activation automatique (drone/tourelle), après l'action du joueur.
 func _trigger_powers() -> void:
 	if not player.is_alive():
 		return
-	if player.has_power("drone"):
+	if player.has_relic("drone"):
 		var t: Entity = _nearest_enemy_in_range(6)
 		if t != null:
 			_player_attack(t, maxi(1, int(round(player.atk * 0.5)) + player.ability_power), "Le drone tire sur")
-	if player.has_power("turret"):
+	if player.has_relic("turret"):
 		var t2: Entity = _nearest_enemy_in_range(8)
 		if t2 != null:
 			aoe_attack(t2.pos(), 1, maxi(1, int(round(player.atk * 0.35)) + player.ability_power), "La tourelle frappe")

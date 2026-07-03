@@ -6,7 +6,7 @@ const SAVE_PATH := "user://save.json"
 # Version du schéma de sauvegarde. Incrémenter à chaque changement de forme
 # des données persistées et ajouter une branche à la migration dans
 # `load_game()` (ne JAMAIS planter sur une sauvegarde d'une version passée).
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 
 # Banque d'Éclats récoltés (monnaie méta dépensée pour les améliorations)
 var shards: int = 0
@@ -15,7 +15,7 @@ var knowledge: int = 0
 # Nœuds de l'Arbre de Connaissances déjà débloqués (ids de Data.KNOWLEDGE_NODES)
 var knowledge_nodes: Array = []
 # Codex : éléments déjà rencontrés, par catégorie -> { id/nom: true }
-var discovered: Dictionary = { "skill": {}, "power": {}, "unique": {}, "monster": {} }
+var discovered: Dictionary = { "skill": {}, "relic": {}, "unique": {}, "monster": {} }
 # Bestiaire (Phase 6.5) : nombre de mises à mort par sprite d'ennemi (persisté).
 var kill_counts: Dictionary = {}
 # Barks (Phase 6.7) : nombre de fois qu'un boss (sprite) a été affronté (persiste
@@ -189,8 +189,8 @@ func load_game() -> void:
 		return
 	var version := int(parsed.get("version", 1))
 	match version:
-		1:
-			pass   # v1 : ni "version" ni "settings" — les valeurs par défaut ci-dessous suffisent.
+		1, 2:
+			pass   # v1/v2 : champs manquants comblés par les défauts ci-dessous.
 		SAVE_VERSION:
 			pass
 		_:
@@ -204,8 +204,12 @@ func load_game() -> void:
 			knowledge_nodes.append(str(nid))
 	var disc = parsed.get("discovered", {})
 	if typeof(disc) == TYPE_DICTIONARY:
-		for cat in ["skill", "power", "unique", "monster"]:
+		for cat in ["skill", "relic", "unique", "monster"]:
 			discovered[cat] = disc.get(cat, {})
+		# Migration v2→v3 (Phase 6.4) : l'ancien bucket "power" fusionne dans "relic".
+		if version < 3 and typeof(disc.get("power", {})) == TYPE_DICTIONARY:
+			for key in disc.get("power", {}).keys():
+				discovered["relic"][key] = true
 	# Bestiaire (Phase 6.5) — absent des sauvegardes v1/v2 antérieures : défaut {}.
 	var kc = parsed.get("kill_counts", {})
 	kill_counts = kc if typeof(kc) == TYPE_DICTIONARY else {}

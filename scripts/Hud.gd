@@ -757,10 +757,11 @@ func show_codex() -> void:
 			skill_ids.append(sid)
 	_codex_section(col, "⚔ Compétences", "skill", skill_ids,
 		func(id): return String(Data.SKILLS[id]["name"]))
-	var power_ids: Array = []
-	for p in Data.POWERS:
-		power_ids.append(p["id"])
-	_codex_section(col, "Ω Pouvoirs", "power", power_ids, func(id): return _power_name(id))
+	# Phase 6.4 : Codex des Reliques (artefacts + pouvoirs unifiés).
+	var relic_ids: Array = []
+	for r in Data.relics():
+		relic_ids.append(r["id"])
+	_codex_section(col, "✦Ω Reliques", "relic", relic_ids, func(id): return _relic_name(id))
 	var uniq_names: Array = []
 	for u in Data.UNIQUE_ITEMS:
 		if not uniq_names.has(u["name"]):
@@ -773,10 +774,10 @@ func show_codex() -> void:
 	back.pressed.connect(game.open_knowledge)
 	col.add_child(back)
 
-func _power_name(id: String) -> String:
-	for p in Data.POWERS:
-		if p["id"] == id:
-			return String(p["name"])
+func _relic_name(id: String) -> String:
+	for r in Data.relics():
+		if String(r["id"]) == id:
+			return String(r["name"])
 	return id
 
 ## Bestiaire (Phase 6.5) : liste ENEMIES + BOSSES. Nom révélé au 1er kill,
@@ -1205,28 +1206,25 @@ func _rebuild_turn_strip() -> void:
 func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
 
-## Phase 6.4 : une seule section « Reliques » listant artefacts (✦) puis
-## pouvoirs (Ω). Le stockage reste double côté Entity (compat) ; l'affichage,
-## lui, est unifié comme le veut le guide.
+## Phase 6.4 : section « Reliques » unique, alimentée par player.relics (stockage
+## unifié). Glyphe selon le tier : ✦ artefact, Ω pouvoir.
 func _rebuild_relics() -> void:
-	var arts: Array = game.player.artifacts
-	var pows: Array = game.player.powers
-	var fp: String = ",".join(arts.map(func(a): return "a:" + str(a.get("name", "?")))) \
-		+ ";" + ",".join(pows.map(func(p): return "p:" + str(p.get("name", "?"))))
+	var relics: Array = game.player.relics
+	var fp: String = ",".join(relics.map(func(r): return str(r.get("tier", "?")) + ":" + str(r.get("name", "?"))))
 	if fp == _relic_fp:
 		return
 	_relic_fp = fp
 	for c in relic_box.get_children():
 		c.queue_free()
-	if arts.is_empty() and pows.is_empty():
+	if relics.is_empty():
 		relic_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for a in arts:
-		relic_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
-		relic_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
-	for p in pows:
-		relic_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
-		relic_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+	for r in relics:
+		var is_art: bool = String(r.get("tier", "")) == "artifact"
+		var glyph: String = "✦ " if is_art else "Ω "
+		var col: Color = Color(0.95, 0.75, 1.0) if is_art else Color(1.0, 0.78, 0.45)
+		relic_box.add_child(Ui.label(glyph + str(r.get("name", "?")), 14, col))
+		relic_box.add_child(Ui.label(str(r.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
 	var syns: Array = game.player.active_synergies

@@ -221,12 +221,13 @@ ne pas les confondre).
   - 6.3 : pools élargis — artefacts 5→15, pouvoirs 5→12, événements 7→20
     (6 thématiques par biome), consommables 4→10 (bombe/antidote/rappel/
     huile ardente câblés).
-  - 6.4 : **partielle** — registre unifié `Data.relics()` + `relic_mods()` et
-    section sidebar unique « Reliques ». La bascule finale vers un stockage
-    `player.relics` unique + suppression des wrappers `has_artifact/has_power`
-    + migration des buckets Codex est **différée** (refactor transversal que
-    le guide veut re-tester au smoke après chaque étape — impossible sans
-    Godot).
+  - 6.4 : **FAITE (collapse complet).** Stockage unique `Entity.relics` (chaque
+    entrée taguée `tier`) remplace `artifacts`/`powers` ; `has_artifact`/
+    `has_power` → `has_relic` ; tables de mods fusionnées en `Data.RELIC_MODS`
+    (lue par `recompute_stats`) ; registre `Data.relics()` + `relic_tier()` ;
+    section sidebar et section Codex uniques « Reliques » ; découvertes notées
+    dans le bucket `discovered["relic"]`. Sauvegarde **v3** avec migration
+    v2→v3 (l'ancien bucket `power` fusionne dans `relic`).
   - 6.5 : bestiaire dans le Codex (`discovered["monster"]` + `kill_counts`
     persistés ; nom au 1er kill, traits à ≥5 kills ; `enemy_traits_line`
     partagé avec l'inspection 2.7).
@@ -239,10 +240,9 @@ ne pas les confondre).
     sérialisation JSON des `Color` ; à faire dans une session Godot.
   Asserts de régression ajoutés au smoke test pour chaque sous-phase.
 - **Reste : Phase 7 (7.3 refonte modulaire de `Main.gd` / 7.8), Phase 8
-  (art 64×64), Phase 6.4 (collapse stockage) / 6.8 (Échos), et le réglage
-  chiffré de la Phase 5** — voir `IMPLEMENTATION_GUIDE.md`. Tout ce qui
-  exige d'itérer visuellement ou de produire des CSV attend une session
-  avec un binaire Godot exécutable.
+  (art 64×64), Phase 6.8 (Échos), et le réglage chiffré de la Phase 5** —
+  voir `IMPLEMENTATION_GUIDE.md`. Tout ce qui exige d'itérer visuellement ou
+  de produire des CSV attend une session avec un binaire Godot exécutable.
   **Cette session (7.2/7.5/7.7) n'avait pas accès au binaire Godot**
   (`downloads.godotengine.org` redirige désormais vers
   `github.com/godotengine/godot-builds`, bloqué par la politique réseau du

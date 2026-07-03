@@ -42,7 +42,7 @@ func _ready() -> void:
 	GameState.knowledge_nodes = ["pacte_pouvoir"]
 	main.active_oaths = ["pauvrete"]
 	main.start_run("melee")
-	assert(main.player.powers.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
+	assert(main.player.relics.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
 	main.active_oaths = []
 	GameState.knowledge_nodes = []
 	print("OK Phase 1.10: le Serment de Pauvreté annule bien le Pacte de Pouvoir")
@@ -374,7 +374,7 @@ func _ready() -> void:
 	# Isole ce test d'un Pacte de Pouvoir "Cœur de Verre" (+50% ATK, potentiellement
 	# accordé au hasard au démarrage) : son arrondi rendrait le delta de +5 à plat
 	# non exact et casserait les comparaisons ci-dessous.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	main.unequip_item("arme")   # retire l'arme de loadout pour une base propre
 	main.inventory.clear()
 	var atk0 = main.player.atk
@@ -445,7 +445,7 @@ func _ready() -> void:
 		GameState.buy_upgrade("instinct")
 	assert(GameState.is_maxed("instinct") and not GameState.buy_upgrade("instinct"), "achat bloqué au plafond")
 	main.start_run("melee")
-	assert(main.player.artifacts.size() >= 1, "Héritage : artefact de départ accordé")
+	assert(main.player.relics.size() >= 1, "Héritage : artefact de départ accordé")
 	assert(main.player.talents.size() >= 1, "Instinct : talent de départ accordé")
 	assert(main.run_shards >= GameState.bonus_start_shards() and main.run_shards > 0, "Fortune : Éclats de départ")
 	print("OK méta élargie: bonus de départ appliqués, plafonds respectés")
@@ -621,7 +621,7 @@ func _ready() -> void:
 
 	# --- Phase 3 : pouvoirs passifs (cumul illimité, exclusions, drops) -----------
 	main.start_run("melee")
-	main.player.powers.clear()
+	main.player.relics.clear()
 	var pdrone = {}
 	var pturret = {}
 	var pglass = {}
@@ -630,14 +630,14 @@ func _ready() -> void:
 		if d["id"] == "turret": pturret = d
 		if d["id"] == "coeur_de_verre": pglass = d
 	main._acquire_power(pdrone)
-	assert(main.player.has_power("drone"), "pouvoir drone acquis")
+	assert(main.player.has_relic("drone"), "pouvoir drone acquis")
 	main._acquire_power(pdrone)
-	assert(main.player.powers.size() == 1, "doublon de pouvoir refusé (Éclats à la place)")
+	assert(main.player.relics.size() == 1, "doublon de pouvoir refusé (Éclats à la place)")
 	main._acquire_power(pglass)
-	assert(main.player.has_power("coeur_de_verre"), "cœur de verre acquis (cumul avec drone)")
+	assert(main.player.has_relic("coeur_de_verre"), "cœur de verre acquis (cumul avec drone)")
 	var atk_before = main.player.atk
 	main._acquire_power(pturret)
-	assert(not main.player.has_power("turret"), "tourelle refusée : exclusion mutuelle avec cœur de verre")
+	assert(not main.player.has_relic("turret"), "tourelle refusée : exclusion mutuelle avec cœur de verre")
 	assert(main.player.atk == atk_before, "stats inchangées après refus d'un pouvoir exclu")
 
 	# Le drone tire automatiquement sur l'ennemi le plus proche après l'action du joueur.
@@ -652,7 +652,7 @@ func _ready() -> void:
 	assert(de.hp < hp_before_drone, "le drone tire automatiquement sur l'ennemi le plus proche")
 
 	# Venin : applique un poison automatique sur les attaques.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	main._acquire_power(pdrone)   # gardé inerte: pas de venin -> pas de poison
 	main.enemies.clear()
 	var dv = Entity.new()
@@ -680,7 +680,7 @@ func _ready() -> void:
 	# Pacte de Pouvoir : le run démarre avec un pouvoir.
 	main.active_oaths = []
 	main.start_run("melee")
-	assert(main.player.powers.size() >= 1, "Pacte de Pouvoir : pouvoir de départ accordé")
+	assert(main.player.relics.size() >= 1, "Pacte de Pouvoir : pouvoir de départ accordé")
 	# Serments : nécessitent le nœud 'serments' ; les majeurs un palier de plus.
 	assert(GameState.buy_knowledge_node("serments"), "achat du nœud Serments")
 	main.active_oaths = []
@@ -720,13 +720,13 @@ func _ready() -> void:
 
 	# --- Phase 5 (2/2) : Codex, découvertes, Forge, Œil du Devin -------------------
 	GameState.knowledge = 100
-	GameState.discovered = { "skill": {}, "power": {}, "unique": {} }
-	assert(not GameState.note_discovery("power", "drone"), "sans Codex, aucune découverte enregistrée")
+	GameState.discovered = { "skill": {}, "relic": {}, "unique": {}, "monster": {} }
+	assert(not GameState.note_discovery("relic", "drone"), "sans Codex, aucune découverte enregistrée")
 	assert(GameState.buy_knowledge_node("codex"), "achat du nœud Codex")
 	var k0 = GameState.knowledge
-	assert(GameState.note_discovery("power", "drone"), "1ʳᵉ découverte enregistrée")
+	assert(GameState.note_discovery("relic", "drone"), "1ʳᵉ découverte enregistrée")
 	assert(GameState.knowledge == k0 + 1, "une découverte inédite rapporte +1 Connaissance")
-	assert(not GameState.note_discovery("power", "drone"), "doublon de découverte ignoré")
+	assert(not GameState.note_discovery("relic", "drone"), "doublon de découverte ignoré")
 	# Forge : renforce le bonus d'une pièce équipée.
 	assert(GameState.buy_knowledge_node("forge"), "achat du nœud Forge")
 	main.start_run("melee")
@@ -802,7 +802,7 @@ func _ready() -> void:
 	# haut) : un pouvoir de départ comme le Drone attaquerait automatiquement à
 	# chaque tour et pourrait achever un monstre fragile (ex. Chauve-souris,
 	# 9 PV) avant la fin des 14 tours, faussant l'objectif du test.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	var new_count := 0
 	for edef in Data.ENEMIES:
 		if not edef.has("ai"):
@@ -1196,14 +1196,13 @@ func _ready() -> void:
 
 	# --- Phase 7.7 : la sidebar ne reconstruit ses sections que si le contenu change ---
 	# (section Reliques unifiée depuis la Phase 6.4)
-	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
-	main.player.powers = []
+	main.player.relics = [main._tag_relic(Data.ARTIFACTS[0], "artifact")]
 	main.hud.refresh()
 	var art_child_before: int = main.hud.relic_box.get_child_count()
 	var art_id_before: int = main.hud.relic_box.get_child(0).get_instance_id()
 	main.hud.refresh()   # rien n'a changé côté reliques
 	assert(main.hud.relic_box.get_child_count() == art_child_before and main.hud.relic_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement de reliques ne recrée pas les nœuds de la sidebar")
-	main.player.artifacts = []
+	main.player.relics = []
 	main.hud.refresh()
 	assert(main.hud.relic_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les reliques changent")
 	print("OK Phase 7.7: sections sidebar (reliques/synergies/états) mises en cache par empreinte")
@@ -1289,9 +1288,9 @@ func _ready() -> void:
 	assert(Data.POWERS.size() >= 12, "pool de pouvoirs élargi (≥12)")
 	assert(Data.EVENTS.size() >= 20, "pool d'événements élargi (≥20)")
 	assert(Data.CONSUMABLES.size() >= 10, "pool de consommables élargi (≥10)")
-	# Chaque artefact/pouvoir à mod déclaré a bien une entrée de mods.
+	# Chaque artefact a bien une entrée dans la table de mods unifiée.
 	for a in Data.ARTIFACTS:
-		assert(Data.ARTIFACT_MODS.has(a["id"]), "l'artefact %s a une entrée ARTIFACT_MODS" % a["id"])
+		assert(Data.RELIC_MODS.has(a["id"]), "l'artefact %s a une entrée RELIC_MODS" % a["id"])
 	# Antidote : purge les DoT de la joueuse.
 	main.start_run("melee")
 	main.apply_poison(main.player, 3, 4.0)
@@ -1320,16 +1319,20 @@ func _ready() -> void:
 		if String(r.get("tier", "")) == "artifact": n_art_tier += 1
 		elif String(r.get("tier", "")) == "power": n_pow_tier += 1
 	assert(n_art_tier == Data.ARTIFACTS.size() and n_pow_tier == Data.POWERS.size(), "chaque relique porte le bon tier")
-	assert(Data.relic_mods("griffe_acier").get("atk", 0) == 4, "relic_mods lit la table des artefacts")
-	assert(Data.relic_mods("fureur").get("atk_pct", 0.0) > 0.0, "relic_mods lit la table des pouvoirs")
-	# La section sidebar unifiée liste artefacts ET pouvoirs.
-	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
-	main.player.powers = [Data.POWERS[0].duplicate()]
+	assert(Data.relic_mods("griffe_acier").get("atk", 0) == 4, "relic_mods lit la table (côté artefact)")
+	assert(Data.relic_mods("fureur").get("atk_pct", 0.0) > 0.0, "relic_mods lit la table (côté pouvoir)")
+	# Stockage unifié player.relics + section sidebar unique listant les deux tiers.
+	main.player.relics = [main._tag_relic(Data.ARTIFACTS[0], "artifact"), main._tag_relic(Data.POWERS[0], "power")]
 	main.hud.refresh()
 	assert(main.hud.relic_box.get_child_count() >= 4, "la section Reliques liste artefacts + pouvoirs")
-	main.player.artifacts = []
-	main.player.powers = []
-	print("OK Phase 6.4: registre Reliques unifié (tier, relic_mods) + section sidebar unique")
+	# Un pouvoir à profil de stats appliqué via player.relics modifie bien les stats
+	# (recompute_stats lit RELIC_MODS par id, quel que soit le tier).
+	main.player.relics = [{ "id": "celerite_omega", "tier": "power" }]
+	main.player.recompute_stats()
+	assert(main.player.speed >= main.player.base_speed + 40, "un pouvoir dans player.relics applique ses mods (célérité +40)")
+	main.player.relics = []
+	main.player.recompute_stats()
+	print("OK Phase 6.4: stockage player.relics unifié (tier, RELIC_MODS, recompute_stats) + section sidebar unique")
 
 	# --- Phase 6.6 : alignement biome ↔ strate ----------------------------------
 	# Le biome dérive de map_act : change toutes les 2 strates, frontières alignées

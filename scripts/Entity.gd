@@ -65,8 +65,9 @@ var base_vision: int = 4
 
 # --- Sources de modificateurs (héros) ---
 var equipment: Dictionary = {}   # slot -> item dict
-var artifacts: Array = []        # Array[dict] (capacités passives)
-var powers: Array = []           # Array[dict] (pouvoirs passifs, Phase 3 — cumul illimité)
+# Phase 6.4 : artefacts et pouvoirs fusionnés en UNE liste de « reliques ».
+# Chaque entrée porte un champ "tier" ("artifact"/"power") pour l'affichage.
+var relics: Array = []           # Array[dict] (capacités/pouvoirs passifs)
 var talents: Array = []          # Array[dict] (choix de montée de niveau)
 
 # --- Progression de run (héros) ---
@@ -180,15 +181,11 @@ func has_talent_hook(hook: String) -> bool:
 			return true
 	return false
 
-func has_artifact(id: String) -> bool:
-	for a in artifacts:
-		if a.get("id", "") == id:
-			return true
-	return false
-
-func has_power(id: String) -> bool:
-	for p in powers:
-		if p.get("id", "") == id:
+## Phase 6.4 : une relique (artefact OU pouvoir) est-elle active ? Les ids sont
+## uniques sur l'ensemble fusionné, donc ce test remplace has_artifact/has_power.
+func has_relic(id: String) -> bool:
+	for r in relics:
+		if r.get("id", "") == id:
 			return true
 	return false
 
@@ -244,17 +241,17 @@ func recompute_stats() -> void:
 		_apply_mods(it.get("bonus", {}))
 		if it.get("proc", "") != "":
 			procs.append({ "id": it["proc"], "value": it.get("proc_val", 0.0) })
-	for a in artifacts:
-		_apply_mods(Data.ARTIFACT_MODS.get(a.get("id", ""), {}))
 	for t in talents:
 		_apply_mods(t.get("mods", {}))
+	# Phase 6.4 : reliques unifiées (artefacts + pouvoirs) via Data.RELIC_MODS.
+	# Les artefacts n'ont pas de clés atk_pct/max_hp_pct → += 0, sans effet.
 	var atk_pct: float = 0.0
 	var max_hp_pct: float = 0.0
-	for pw in powers:
-		var pm: Dictionary = Data.POWER_MODS.get(pw.get("id", ""), {})
-		_apply_mods(pm)
-		atk_pct += float(pm.get("atk_pct", 0.0))
-		max_hp_pct += float(pm.get("max_hp_pct", 0.0))
+	for r in relics:
+		var rm: Dictionary = Data.RELIC_MODS.get(r.get("id", ""), {})
+		_apply_mods(rm)
+		atk_pct += float(rm.get("atk_pct", 0.0))
+		max_hp_pct += float(rm.get("max_hp_pct", 0.0))
 	if atk_pct != 0.0:
 		atk = int(round(atk * (1.0 + atk_pct)))
 	if max_hp_pct != 0.0:

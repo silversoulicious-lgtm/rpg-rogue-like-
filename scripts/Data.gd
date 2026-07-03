@@ -832,8 +832,11 @@ const ARTIFACTS := [
 	  "desc": "+2 rayon de vision." },
 ]
 
-# Effets des artefacts, exprimés comme modificateurs (lus par Entity.recompute_stats).
-const ARTIFACT_MODS := {
+# Phase 6.4 : table de modificateurs UNIFIÉE (artefacts + pouvoirs), lue par
+# Entity.recompute_stats. Les entrées "*_pct" (atk_pct/max_hp_pct) ne concernent
+# que certains pouvoirs ; les artefacts n'en portent pas.
+const RELIC_MODS := {
+	# artefacts
 	"lifesteal": { "lifesteal_pct": 0.30 },
 	"thorns":    { "thorns_flat": 4 },
 	"crit":      { "crit_chance": 0.25 },
@@ -849,6 +852,15 @@ const ARTIFACT_MODS := {
 	"coeur_ardent":     { "crit_chance": 0.15 },
 	"sang_vif":         { "lifesteal_pct": 0.15 },
 	"oeil_faucon":      { "vision": 2 },
+	# pouvoirs
+	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
+	"garde_de_fer":   { "defense": 6, "max_hp_pct": 0.20 },
+	"fureur":         { "atk_pct": 0.30, "max_hp_pct": -0.10 },
+	"oeil_percant":   { "vision": 2, "crit_chance": 0.20 },
+	"sangsue_omega":  { "lifesteal_pct": 0.25 },
+	"celerite_omega": { "speed": 40 },
+	"carapace_epineuse": { "thorns_flat": 8 },
+	"arcaniste":      { "ability_power": 6, "ability_cd": -1 },
 }
 
 # --- POUVOIRS (Phase 3, drops rares, scope = run) -----------------------------
@@ -866,7 +878,7 @@ const POWERS := [
 	  "desc": "Chaque ennemi tué près de toi explose, infligeant des dégâts en zone aux alentours." },
 	{ "id": "venin", "name": "Glande à Venin", "color": Color(0.55, 0.9, 0.4), "excludes": [],
 	  "desc": "Chacune de tes attaques empoisonne sa cible." },
-	# --- Phase 6.3 : pouvoirs à profil de stats (cumulables, via POWER_MODS) ---
+	# --- Phase 6.3 : pouvoirs à profil de stats (cumulables, via RELIC_MODS) ---
 	{ "id": "garde_de_fer", "name": "Garde de Fer", "color": Color(0.6, 0.7, 0.85), "excludes": ["coeur_de_verre"],
 	  "desc": "+6 Défense et +20% PV max. La tour ne t'abattra pas." },
 	{ "id": "fureur", "name": "Fureur Sanguine", "color": Color(0.95, 0.35, 0.35), "excludes": [],
@@ -883,22 +895,11 @@ const POWERS := [
 	  "desc": "+6 puissance de capacité et −1 recharge." },
 ]
 
-# Effets des pouvoirs exprimables en modificateurs de stats simples.
-const POWER_MODS := {
-	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
-	"garde_de_fer":   { "defense": 6, "max_hp_pct": 0.20 },
-	"fureur":         { "atk_pct": 0.30, "max_hp_pct": -0.10 },
-	"oeil_percant":   { "vision": 2, "crit_chance": 0.20 },
-	"sangsue_omega": { "lifesteal_pct": 0.25 },
-	"celerite_omega": { "speed": 40 },
-	"carapace_epineuse": { "thorns_flat": 8 },
-	"arcaniste":      { "ability_power": 6, "ability_cd": -1 },
-}
-
 # --- RELIQUES (Phase 6.4) -----------------------------------------------------
 # Registre unifié : artefacts ∪ pouvoirs, chaque entrée taguée d'un "tier"
-# ("artifact"/"power"). Le stockage reste double côté Entity (compat wrappers
-# has_artifact/has_power), mais le catalogue et l'affichage sont unifiés.
+# ("artifact"/"power"). ARTIFACTS et POWERS restent les listes de DÉFINITIONS
+# (pickers, boutique, codex) ; relics() en est la vue fusionnée, RELIC_MODS la
+# table de mods unique. player.relics est le stockage unique côté Entity.
 static func relics() -> Array:
 	var out: Array = []
 	for a in ARTIFACTS:
@@ -911,11 +912,16 @@ static func relics() -> Array:
 		out.append(dp)
 	return out
 
-## Modificateurs de stats d'une relique, quel que soit son tier (fusion des deux tables).
+## Modificateurs de stats d'une relique (vue directe sur la table unifiée).
 static func relic_mods(id: String) -> Dictionary:
-	if ARTIFACT_MODS.has(id):
-		return ARTIFACT_MODS[id]
-	return POWER_MODS.get(id, {})
+	return RELIC_MODS.get(id, {})
+
+## Tier d'une relique d'après son id ("artifact"/"power"), pour l'affichage.
+static func relic_tier(id: String) -> String:
+	for a in ARTIFACTS:
+		if String(a.get("id", "")) == id:
+			return "artifact"
+	return "power"
 
 # --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
 # Chaque choix porte un "type" interprété par Main._apply_event_effect.
