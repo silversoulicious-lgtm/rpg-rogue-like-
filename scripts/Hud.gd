@@ -48,8 +48,7 @@ var turn_strip: HBoxContainer
 var _turn_strip_ids: Array = []      # cache : ne reconstruit que si l'ordre a changé
 # Empreintes des sections sidebar reconstruites à chaque refresh() (plusieurs
 # fois par tour) — ne reconstruire les nœuds que si le contenu a changé.
-var _artifact_fp: String = ""
-var _power_fp: String = ""
+var _relic_fp: String = ""
 var _synergy_fp: String = ""
 var _status_fp: String = ""
 # Sidebar
@@ -62,8 +61,7 @@ var hp_text: Label
 var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
 var equip_panel: Control
-var artifact_box: VBoxContainer
-var power_box: VBoxContainer
+var relic_box: VBoxContainer     # Phase 6.4 : artefacts + pouvoirs unifiés
 var synergy_box: VBoxContainer
 var status_box: VBoxContainer
 var inspect_box: VBoxContainer
@@ -150,10 +148,9 @@ func _build_sidebar() -> void:
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
 	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
 	v.add_child(equip_panel)
-	v.add_child(_section("ARTEFACTS"))
-	artifact_box = Ui.vbox(5); v.add_child(artifact_box)
-	v.add_child(_section("POUVOIRS"))
-	power_box = Ui.vbox(5); v.add_child(power_box)
+	# Phase 6.4 : artefacts et pouvoirs fusionnés en une seule section « Reliques ».
+	v.add_child(_section("RELIQUES"))
+	relic_box = Ui.vbox(5); v.add_child(relic_box)
 	v.add_child(_section("SYNERGIES"))
 	synergy_box = Ui.vbox(4); v.add_child(synergy_box)
 	v.add_child(Ui.label("[I] Inventaire", 11, Color(0.45, 0.65, 0.88)))
@@ -1118,8 +1115,7 @@ func refresh() -> void:
 		sb_ability.add_theme_color_override("font_color", Color(0.85, 0.85, 0.5))
 
 	_rebuild_equip()
-	_rebuild_artifacts()
-	_rebuild_powers()
+	_rebuild_relics()
 	_rebuild_synergies()
 	_rebuild_statuses()
 	_rebuild_turn_strip()
@@ -1166,35 +1162,28 @@ func _rebuild_turn_strip() -> void:
 func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
 
-func _rebuild_artifacts() -> void:
-	var items: Array = game.player.artifacts
-	var fp: String = ",".join(items.map(func(a): return str(a.get("name", "?"))))
-	if fp == _artifact_fp:
+## Phase 6.4 : une seule section « Reliques » listant artefacts (✦) puis
+## pouvoirs (Ω). Le stockage reste double côté Entity (compat) ; l'affichage,
+## lui, est unifié comme le veut le guide.
+func _rebuild_relics() -> void:
+	var arts: Array = game.player.artifacts
+	var pows: Array = game.player.powers
+	var fp: String = ",".join(arts.map(func(a): return "a:" + str(a.get("name", "?")))) \
+		+ ";" + ",".join(pows.map(func(p): return "p:" + str(p.get("name", "?"))))
+	if fp == _relic_fp:
 		return
-	_artifact_fp = fp
-	for c in artifact_box.get_children():
+	_relic_fp = fp
+	for c in relic_box.get_children():
 		c.queue_free()
-	if items.is_empty():
-		artifact_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
+	if arts.is_empty() and pows.is_empty():
+		relic_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for a in items:
-		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
-		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
-
-func _rebuild_powers() -> void:
-	var items: Array = game.player.powers
-	var fp: String = ",".join(items.map(func(p): return str(p.get("name", "?"))))
-	if fp == _power_fp:
-		return
-	_power_fp = fp
-	for c in power_box.get_children():
-		c.queue_free()
-	if items.is_empty():
-		power_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
-		return
-	for p in items:
-		power_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
-		power_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+	for a in arts:
+		relic_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
+		relic_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+	for p in pows:
+		relic_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
+		relic_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
 	var syns: Array = game.player.active_synergies

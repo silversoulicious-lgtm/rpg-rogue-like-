@@ -887,6 +887,28 @@ const POWER_MODS := {
 	"arcaniste":      { "ability_power": 6, "ability_cd": -1 },
 }
 
+# --- RELIQUES (Phase 6.4) -----------------------------------------------------
+# Registre unifié : artefacts ∪ pouvoirs, chaque entrée taguée d'un "tier"
+# ("artifact"/"power"). Le stockage reste double côté Entity (compat wrappers
+# has_artifact/has_power), mais le catalogue et l'affichage sont unifiés.
+static func relics() -> Array:
+	var out: Array = []
+	for a in ARTIFACTS:
+		var da: Dictionary = a.duplicate(true)
+		da["tier"] = "artifact"
+		out.append(da)
+	for p in POWERS:
+		var dp: Dictionary = p.duplicate(true)
+		dp["tier"] = "power"
+		out.append(dp)
+	return out
+
+## Modificateurs de stats d'une relique, quel que soit son tier (fusion des deux tables).
+static func relic_mods(id: String) -> Dictionary:
+	if ARTIFACT_MODS.has(id):
+		return ARTIFACT_MODS[id]
+	return POWER_MODS.get(id, {})
+
 # --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
 # Chaque choix porte un "type" interprété par Main._apply_event_effect.
 const EVENTS := [

@@ -1195,16 +1195,18 @@ func _ready() -> void:
 	print("OK Phase 7.5: sprites legacy absents, plus de collision de glyphe Drake/Kobold ni Ours/boss")
 
 	# --- Phase 7.7 : la sidebar ne reconstruit ses sections que si le contenu change ---
+	# (section Reliques unifiée depuis la Phase 6.4)
 	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
+	main.player.powers = []
 	main.hud.refresh()
-	var art_child_before: int = main.hud.artifact_box.get_child_count()
-	var art_id_before: int = main.hud.artifact_box.get_child(0).get_instance_id()
-	main.hud.refresh()   # rien n'a changé côté artefacts
-	assert(main.hud.artifact_box.get_child_count() == art_child_before and main.hud.artifact_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement d'artefacts ne recrée pas les nœuds de la sidebar")
+	var art_child_before: int = main.hud.relic_box.get_child_count()
+	var art_id_before: int = main.hud.relic_box.get_child(0).get_instance_id()
+	main.hud.refresh()   # rien n'a changé côté reliques
+	assert(main.hud.relic_box.get_child_count() == art_child_before and main.hud.relic_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement de reliques ne recrée pas les nœuds de la sidebar")
 	main.player.artifacts = []
 	main.hud.refresh()
-	assert(main.hud.artifact_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les artefacts changent")
-	print("OK Phase 7.7: sections sidebar (artefacts/pouvoirs/synergies/états) mises en cache par empreinte")
+	assert(main.hud.relic_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les reliques changent")
+	print("OK Phase 7.7: sections sidebar (reliques/synergies/états) mises en cache par empreinte")
 
 	# --- Phase 5.2 : leviers d'échelle, XP découplée, filtre max_floor ----------
 	# Courbe d'XP quadratique.
@@ -1308,6 +1310,26 @@ func _ready() -> void:
 	main.open_event()
 	assert(not main.current_event.is_empty(), "open_event choisit toujours un événement (filtre biome non vide)")
 	print("OK Phase 6.3: pools élargis (artefacts/pouvoirs/événements/consommables), antidote/huile/rappel/bombe câblés")
+
+	# --- Phase 6.4 : registre unifié Reliques + section sidebar unique ----------
+	var relics: Array = Data.relics()
+	assert(relics.size() == Data.ARTIFACTS.size() + Data.POWERS.size(), "RELICS = artefacts ∪ pouvoirs")
+	var n_art_tier: int = 0
+	var n_pow_tier: int = 0
+	for r in relics:
+		if String(r.get("tier", "")) == "artifact": n_art_tier += 1
+		elif String(r.get("tier", "")) == "power": n_pow_tier += 1
+	assert(n_art_tier == Data.ARTIFACTS.size() and n_pow_tier == Data.POWERS.size(), "chaque relique porte le bon tier")
+	assert(Data.relic_mods("griffe_acier").get("atk", 0) == 4, "relic_mods lit la table des artefacts")
+	assert(Data.relic_mods("fureur").get("atk_pct", 0.0) > 0.0, "relic_mods lit la table des pouvoirs")
+	# La section sidebar unifiée liste artefacts ET pouvoirs.
+	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
+	main.player.powers = [Data.POWERS[0].duplicate()]
+	main.hud.refresh()
+	assert(main.hud.relic_box.get_child_count() >= 4, "la section Reliques liste artefacts + pouvoirs")
+	main.player.artifacts = []
+	main.player.powers = []
+	print("OK Phase 6.4: registre Reliques unifié (tier, relic_mods) + section sidebar unique")
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
