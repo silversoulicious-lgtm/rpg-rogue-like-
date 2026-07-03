@@ -44,6 +44,7 @@ var current_choice: String = ""
 var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
+var oil_fire_turns: int = 0            # Huile ardente (Phase 6.3) : tours de brûlure-au-contact restants
 
 # Compétences (Phase 2)
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
@@ -282,6 +283,7 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	run_best_hit = 0
 	run_best_item = {}
 	run_bosses = 0
+	oil_fire_turns = 0
 	pending_levelups = 0
 	last_damage_source = ""
 	run_timeline.clear()
@@ -1689,6 +1691,9 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
 	if player.has_power("venin") and target.is_alive():
 		apply_poison(target, 3, maxf(1.0, round(float(dealt) * 0.25)))
+	# Huile ardente (Phase 6.3) : brûlure au contact tant que le buff est actif.
+	if oil_fire_turns > 0 and target.is_alive():
+		apply_burn(target, 2, maxf(1.0, 2.0 + floor_num * 0.2))
 	if player.lifesteal_pct > 0.0 and dealt > 0:
 		var healed: int = int(ceil(dealt * player.lifesteal_pct))
 		if healed > 0:
@@ -2069,6 +2074,44 @@ func use_consumable(item: Dictionary) -> void:
 			var s: int = int(item["value"])
 			run_shards += s
 			add_message("[color=#ffd24a]%s : +%d Éclats.[/color]" % [item["name"], s])
+		"bomb":
+			# Phase 6.3 : explose en zone sur l'ennemi visible le plus proche
+			# (à défaut, sur la joueuse — auto-dégât possible, c'est une bombe).
+			var bt: Entity = _nearest_enemy_in_range(8)
+			var center: Vector2i = bt.pos() if bt != null else player.pos()
+			var radius: int = int(item.get("radius", 2))
+			var boom: int = maxi(4, player.atk + player.ability_power + floor_num)
+			Sfx.play("danger")
+			aoe_attack(center, radius, boom, "%s explose sur" % item["name"])
+			ignite_area(center, radius)
+			add_message("[color=#ff8a4a]%s détone (rayon %d) ![/color]" % [item["name"], radius])
+		"cure":
+			var removed: Array = []
+			for st in player.statuses.duplicate():
+				var sid: String = String(st["id"])
+				if sid == "poison" or sid == "burn" or sid == "bleed" or sid == "disease":
+					player.statuses.erase(st)
+					removed.append(sid)
+			Sfx.play("heal")
+			if removed.is_empty():
+				add_message("[color=#9fdf9f]%s : rien à purger.[/color]" % item["name"])
+			else:
+				add_message("[color=#9fdf9f]%s purge tes maux (%d).[/color]" % [item["name"], removed.size()])
+		"recall":
+			var dest: Vector2i = _random_walkable_near(dungeon.stairs, 2) if dungeon != null else NO_TILE
+			if dest == NO_TILE:
+				add_message("[color=#9fb8ff]%s grésille sans effet.[/color]" % item["name"])
+			else:
+				player.x = dest.x
+				player.y = dest.y
+				dungeon.reveal(player.pos(), player.vision)
+				if map_view != null:
+					map_view.snap_entity(player)
+				_pickup_loot_at(player.pos())
+				add_message("[color=#9fb8ff]%s : te voilà près de l'escalier.[/color]" % item["name"])
+		"oil_fire":
+			oil_fire_turns = int(item.get("value", 20))
+			add_message("[color=#ff9a5a]%s : tes coups brûlent pour %d tours.[/color]" % [item["name"], oil_fire_turns])
 	inventory.erase(item)
 	refresh()
 
@@ -2143,6 +2186,8 @@ func _trigger_powers() -> void:
 
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:
+	if oil_fire_turns > 0:
+		oil_fire_turns -= 1
 	_tick_terrain()
 	player.energy -= Entity.ACTION_COST
 	_begin_turn(player)
@@ -2710,7 +2755,18 @@ func leave_shop() -> void:
 func open_event() -> void:
 	state = State.CHOICE
 	current_choice = "event"
-	current_event = Data.EVENTS[rng.randi_range(0, Data.EVENTS.size() - 1)]
+	# Phase 6.3 : les événements thématiques (champ "biome") ne sortent que dans
+	# le biome de l'étage À VENIR ; les génériques (sans "biome") sont toujours
+	# éligibles. Les événements se déclenchent entre deux étages.
+	var upcoming: String = String(Data.biome_for_floor(floor_num + 1).get("id", ""))
+	var pool: Array = []
+	for ev in Data.EVENTS:
+		var b: String = String(ev.get("biome", ""))
+		if b == "" or b == upcoming:
+			pool.append(ev)
+	if pool.is_empty():
+		pool = Data.EVENTS
+	current_event = pool[rng.randi_range(0, pool.size() - 1)]
 	hud.show_event(current_event)
 
 func resolve_event(choice_idx: int) -> void:

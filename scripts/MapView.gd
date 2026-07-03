@@ -565,6 +565,12 @@ func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
 
 ## Variante de _blit_ex à position PIXEL absolue (mouvement animé glissé, cf.
 ## _vis_pos ; `px` inclut déjà le décalage bob d'idle / bond d'attaque).
+## Recale la position visuelle glissée d'une entité sur sa case logique — à
+## appeler après un déplacement instantané (téléportation/rappel) pour éviter
+## qu'elle « glisse » à travers la carte.
+func snap_entity(e) -> void:
+	_vis_pos[e.get_instance_id()] = Vector2(e.x * CELL, e.y * CELL)
+
 func _blit_ex_px(name: String, px: Vector2, flip: bool, modulate: Color = Color.WHITE) -> bool:
 	if name == "" or not tex.has(name):
 		return false

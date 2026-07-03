@@ -1282,6 +1282,33 @@ func _ready() -> void:
 	assert(main.run_shards == shards_pre_death + 4, "Voleur : Éclats dérobés restitués à sa mort")
 	print("OK Phase 6.2: affixes d'élite (teinte, +15% PV, préfixe de nom, Voleur vol/restitution)")
 
+	# --- Phase 6.3 : élargissement des pools + nouveaux consommables ------------
+	assert(Data.ARTIFACTS.size() >= 15, "pool d'artefacts élargi (≥15)")
+	assert(Data.POWERS.size() >= 12, "pool de pouvoirs élargi (≥12)")
+	assert(Data.EVENTS.size() >= 20, "pool d'événements élargi (≥20)")
+	assert(Data.CONSUMABLES.size() >= 10, "pool de consommables élargi (≥10)")
+	# Chaque artefact/pouvoir à mod déclaré a bien une entrée de mods.
+	for a in Data.ARTIFACTS:
+		assert(Data.ARTIFACT_MODS.has(a["id"]), "l'artefact %s a une entrée ARTIFACT_MODS" % a["id"])
+	# Antidote : purge les DoT de la joueuse.
+	main.start_run("melee")
+	main.apply_poison(main.player, 3, 4.0)
+	main.apply_burn(main.player, 3, 4.0)
+	assert(main.player.has_status("poison") and main.player.has_status("burn"), "DoT posés avant antidote")
+	main.use_consumable({ "id": "antidote", "name": "Antidote", "effect": "cure", "kind": "consumable" })
+	assert(not main.player.has_status("poison") and not main.player.has_status("burn"), "Antidote purge poison et brûlure")
+	# Huile ardente : arme la brûlure au contact pour N tours.
+	main.use_consumable({ "id": "huile_ardente", "name": "Huile ardente", "effect": "oil_fire", "value": 20, "kind": "consumable" })
+	assert(main.oil_fire_turns == 20, "Huile ardente : 20 tours de brûlure-au-contact armés")
+	var oil_target: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(9, 9))
+	main._player_attack(oil_target, 3, "test")
+	assert(oil_target.has_status("burn"), "sous Huile ardente, l'attaque de base enflamme la cible")
+	# Événements : le filtre par biome ne renvoie jamais un pool vide.
+	main.floor_num = 5
+	main.open_event()
+	assert(not main.current_event.is_empty(), "open_event choisit toujours un événement (filtre biome non vide)")
+	print("OK Phase 6.3: pools élargis (artefacts/pouvoirs/événements/consommables), antidote/huile/rappel/bombe câblés")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

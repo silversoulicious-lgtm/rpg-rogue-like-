@@ -730,9 +730,20 @@ static func _pick_rarity(floor: int, rng: RandomNumberGenerator) -> Dictionary:
 # --- CONSOMMABLES (drops, scope = run) ----------------------------------------
 const CONSUMABLES := [
 	{ "id": "potion",  "name": "Potion de soin",   "effect": "heal_pct",  "value": 0.40, "weight": 5.0, "color": Color(0.95, 0.3, 0.4) },
+	{ "id": "potion_m","name": "Potion majeure",   "effect": "heal_pct",  "value": 0.55, "weight": 3.5, "color": Color(0.95, 0.3, 0.4) },
 	{ "id": "potion_g","name": "Grande potion",    "effect": "heal_pct",  "value": 0.75, "weight": 3.0, "color": Color(0.95, 0.3, 0.4) },
 	{ "id": "elixir",  "name": "Élixir de vie",    "effect": "heal_full", "value": 1.0,  "weight": 1.0, "color": Color(0.9, 0.5, 0.9) },
 	{ "id": "crystal", "name": "Cristal d'Éclats", "effect": "shards",    "value": 12.0, "weight": 2.0, "color": Color(1.0, 0.85, 0.35) },
+	{ "id": "crystal_g","name": "Géode d'Éclats",  "effect": "shards",    "value": 25.0, "weight": 1.2, "color": Color(1.0, 0.85, 0.35) },
+	# --- Phase 6.3 : consommables actifs (effets gérés par Main.use_consumable) ---
+	{ "id": "bombe",   "name": "Bombe incendiaire","effect": "bomb",      "value": 0.0,  "weight": 2.5, "color": Color(1.0, 0.5, 0.2), "radius": 2,
+	  "desc": "Explose en zone (rayon 2) sur l'ennemi visible le plus proche." },
+	{ "id": "antidote","name": "Antidote",         "effect": "cure",      "value": 0.0,  "weight": 2.0, "color": Color(0.5, 0.9, 0.5),
+	  "desc": "Purge poison, brûlure, saignement et maladie." },
+	{ "id": "rappel",  "name": "Parchemin de rappel","effect": "recall",  "value": 0.0,  "weight": 1.5, "color": Color(0.6, 0.8, 1.0),
+	  "desc": "Te téléporte près de l'escalier de l'étage." },
+	{ "id": "huile_ardente","name": "Huile ardente","effect": "oil_fire", "value": 20.0, "weight": 2.0, "color": Color(1.0, 0.55, 0.3),
+	  "desc": "Pendant 20 tours, tes attaques enflamment leur cible." },
 ]
 
 static func generate_consumable(floor: int, rng: RandomNumberGenerator) -> Dictionary:
@@ -790,6 +801,27 @@ const ARTIFACTS := [
 	  "desc": "20% de chances d'esquiver complètement une attaque." },
 	{ "id": "phoenix",   "name": "Plume de Phénix",    "min_floor": 5, "color": Color(1.0, 0.75, 0.25),
 	  "desc": "Une fois par run : ressuscite à 50% PV au lieu de mourir." },
+	# --- Phase 6.3 : élargissement du pool (artefacts à stat passive) ---
+	{ "id": "vigueur_ancienne", "name": "Cœur de Titan",    "min_floor": 2, "color": Color(0.85, 0.4, 0.4),
+	  "desc": "+25 PV max." },
+	{ "id": "griffe_acier",     "name": "Griffe d'Acier",   "min_floor": 2, "color": Color(0.8, 0.8, 0.85),
+	  "desc": "+4 Attaque." },
+	{ "id": "plastron_runique", "name": "Plastron Runique",  "min_floor": 3, "color": Color(0.55, 0.7, 0.9),
+	  "desc": "+4 Défense." },
+	{ "id": "bottes_vent",      "name": "Bottes du Vent",    "min_floor": 3, "color": Color(0.5, 0.9, 0.85),
+	  "desc": "+30 Vitesse." },
+	{ "id": "amulette_regen",   "name": "Amulette de Sève",  "min_floor": 4, "color": Color(0.5, 0.9, 0.5),
+	  "desc": "+3 Régénération PV/tour." },
+	{ "id": "lentille_arcane",  "name": "Lentille Arcane",   "min_floor": 4, "color": Color(0.7, 0.55, 1.0),
+	  "desc": "+4 puissance de capacité." },
+	{ "id": "talisman_esquive", "name": "Talisman du Zéphyr","min_floor": 3, "color": Color(0.65, 0.85, 1.0),
+	  "desc": "+12% Esquive." },
+	{ "id": "coeur_ardent",     "name": "Braise Éternelle",  "min_floor": 4, "color": Color(1.0, 0.55, 0.3),
+	  "desc": "+15% Coup critique." },
+	{ "id": "sang_vif",         "name": "Fiole de Sang Vif", "min_floor": 5, "color": Color(0.9, 0.25, 0.35),
+	  "desc": "+15% Vol de vie." },
+	{ "id": "oeil_faucon",      "name": "Œil du Faucon",     "min_floor": 3, "color": Color(0.85, 0.8, 0.5),
+	  "desc": "+2 rayon de vision." },
 ]
 
 # Effets des artefacts, exprimés comme modificateurs (lus par Entity.recompute_stats).
@@ -799,6 +831,16 @@ const ARTIFACT_MODS := {
 	"crit":      { "crit_chance": 0.25 },
 	"dodge":     { "dodge_chance": 0.20 },
 	"phoenix":   { "max_revives": 1 },
+	"vigueur_ancienne": { "max_hp": 25 },
+	"griffe_acier":     { "atk": 4 },
+	"plastron_runique": { "defense": 4 },
+	"bottes_vent":      { "speed": 30 },
+	"amulette_regen":   { "hp_regen": 3 },
+	"lentille_arcane":  { "ability_power": 4 },
+	"talisman_esquive": { "dodge_chance": 0.12 },
+	"coeur_ardent":     { "crit_chance": 0.15 },
+	"sang_vif":         { "lifesteal_pct": 0.15 },
+	"oeil_faucon":      { "vision": 2 },
 }
 
 # --- POUVOIRS (Phase 3, drops rares, scope = run) -----------------------------
@@ -816,11 +858,33 @@ const POWERS := [
 	  "desc": "Chaque ennemi tué près de toi explose, infligeant des dégâts en zone aux alentours." },
 	{ "id": "venin", "name": "Glande à Venin", "color": Color(0.55, 0.9, 0.4), "excludes": [],
 	  "desc": "Chacune de tes attaques empoisonne sa cible." },
+	# --- Phase 6.3 : pouvoirs à profil de stats (cumulables, via POWER_MODS) ---
+	{ "id": "garde_de_fer", "name": "Garde de Fer", "color": Color(0.6, 0.7, 0.85), "excludes": ["coeur_de_verre"],
+	  "desc": "+6 Défense et +20% PV max. La tour ne t'abattra pas." },
+	{ "id": "fureur", "name": "Fureur Sanguine", "color": Color(0.95, 0.35, 0.35), "excludes": [],
+	  "desc": "+30% Attaque, mais −10% PV max." },
+	{ "id": "oeil_percant", "name": "Œil Perçant", "color": Color(0.9, 0.8, 0.4), "excludes": [],
+	  "desc": "+2 Vision et +20% Coup critique." },
+	{ "id": "sangsue_omega", "name": "Sangsue Suprême", "color": Color(0.85, 0.2, 0.4), "excludes": [],
+	  "desc": "+25% Vol de vie." },
+	{ "id": "celerite_omega", "name": "Pas du Fantôme", "color": Color(0.5, 0.9, 0.9), "excludes": [],
+	  "desc": "+40 Vitesse." },
+	{ "id": "carapace_epineuse", "name": "Carapace Épineuse", "color": Color(0.7, 0.8, 0.45), "excludes": [],
+	  "desc": "+8 Épines : qui te frappe se blesse." },
+	{ "id": "arcaniste", "name": "Sceau de l'Arcaniste", "color": Color(0.7, 0.55, 1.0), "excludes": [],
+	  "desc": "+6 puissance de capacité et −1 recharge." },
 ]
 
 # Effets des pouvoirs exprimables en modificateurs de stats simples.
 const POWER_MODS := {
 	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
+	"garde_de_fer":   { "defense": 6, "max_hp_pct": 0.20 },
+	"fureur":         { "atk_pct": 0.30, "max_hp_pct": -0.10 },
+	"oeil_percant":   { "vision": 2, "crit_chance": 0.20 },
+	"sangsue_omega": { "lifesteal_pct": 0.25 },
+	"celerite_omega": { "speed": 40 },
+	"carapace_epineuse": { "thorns_flat": 8 },
+	"arcaniste":      { "ability_power": 6, "ability_cd": -1 },
 }
 
 # --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
@@ -854,9 +918,64 @@ const EVENTS := [
 	  "choices": [
 		{ "label": "Se recueillir (+60% PV)", "type": "heal", "value": 0.60 },
 		{ "label": "Méditer (+1 Régén PV/tour ce run)", "type": "stat_regen" } ] },
-]
 
-# --- AMÉLIORATIONS MÉTA (entre les runs) --------------------------------------
+	# --- Phase 6.3 : événements thématiques par biome (champ "biome" optionnel :
+	# filtré sur le biome de l'étage À VENIR, cf. Main.open_event) ---
+	{ "title": "Prairie fleurie", "desc": "Un tapis de fleurs bourdonne d'une vie paisible.", "biome": "plaine",
+	  "choices": [
+		{ "label": "Se reposer dans l'herbe (+35% PV)", "type": "heal", "value": 0.35 },
+		{ "label": "Cueillir des herbes (+1 Régén PV/tour ce run)", "type": "stat_regen" } ] },
+	{ "title": "Clairière sacrée", "desc": "Les arbres s'écartent autour d'une source de lumière verte.", "biome": "foret",
+	  "choices": [
+		{ "label": "Communier (+50% PV)", "type": "heal", "value": 0.50 },
+		{ "label": "Remplir une fiole (1 consommable)", "type": "item_consumable" } ] },
+	{ "title": "Mirage doré", "desc": "Une silhouette scintille dans la cendre chaude — trésor ou illusion ?", "biome": "desert",
+	  "choices": [
+		{ "label": "Courir vers le mirage (pari)", "type": "gamble" },
+		{ "label": "Récupérer des tessons (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Source gelée", "desc": "Sous la glace, une eau ancienne fortifie le corps.", "biome": "toundra",
+	  "choices": [
+		{ "label": "Boire l'eau glaciale (+15 PV max ce run)", "type": "stat_hp" },
+		{ "label": "Se réchauffer (+40% PV)", "type": "heal", "value": 0.40 } ] },
+	{ "title": "Vapeurs putrides", "desc": "Le marais exhale une brume qui offre la puissance contre la chair.", "biome": "marais",
+	  "choices": [
+		{ "label": "Inhaler la brume (+5 ATK, −10 PV max ce run)", "type": "cursed_altar" },
+		{ "label": "Retenir son souffle", "type": "none" } ] },
+	{ "title": "Coulée ardente", "desc": "Tu peux tremper ta lame dans un filet de lave.", "biome": "volcan",
+	  "choices": [
+		{ "label": "Forger dans la lave (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Fouiller les scories (pari)", "type": "gamble" } ] },
+
+	# --- Événements génériques supplémentaires ---
+	{ "title": "Vieux grimoire", "desc": "Un livre de sorts abandonné vibre d'un savoir oublié.",
+	  "choices": [
+		{ "label": "Étudier (1 consommable)", "type": "item_consumable" },
+		{ "label": "Arracher les pages dorées (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Statue brisée", "desc": "Une effigie de héros gît en morceaux ; son aura persiste.",
+	  "choices": [
+		{ "label": "Épouser sa force (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Épouser sa constance (+15 PV max ce run)", "type": "stat_hp" } ] },
+	{ "title": "Puits d'échos", "desc": "Une eau noire et profonde renvoie ton reflet apaisé.",
+	  "choices": [
+		{ "label": "Boire longuement (+50% PV)", "type": "heal", "value": 0.50 },
+		{ "label": "Ne pas troubler l'eau", "type": "none" } ] },
+	{ "title": "Cache de brigands", "desc": "Un butin dissimulé sous une dalle — quelqu'un troque dans l'ombre.",
+	  "choices": [
+		{ "label": "Troquer 20 Éclats contre un artefact", "type": "trade_artifact" },
+		{ "label": "Rafler la menue monnaie (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Reliquaire scellé", "desc": "Un coffret verrouillé promet monts et merveilles — ou un piège.",
+	  "choices": [
+		{ "label": "Briser le sceau (pari)", "type": "gamble" },
+		{ "label": "Le laisser scellé", "type": "none" } ] },
+	{ "title": "Ermite bavard", "desc": "Un vieil ascète propose un pacte contre quelques Éclats.",
+	  "choices": [
+		{ "label": "Payer sa bénédiction (−15 Éclats, +1 résurrection)", "type": "buy_revive" },
+		{ "label": "Le remercier (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Champ de bataille", "desc": "Des armes rouillées jonchent le sol ; l'écho des combats galvanise.",
+	  "choices": [
+		{ "label": "Récupérer une arme (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Panser tes plaies (+30% PV)", "type": "heal", "value": 0.30 } ] },
+]
 const UPGRADES := {
 	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                       "base_cost": 12, "max": 8 },
 	"force":    { "name": "Force",     "desc": "+1 Attaque",                      "base_cost": 15, "max": 8 },
