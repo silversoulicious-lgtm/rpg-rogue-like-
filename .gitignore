@@ -9,6 +9,11 @@
 *.pck
 *.zip
 
+# Downloaded Godot binaries (fetched locally, not committed)
+/tools/Godot_*
+/tools/godot-*.tar.xz
+/tools/godot-*.zip
+
 # Claude Code — artefacts de session (le hook et settings.json restent versionnés)
 .claude/scheduled_tasks.lock
 
