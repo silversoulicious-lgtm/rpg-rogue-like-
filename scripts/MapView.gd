@@ -577,13 +577,13 @@ func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
 func snap_entity(e) -> void:
 	_vis_pos[e.get_instance_id()] = Vector2(e.x * CELL, e.y * CELL)
 
-func _blit_ex_px(name: String, px: Vector2, flip: bool, modulate: Color = Color.WHITE) -> bool:
+func _blit_ex_px(name: String, px: Vector2, flip: bool, mod_color: Color = Color.WHITE) -> bool:
 	if name == "" or not tex.has(name):
 		return false
 	var r := Rect2(px, Vector2(CELL, CELL))
 	if flip:
 		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)
-	draw_texture_rect(tex[name], r, false, modulate)
+	draw_texture_rect(tex[name], r, false, mod_color)
 	return true
 
 ## Choisit la vue d'une entité selon son orientation. Seule Aria possède des
