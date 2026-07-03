@@ -140,7 +140,11 @@ Ouvre l'inventaire (`I`) pour équiper, comparer, recycler et utiliser des conso
 project.godot          Config du projet + autoloads GameState, Sfx
 scenes/Main.tscn       Scène principale (porte le contrôleur)
 scripts/
-  Main.gd              Coordinateur : état, génération, combat, tour-par-tour, IA
+  Main.gd              Coordinateur : état, génération, tour-par-tour, terrain élémentaire
+  EnemyAI.gd           Module (Phase 7.3) : comportements ennemis (_enemy_act*, enemy_intent)
+  CombatSystem.gd      Module (Phase 7.3) : attaques joueur/ennemi, statuts, aoe/pierce/bounce/dash
+  LootSystem.gd        Module (Phase 7.3) : butin, inventaire, artefacts/pouvoirs, compétences
+  RunProgression.gd    Module (Phase 7.3) : nœuds de carte, récompenses d'étage, boutique/événement/repos/forge
   Hud.gd               Toute l'interface : sidebar, journal, hub, overlays
   Ui.gd                Fabrique de widgets (label/button/styles) anti-boilerplate
   GameState.gd         Autoload : méta-progression persistante + sauvegarde + réglages
