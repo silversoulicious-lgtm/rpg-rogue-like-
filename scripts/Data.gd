@@ -53,6 +53,7 @@ const SKILLS := {
 	"vampiric_strike": { "name": "Lame vampirique",     "desc": "Frappe et te soigne de 50% des dégâts infligés.","wtype": "melee", "rarity": "rare",    "cd": 3, "range": 1, "effect": "vampiric",    "power": 1.1, "heal_pct": 0.5 },
 	"cataclysm":       { "name": "Cataclysme",          "desc": "Énorme frappe de zone (rayon 2).",              "wtype": "melee",  "rarity": "epique",  "cd": 4, "range": 2, "effect": "aoe",         "radius": 2, "power": 1.3 },
 	"dash_strike":     { "name": "Charge fendante",     "desc": "Bondit vers l'ennemi le plus proche et le frappe.","wtype": "melee","rarity": "rare",   "cd": 3, "range": 1, "effect": "dash_strike", "power": 1.2, "dash": 3 },
+	"shield_bash":     { "name": "Coup de bélier",      "desc": "Frappe l'ennemi adjacent et le repousse de 2 cases (eau, lave, pièges et collisions font le reste).", "wtype": "melee", "rarity": "commune", "cd": 3, "range": 1, "effect": "push_strike", "power": 0.8, "push": 2 },
 	# === DISTANCE ===
 	"precise_shot":    { "name": "Tir précis",          "desc": "Décoche une flèche puissante à distance.",      "wtype": "ranged", "rarity": "base",    "cd": 2, "range": 5, "effect": "single",      "power": 1.0 },
 	"double_shot":     { "name": "Tir double",          "desc": "Deux flèches sur la cible la plus proche.",     "wtype": "ranged", "rarity": "commune", "cd": 2, "range": 5, "effect": "ranged_multi","hits": 2,   "power": 0.65 },
@@ -61,12 +62,12 @@ const SKILLS := {
 	"bouncing_shot":   { "name": "Tir rebondissant",    "desc": "Rebondit entre plusieurs ennemis.",             "wtype": "ranged", "rarity": "rare",    "cd": 3, "range": 6, "effect": "bounce",      "bounces": 3, "power": 0.9 },
 	"crippling_shot":  { "name": "Tir entravant",       "desc": "Touche et ralentit la cible (3 tours).",        "wtype": "ranged", "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "slow", "turns": 3, "val": 0.4, "power": 0.9 },
 	# === MAGIE ===
-	"bolt":            { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche.",             "wtype": "magic",  "rarity": "base",    "cd": 3, "range": 6, "effect": "single",      "power": 1.0 },
-	"arc_bolt":        { "name": "Double éclair",       "desc": "Deux éclairs sur la cible la plus proche.",     "wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "ranged_multi","hits": 2,   "power": 0.65 },
-	"fireball":        { "name": "Boule de feu",        "desc": "Explose autour de la cible (rayon 1).",         "wtype": "magic",  "rarity": "rare",    "cd": 4, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.2 },
-	"frost_nova":      { "name": "Éclat de givre",      "desc": "Touche et paralyse la cible (1 tour).",         "wtype": "magic",  "rarity": "epique",  "cd": 4, "range": 6, "effect": "status_shot", "status": "stun", "turns": 1, "power": 0.8 },
-	"chain_lightning": { "name": "Chaîne d'éclairs",    "desc": "Rebondit en chaîne entre les ennemis.",         "wtype": "magic",  "rarity": "rare",    "cd": 3, "range": 6, "effect": "chain",       "bounces": 3, "power": 0.9 },
-	"ember":           { "name": "Trait ardent",        "desc": "Touche et embrase la cible (brûlure, 3 tours).","wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "burn", "turns": 3, "val": 0.3, "power": 0.8 },
+	"bolt":            { "name": "Éclair foudroyant",   "desc": "Foudroie l'ennemi le plus proche. L'eau adjacente conduit la foudre aux autres ennemis du rivage.", "wtype": "magic",  "rarity": "base",    "cd": 3, "range": 6, "effect": "single",      "power": 1.0, "elem": "lightning" },
+	"arc_bolt":        { "name": "Double éclair",       "desc": "Deux éclairs sur la cible la plus proche. L'eau adjacente conduit la foudre.", "wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "ranged_multi","hits": 2,   "power": 0.65, "elem": "lightning" },
+	"fireball":        { "name": "Boule de feu",        "desc": "Explose autour de la cible (rayon 1) et peut embraser les arbres alentour.", "wtype": "magic",  "rarity": "rare",    "cd": 4, "range": 6, "effect": "explosive",   "radius": 1, "power": 1.2, "elem": "fire" },
+	"frost_nova":      { "name": "Éclat de givre",      "desc": "Touche et paralyse la cible (1 tour). Gèle l'eau voisine en un pont de glace temporaire.", "wtype": "magic",  "rarity": "epique",  "cd": 4, "range": 6, "effect": "status_shot", "status": "stun", "turns": 1, "power": 0.8, "elem": "frost" },
+	"chain_lightning": { "name": "Chaîne d'éclairs",    "desc": "Rebondit en chaîne entre les ennemis. L'eau adjacente conduit la foudre.", "wtype": "magic",  "rarity": "rare",    "cd": 3, "range": 6, "effect": "chain",       "bounces": 3, "power": 0.9, "elem": "lightning" },
+	"ember":           { "name": "Trait ardent",        "desc": "Touche et embrase la cible (brûlure, 3 tours) ainsi que les arbres voisins.","wtype": "magic",  "rarity": "commune", "cd": 3, "range": 6, "effect": "status_shot", "status": "burn", "turns": 3, "val": 0.3, "power": 0.8, "elem": "fire" },
 }
 
 static func skill_rarity_color(id: String) -> Color:
@@ -92,18 +93,33 @@ static func make_starter_weapon(wtype: String) -> Dictionary:
 		"proc": d["proc"], "proc_val": d["proc_val"], "desc": _proc_desc(d["proc"], d["proc_val"]),
 	}
 
-## Déduit le type d'une arme (procédurale ou unique) à partir de son nom/stats.
-static func infer_weapon_type(item_name: String, stat: Dictionary) -> String:
-	if "Arc" in item_name or "Tir" in item_name:
-		return "ranged"
-	if stat.has("magic") and int(stat.get("atk", 0)) == 0:
-		return "magic"
-	return "melee"
-
 # --- VISION / BROUILLARD DE GUERRE --------------------------------------------
 # Rayon de vision initial du héros (en cases). Améliorable via les talents
 # "Clairvoyance" / "Œil de Lynx" (mod "vision").
-const BASE_VISION := 4
+const BASE_VISION := 6
+
+# --- PLAFONDS DE STATS DÉRIVÉES ------------------------------------------------
+# Empêche le cumul d'artefacts/talents/affixes de rendre le héros invincible.
+const CAP_DODGE := 0.60
+const CAP_CRIT := 0.75
+const CAP_LIFESTEAL := 0.50
+
+# --- TERRAIN ÉLÉMENTAIRE (Phase 4) ---------------------------------------------
+# Chance par tour, par arbre adjacent à une case en feu, de s'embraser à son
+# tour. `static var` (pas `const`) pour que le smoke test puisse la forcer à
+# 1.0 et vérifier la propagation de façon déterministe.
+static var FIRE_SPREAD_CHANCE := 0.35
+
+# Foudre conduite par l'eau : part des dégâts du coup infligée aux AUTRES
+# ennemis adjacents au même plan d'eau que la cible.
+const LIGHTNING_CONDUCT_PCT := 0.5
+# Gel : rayon (Chebyshev, autour de l'impact) des cases d'eau gelées, et durée
+# (en actions de la joueuse) avant la fonte.
+const FROST_FREEZE_RADIUS := 4
+const FROZEN_TURNS := 10
+# Nuages toxiques (marais) : durée et poison appliqué par tour aux entités dedans.
+const CLOUD_TURNS := 3
+const CLOUD_POISON_VAL := 3.0
 
 # --- BIOMES (terrain "open world" par étage) ----------------------------------
 # Le biome change tous les BIOME_SPAN étages et détermine la palette, la densité
@@ -146,42 +162,48 @@ const BIOMES := [
 	  "trunk": Color(0.30, 0.21, 0.13), "leaf": Color(0.36, 0.72, 0.40), "tree_style": "round",
 	  "rock": Color(0.36, 0.40, 0.50), "water": Color(0.18, 0.55, 0.66),
 	  "decor": Color(1.0, 0.83, 0.34), "decor_styles": ["flower", "tall_grass", "dandelion"],
-	  "poi": { "structure": "standing_stone", "name": "Cercle de pierres druidique", "dressing": [0, 1] } },
+	  "poi": { "structure": "standing_stone", "name": "Cercle de pierres druidique", "dressing": [0, 1] },
+	  "ambient": { "color": Color(0.95, 0.78, 0.35), "count": 18, "vel": Vector2(14.0, -8.0), "size": 2 } },
 	{ "id": "foret", "name": "Forêt profonde",
 	  "tree_density": 0.14, "rock_density": 0.03, "water_density": 0.03, "decor_density": 0.10, "road": true,
 	  "ground_a": Color(0.060, 0.120, 0.100), "ground_b": Color(0.095, 0.175, 0.135),
 	  "trunk": Color(0.26, 0.17, 0.11), "leaf": Color(0.24, 0.66, 0.42), "tree_style": "pine",
 	  "rock": Color(0.28, 0.37, 0.39), "water": Color(0.13, 0.46, 0.52),
 	  "decor": Color(0.94, 0.27, 0.36), "decor_styles": ["mushroom", "fern", "spider_web"],
-	  "poi": { "structure": "forest_altar", "name": "Autel sylvestre", "dressing": [0, 1] } },
+	  "poi": { "structure": "forest_altar", "name": "Autel sylvestre", "dressing": [0, 1] },
+	  "ambient": { "color": Color(0.42, 0.70, 0.34), "count": 24, "vel": Vector2(4.0, 18.0), "size": 2 } },
 	{ "id": "desert", "name": "Désert de cendres dorées",
 	  "tree_density": 0.04, "rock_density": 0.06, "water_density": 0.01, "decor_density": 0.07, "road": true,
 	  "ground_a": Color(0.205, 0.150, 0.085), "ground_b": Color(0.290, 0.215, 0.120),
 	  "trunk": Color(0.32, 0.42, 0.24), "leaf": Color(0.42, 0.70, 0.34), "tree_style": "cactus",
 	  "rock": Color(0.50, 0.40, 0.26), "water": Color(0.20, 0.64, 0.66),
 	  "decor": Color(0.92, 0.88, 0.74), "decor_styles": ["bones", "tumbleweed", "cracked_earth"],
-	  "poi": { "structure": "wagon_wheel", "name": "Caravane abandonnée", "dressing": [0, 1] } },
+	  "poi": { "structure": "wagon_wheel", "name": "Caravane abandonnée", "dressing": [0, 1] },
+	  "ambient": { "color": Color(0.86, 0.82, 0.68), "count": 16, "vel": Vector2(46.0, 2.0), "size": 1 } },
 	{ "id": "toundra", "name": "Toundra gelée",
 	  "tree_density": 0.07, "rock_density": 0.04, "water_density": 0.05, "decor_density": 0.08, "road": false,
 	  "ground_a": Color(0.105, 0.140, 0.215), "ground_b": Color(0.150, 0.205, 0.300),
 	  "trunk": Color(0.30, 0.26, 0.24), "leaf": Color(0.54, 0.78, 0.82), "tree_style": "pine",
 	  "rock": Color(0.42, 0.50, 0.60), "water": Color(0.36, 0.74, 0.90),
 	  "decor": Color(0.62, 0.90, 1.0), "decor_styles": ["crystal", "icicle", "snow_drift"],
-	  "poi": { "structure": "ice_cairn", "name": "Cairn glacé", "dressing": [0, 1] } },
+	  "poi": { "structure": "ice_cairn", "name": "Cairn glacé", "dressing": [0, 1] },
+	  "ambient": { "color": Color(0.92, 0.95, 1.0), "count": 40, "vel": Vector2(2.0, 12.0), "size": 1 } },
 	{ "id": "marais", "name": "Marais putride",
 	  "tree_density": 0.08, "rock_density": 0.03, "water_density": 0.14, "decor_density": 0.10, "road": false,
 	  "ground_a": Color(0.100, 0.130, 0.090), "ground_b": Color(0.140, 0.180, 0.110),
 	  "trunk": Color(0.20, 0.18, 0.13), "leaf": Color(0.36, 0.50, 0.24), "tree_style": "dead",
 	  "rock": Color(0.28, 0.33, 0.29), "water": Color(0.22, 0.42, 0.27),
 	  "decor": Color(0.64, 0.86, 0.32), "decor_styles": ["reed", "lily_pad", "wisp"],
-	  "poi": { "structure": "sunken_ruin", "name": "Autel englouti", "dressing": [0, 1] } },
+	  "poi": { "structure": "sunken_ruin", "name": "Autel englouti", "dressing": [0, 1] },
+	  "ambient": { "color": Color(0.55, 0.90, 0.35), "count": 14, "vel": Vector2(2.0, -2.0), "size": 2 } },
 	{ "id": "volcan", "name": "Terres de feu",
 	  "tree_density": 0.05, "rock_density": 0.08, "water_density": 0.06, "decor_density": 0.07, "road": false,
 	  "ground_a": Color(0.105, 0.072, 0.090), "ground_b": Color(0.165, 0.100, 0.110),
 	  "trunk": Color(0.16, 0.12, 0.12), "leaf": Color(0.24, 0.17, 0.17), "tree_style": "dead",
 	  "rock": Color(0.28, 0.21, 0.23), "water": Color(1.0, 0.46, 0.16),
 	  "decor": Color(1.0, 0.58, 0.20), "decor_styles": ["ember", "obsidian_shard", "ash_pile"],
-	  "poi": { "structure": "abandoned_anvil", "name": "Forge abandonnée", "dressing": [0, 1] } },
+	  "poi": { "structure": "abandoned_anvil", "name": "Forge abandonnée", "dressing": [0, 1] },
+	  "ambient": { "color": Color(1.0, 0.55, 0.20), "count": 22, "vel": Vector2(3.0, -20.0), "size": 1 } },
 ]
 
 ## Renvoie le biome correspondant à un étage (change tous les BIOME_SPAN étages).
@@ -250,13 +272,13 @@ const ENEMIES := [
 	{ "name": "Chauve-souris vampire", "glyph": "v", "sprite": "chauvesouris", "color": Color(0.7, 0.4, 0.6), "max_hp": 9, "atk": 4, "defense": 0, "speed": 150, "shards": 4, "min_floor": 2,
 	  "ai": { "behavior": "melee", "lifesteal": 0.6 } },
 	{ "name": "Serpent des marais", "glyph": "n", "sprite": "serpent", "color": Color(0.4, 0.7, 0.4), "max_hp": 12, "atk": 3, "defense": 0, "speed": 140, "shards": 5, "min_floor": 4,
-	  "ai": { "behavior": "melee", "atk_count": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 3.0 } } },
-	{ "name": "Ours corrompu", "glyph": "B", "sprite": "ours", "color": Color(0.45, 0.35, 0.3), "max_hp": 34, "atk": 7, "defense": 2, "speed": 90, "shards": 8, "min_floor": 6,
+	  "ai": { "behavior": "melee", "atk_count": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 3.0 }, "death_cloud": 0.3 } },
+	{ "name": "Ours corrompu", "glyph": "U", "sprite": "ours", "color": Color(0.45, 0.35, 0.3), "max_hp": 34, "atk": 7, "defense": 2, "speed": 90, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "melee", "berserk": true, "berserk_at": 0.4, "berserk_mult": 1.6 } },
 
 	# Morts-vivants & spectral
 	{ "name": "Zombie pestilentiel", "glyph": "z", "sprite": "zombie", "color": Color(0.5, 0.65, 0.4), "max_hp": 22, "atk": 5, "defense": 1, "speed": 70, "shards": 5, "min_floor": 4,
-	  "ai": { "behavior": "melee", "disease_aura": true, "on_hit": { "id": "disease", "turns": 4, "value": 3.0 } } },
+	  "ai": { "behavior": "melee", "disease_aura": true, "on_hit": { "id": "disease", "turns": 4, "value": 3.0 }, "death_cloud": 0.3 } },
 	{ "name": "Chevalier sans tête", "glyph": "D", "sprite": "dullahan", "color": Color(0.7, 0.72, 0.82), "max_hp": 40, "atk": 9, "defense": 3, "speed": 100, "shards": 14, "min_floor": 8,
 	  "ai": { "behavior": "ranged", "ranged_range": 4, "cooldown": 1, "on_hit": { "id": "bleed", "turns": 2, "value": 3.0 } } },
 	{ "name": "Liche", "glyph": "L", "sprite": "liche", "color": Color(0.6, 0.45, 0.95), "max_hp": 26, "atk": 6, "defense": 1, "speed": 100, "shards": 12, "min_floor": 9,
@@ -285,7 +307,7 @@ const ENEMIES := [
 	  "ai": { "behavior": "melee", "resist_phys": 0.6, "resist_magic": -0.6 } },
 	{ "name": "Fée corrompue", "glyph": "y", "sprite": "fee", "color": Color(0.8, 0.6, 1.0), "max_hp": 12, "atk": 5, "defense": 0, "speed": 140, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "teleporter", "teleport_chance": 0.7, "teleport_range": 4, "on_hit": { "id": "confusion", "turns": 3, "value": 0.0 } } },
-	{ "name": "Drake", "glyph": "k", "sprite": "drake", "color": Color(0.8, 0.5, 0.4), "max_hp": 30, "atk": 9, "defense": 2, "speed": 110, "shards": 12, "min_floor": 10,
+	{ "name": "Drake", "glyph": "K", "sprite": "drake", "color": Color(0.8, 0.5, 0.4), "max_hp": 30, "atk": 9, "defense": 2, "speed": 110, "shards": 12, "min_floor": 10,
 	  "ai": { "behavior": "ranged", "ranged_range": 5, "cooldown": 2, "elemental": true } },
 	{ "name": "Mimic", "glyph": "m", "sprite": "mimic", "color": Color(0.8, 0.6, 0.3), "max_hp": 24, "atk": 8, "defense": 2, "speed": 100, "shards": 12, "min_floor": 5,
 	  "ai": { "behavior": "ambush" } },
@@ -327,7 +349,7 @@ const BOSSES := [
 	          "guardians": { "count": 3, "sprite": "chaudron", "resist": 0.5 } } },
 	{ "name": "Le Bourreau du Roi", "glyph": "B", "sprite": "bourreau", "color": Color(0.8, 0.3, 0.3),
 	  "max_hp": 96, "atk": 16, "defense": 4, "speed": 70, "shards": 55, "min_floor": 1,
-	  "ai": { "behavior": "charger", "on_hit": { "id": "bleed", "turns": 3, "value": 5.0 } } },
+	  "ai": { "behavior": "charger", "push": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 5.0 } } },
 	{ "name": "L'Œil du Néant", "glyph": "B", "sprite": "oeil_neant", "color": Color(0.7, 0.5, 0.95),
 	  "max_hp": 74, "atk": 12, "defense": 3, "speed": 100, "shards": 55, "min_floor": 1,
 	  "ai": { "behavior": "ranged", "ranged_range": 7, "cooldown": 1, "resist_phys": 0.3, "on_hit": { "id": "slow", "turns": 2, "value": 0.5 } } },
@@ -450,24 +472,24 @@ const UNIQUE_EPITHETS := [
 # "soif_de_sang"  : soigne val% PV max à chaque ennemi tué.
 # "moisson"       : +val Éclats à chaque ennemi tué.
 const UNIQUE_BASES := [
-	# --- ARME (17) ---
-	{ "name": "Lame des Damnés",      "slot": "arme", "stat": { "atk": 6 },                "proc": "execution",     "val": 0.50 },
-	{ "name": "Hache du Bourreau",    "slot": "arme", "stat": { "atk": 8, "speed": -4 },    "proc": "frenesie",      "val": 0.30 },
-	{ "name": "Dague du Silence",     "slot": "arme", "stat": { "atk": 3, "speed": 10 },    "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Marteau du Tyran",     "slot": "arme", "stat": { "atk": 9, "defense": 1 },   "proc": "frappe_double", "val": 0.25 },
-	{ "name": "Croc Ancestral",       "slot": "arme", "stat": { "atk": 5 },                 "proc": "soif_de_sang",  "val": 0.12 },
-	{ "name": "Faux du Faucheur",     "slot": "arme", "stat": { "atk": 7 },                 "proc": "moisson",       "val": 4.0 },
-	{ "name": "Épée du Sacrifice",    "slot": "arme", "stat": { "atk": 8, "max_hp": -6 },   "proc": "execution",     "val": 0.65 },
-	{ "name": "Bâton des Cendres",    "slot": "arme", "stat": { "magic": 6 },               "proc": "frenesie",      "val": 0.35 },
-	{ "name": "Arc du Vent",          "slot": "arme", "stat": { "atk": 4, "speed": 12 },    "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Sceptre Runique",      "slot": "arme", "stat": { "magic": 7, "defense": 1 }, "proc": "frappe_double", "val": 0.22 },
-	{ "name": "Lame Jumelle",         "slot": "arme", "stat": { "atk": 5, "speed": 6 },     "proc": "soif_de_sang",  "val": 0.14 },
-	{ "name": "Hallebarde de Garde",  "slot": "arme", "stat": { "atk": 6, "defense": 2 },   "proc": "moisson",       "val": 5.0 },
-	{ "name": "Poignard Vicieux",     "slot": "arme", "stat": { "atk": 4 },                 "proc": "execution",     "val": 0.55 },
-	{ "name": "Fléau Sacré",          "slot": "arme", "stat": { "atk": 7, "magic": 2 },     "proc": "frenesie",      "val": 0.30 },
-	{ "name": "Bâton du Sage Fou",    "slot": "arme", "stat": { "magic": 8, "speed": -3 },  "proc": "premier_coup",  "val": 1.0 },
-	{ "name": "Lame Spectrale",       "slot": "arme", "stat": { "atk": 5, "speed": 8 },     "proc": "frappe_double", "val": 0.28 },
-	{ "name": "Glaive du Crépuscule", "slot": "arme", "stat": { "atk": 8 },                 "proc": "moisson",       "val": 4.0 },
+	# --- ARME (17) --- wtype explicite (Arc = ranged ; Bâton/Sceptre = magic ; reste melee)
+	{ "name": "Lame des Damnés",      "slot": "arme", "wtype": "melee",  "stat": { "atk": 6 },                "proc": "execution",     "val": 0.50 },
+	{ "name": "Hache du Bourreau",    "slot": "arme", "wtype": "melee",  "stat": { "atk": 8, "speed": -4 },    "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Dague du Silence",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 3, "speed": 10 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Marteau du Tyran",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 9, "defense": 1 },   "proc": "frappe_double", "val": 0.25 },
+	{ "name": "Croc Ancestral",       "slot": "arme", "wtype": "melee",  "stat": { "atk": 5 },                 "proc": "soif_de_sang",  "val": 0.12 },
+	{ "name": "Faux du Faucheur",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 7 },                 "proc": "moisson",       "val": 4.0 },
+	{ "name": "Épée du Sacrifice",    "slot": "arme", "wtype": "melee",  "stat": { "atk": 8, "max_hp": -6 },   "proc": "execution",     "val": 0.65 },
+	{ "name": "Bâton des Cendres",    "slot": "arme", "wtype": "magic",  "stat": { "magic": 6 },               "proc": "frenesie",      "val": 0.35 },
+	{ "name": "Arc du Vent",          "slot": "arme", "wtype": "ranged", "stat": { "atk": 4, "speed": 12 },    "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Sceptre Runique",      "slot": "arme", "wtype": "magic",  "stat": { "magic": 7, "defense": 1 }, "proc": "frappe_double", "val": 0.22 },
+	{ "name": "Lame Jumelle",         "slot": "arme", "wtype": "melee",  "stat": { "atk": 5, "speed": 6 },     "proc": "soif_de_sang",  "val": 0.14 },
+	{ "name": "Hallebarde de Garde",  "slot": "arme", "wtype": "melee",  "stat": { "atk": 6, "defense": 2 },   "proc": "moisson",       "val": 5.0 },
+	{ "name": "Poignard Vicieux",     "slot": "arme", "wtype": "melee",  "stat": { "atk": 4 },                 "proc": "execution",     "val": 0.55 },
+	{ "name": "Fléau Sacré",          "slot": "arme", "wtype": "melee",  "stat": { "atk": 7, "magic": 2 },     "proc": "frenesie",      "val": 0.30 },
+	{ "name": "Bâton du Sage Fou",    "slot": "arme", "wtype": "magic",  "stat": { "magic": 8, "speed": -3 },  "proc": "premier_coup",  "val": 1.0 },
+	{ "name": "Lame Spectrale",       "slot": "arme", "wtype": "melee",  "stat": { "atk": 5, "speed": 8 },     "proc": "frappe_double", "val": 0.28 },
+	{ "name": "Glaive du Crépuscule", "slot": "arme", "wtype": "melee",  "stat": { "atk": 8 },                 "proc": "moisson",       "val": 4.0 },
 	# --- ARMURE (17) ---
 	{ "name": "Cuirasse des Damnés",  "slot": "armure", "stat": { "defense": 5, "max_hp": 8 },  "proc": "execution",     "val": 0.45 },
 	{ "name": "Plastron du Tyran",    "slot": "armure", "stat": { "defense": 7, "speed": -6 },  "proc": "frenesie",      "val": 0.32 },
@@ -514,8 +536,8 @@ static func _proc_desc(proc: String, val: float) -> String:
 		"frappe_double": return "Frappe Double : %d%% de chances de frapper une 2e fois (50%% dégâts)." % int(round(val * 100))
 		"soif_de_sang": return "Soif de Sang : soigne %d%% PV max à chaque ennemi tué." % int(round(val * 100))
 		"moisson": return "Moisson : +%d Éclats à chaque ennemi tué." % int(round(val))
-		"ardent": return "Brasier : inflige %d à %d dégâts de feu bonus par attaque." % [maxi(1, int(val) - 1), int(val) + 1]
-		"givre": return "Givre : %d%% de chances de ralentir la cible touchée." % int(round(val * 100))
+		"ardent": return "Brasier : inflige %d à %d dégâts de feu bonus par attaque et peut embraser un arbre voisin." % [maxi(1, int(val) - 1), int(val) + 1]
+		"givre": return "Givre : %d%% de chances de ralentir la cible touchée et de geler l'eau à son contact." % int(round(val * 100))
 		"venimeux": return "Venin : %d%% de chances d'empoisonner la cible touchée." % int(round(val * 100))
 		"foudroyant": return "Foudre : %d%% de chances d'étourdir la cible touchée (1 tour)." % int(round(val * 100))
 		"cuirasse": return "Rempart : réduit chaque coup subi de %d dégâts." % int(round(val))
@@ -600,7 +622,7 @@ static func _make_unique_item(slot: String, floor: int, rarity: Dictionary, uniq
 		"proc": uniq["proc"], "proc_val": uniq["proc_val"], "desc": uniq["desc"],
 	}
 	if slot == "arme":
-		item["weapon_type"] = infer_weapon_type(uniq["name"], uniq["stat"])
+		item["weapon_type"] = String(uniq.get("wtype", "melee"))
 	return item
 
 static func rarity_by_id(id: String) -> Dictionary:

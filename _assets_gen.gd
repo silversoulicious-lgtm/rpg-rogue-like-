@@ -55,13 +55,10 @@ func _init() -> void:
 	_save(_gen_wall(), "wall")
 	_save(_gen_stairs(), "stairs")
 
-	# --- Héroïne (sprite dédié, 3 vues directionnelles) + classes legacy ---
+	# --- Héroïne (sprite dédié, 3 vues directionnelles) ---
 	_save(_gen_creature("aria"), "aria")            # face (bas)
 	_save(_gen_creature("aria_back"), "aria_back")  # dos (haut)
 	_save(_gen_creature("aria_side"), "aria_side")  # profil droite (miroir à gauche)
-	_save(_gen_creature("knight"), "knight")
-	_save(_gen_creature("mage"), "mage")
-	_save(_gen_creature("ranger"), "ranger")
 
 	# --- Ennemis ---
 	_save(_gen_creature("gobelin"), "gobelin")
@@ -375,9 +372,6 @@ func _gen_creature(kind: String) -> Image:
 		"aria":      _fig_aria(img)
 		"aria_back": _fig_aria_back(img)
 		"aria_side": _fig_aria_side(img)
-		"knight":  _fig_knight(img)
-		"mage":    _fig_mage(img)
-		"ranger":  _fig_ranger(img)
 		"gobelin": _fig_gobelin(img)
 		"loup":    _fig_wolf(img)
 		"squelette": _fig_skeleton(img)
@@ -417,7 +411,7 @@ func _gen_creature(kind: String) -> Image:
 		"dieu_bete": _fig_dieu_bete(img)
 		"ame":     _fig_ame(img)
 		"chaudron": _fig_chaudron(img)
-		_:         _fig_knight(img)
+		_:         _fig_gobelin(img)
 	return img
 
 # Reflet d'œil lumineux générique, avec halo néon.
@@ -506,58 +500,6 @@ func _fig_aria_side(img: Image) -> void:
 	_px(img, 20, 15, SKIN_D)
 	_px(img, 17, 7, ROSE); _px(img, 19, 8, ROSE)
 	_px(img, 16, 7, GOLD); _px(img, 17, 8, GOLD); _glow(img, 18.7, 9.3, 1.9, CYAN_L, 0.7); _px(img, 19, 9, CYAN_L)
-
-# Classe « chevalier » (legacy) : armure d'acier, écharpe rouge, visière cyan.
-func _fig_knight(img: Image) -> void:
-	_ground_shadow(img)
-	_trapezoid_o(img, 16, 15, 28, 3.3, 8.0, STEEL_D)
-	_trapezoid(img, 16, 16, 27, 2.0, 6.0, STEEL)
-	_rect(img, 8, 16, 4, 3, BLOOD)
-	_px(img, 7, 17, BLOOD_D)
-	_px(img, 11, 15, BLOOD)
-	_rect(img, 13, 17, 5, 7, STEEL_L)
-	_px(img, 13, 17, STEEL)
-	_rect(img, 15, 19, 1, 4, Color(1, 1, 1, 0.55))
-	_disc_o(img, 16, 9, 5.6, STEEL_D, INK)
-	_disc(img, 16, 8, 4.5, STEEL)
-	_ellipse(img, 13, 7, 2.1, 1.9, STEEL_L)
-	_glow(img, 16.0, 9.3, 4.5, CYAN, 0.4)
-	_rect(img, 12, 9, 8, 1, CYAN_L)
-	_px(img, 12, 9, CYAN)
-	_tri_up(img, 16, 4, 1, 4, BLOOD)
-	_rect(img, 23, 12, 1, 12, STEEL_L)
-	_rect(img, 21, 21, 4, 1, GOLD)
-
-func _fig_mage(img: Image) -> void:
-	_ground_shadow(img)
-	_trapezoid_o(img, 16, 15, 28, 2.7, 8.7, ARCANE.darkened(0.45))
-	_trapezoid(img, 16, 16, 27, 1.6, 6.7, ARCANE)
-	_rect(img, 15, 19, 3, 8, ARCANE_L.darkened(0.1))
-	_disc_o(img, 16, 11, 4.5, ARCANE.darkened(0.4), INK)
-	_disc(img, 16, 11, 3.5, Color(0.86, 0.78, 0.66))
-	_glow_eyes(img, 16, 9, CYAN, 3)
-	_trapezoid_o(img, 16, 1, 8, 0.7, 6.0, ARCANE.darkened(0.25))
-	_glow(img, 16.0, 1.3, 2.7, GOLD_L, 0.8); _px(img, 16, 1, GOLD_L)
-	_px(img, 12, 8, GOLD)
-	_rect(img, 8, 11, 1, 16, GOLD_D)
-	_glow(img, 8.0, 9.3, 4.0, CYAN, 0.7)
-	_disc_o(img, 8, 9, 2.7, CYAN, INK)
-	_px(img, 8, 8, CYAN_L)
-
-func _fig_ranger(img: Image) -> void:
-	_ground_shadow(img)
-	_trapezoid_o(img, 16, 15, 28, 3.3, 8.0, POISON.darkened(0.5))
-	_trapezoid(img, 16, 16, 27, 2.1, 6.1, POISON.darkened(0.25))
-	_rect(img, 15, 19, 3, 7, POISON.darkened(0.1))
-	_disc_o(img, 16, 9, 5.6, POISON.darkened(0.5), INK)
-	_ellipse(img, 16, 8, 4.5, 4.8, POISON.darkened(0.3))
-	_ellipse(img, 16, 11, 3.2, 2.7, Color(0.07, 0.07, 0.10))
-	_glow_eyes(img, 16, 11, CYAN_L, 3)
-	for i in range(11):
-		var yy := 6 + i
-		var dx := int(round(3.0 * sin(float(i) / 10.0 * PI)))
-		_px(img, 18 - dx, yy, GOLD_D)
-	_rect(img, 24, 8, 1, 15, Color(0.85, 0.85, 0.9, 0.8))
 
 func _fig_gobelin(img: Image) -> void:
 	_ground_shadow(img)

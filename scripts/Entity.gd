@@ -27,6 +27,7 @@ var ai: Dictionary = {}
 var ai_cd: int = 0               # recharge interne d'une capacité d'ennemi
 var spawned_count: int = 0       # invocations déjà produites (plafond summon_max)
 var revealed: bool = false       # mimic : démasqué une fois le joueur proche
+var awake: bool = false          # ennemi : endormi tant qu'il n'a pas été vu/blessé/alerté
 
 # --- Stats EFFECTIVES (base + équipement + artefacts + talents) ---
 var max_hp: int = 10
@@ -252,6 +253,9 @@ func recompute_stats() -> void:
 	speed = max(20, speed)
 	ability_cd_max = max(0, ability_cd_max)
 	vision = max(1, vision)
+	dodge_chance = minf(dodge_chance, Data.CAP_DODGE)
+	crit_chance = minf(crit_chance, Data.CAP_CRIT)
+	lifesteal_pct = minf(lifesteal_pct, Data.CAP_LIFESTEAL)
 	hp = min(hp, max_hp)
 
 ## Active les synergies dont TOUS les procs requis sont équipés, et amplifie la

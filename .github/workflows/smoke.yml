@@ -1,0 +1,25 @@
+name: smoke
+on: [push, pull_request]
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: godot
+          key: godot-4.3-stable
+      - name: Télécharge Godot 4.3 headless (cache)
+        run: |
+          if [ ! -x godot/Godot ]; then
+            mkdir -p godot && curl -sSL -o g.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+            unzip -q g.zip -d godot && mv godot/Godot_v4.3* godot/Godot && chmod +x godot/Godot
+          fi
+      - name: Passe d'import (cache de classes + assets)
+        run: godot/Godot --headless --editor --quit --path . || true
+      - name: Vérifie que l'import a bien tourné
+        run: test -d .godot
+      - name: Test de fumée
+        run: godot/Godot --headless --path . res://_SmokeTest.tscn 2>&1 | tee out.log
+      - name: Le test doit afficher SMOKETEST PASSED
+        run: grep -q "SMOKETEST PASSED" out.log

@@ -7,6 +7,8 @@ extends Node
 const VIEW := Vector2(1280, 720)
 const SIDEBAR_W := 384
 const LOG_H := 88
+const TURN_STRIP_H := 34    # bande d'ordre des tours, juste au-dessus du journal
+const TURN_STRIP_N := 8     # nombre de tours prévisualisés
 const VERSION := "v0.5 — accès anticipé"
 
 # Pitch court par type d'arme, affiché sur la fiche de loadout.
@@ -42,6 +44,14 @@ var overlay_layer: CanvasLayer
 var overlay_content: VBoxContainer
 var log_label: RichTextLabel
 var hub_layer: CanvasLayer
+var turn_strip: HBoxContainer
+var _turn_strip_ids: Array = []      # cache : ne reconstruit que si l'ordre a changé
+# Empreintes des sections sidebar reconstruites à chaque refresh() (plusieurs
+# fois par tour) — ne reconstruire les nœuds que si le contenu a changé.
+var _artifact_fp: String = ""
+var _power_fp: String = ""
+var _synergy_fp: String = ""
+var _status_fp: String = ""
 # Sidebar
 var sb_floor: Label
 var sb_hero: Label
@@ -56,6 +66,7 @@ var artifact_box: VBoxContainer
 var power_box: VBoxContainer
 var synergy_box: VBoxContainer
 var status_box: VBoxContainer
+var inspect_box: VBoxContainer
 
 func setup(game_ref) -> void:
 	game = game_ref
@@ -65,19 +76,21 @@ func setup(game_ref) -> void:
 	_build_hub_ui()
 
 func play_area() -> Vector2:
-	return Vector2(VIEW.x - SIDEBAR_W, VIEW.y - LOG_H)
+	return get_viewport().get_visible_rect().size - Vector2(SIDEBAR_W, LOG_H + TURN_STRIP_H)
 
 # --- Construction -------------------------------------------------------------
 func _build_hud() -> void:
 	hud_layer = CanvasLayer.new()
 	add_child(hud_layer)
 	_build_sidebar()
+	_build_turn_strip()
 	_build_log()
 
 func _build_sidebar() -> void:
 	var panel := PanelContainer.new()
-	panel.position = Vector2(VIEW.x - SIDEBAR_W, 0)
-	panel.size = Vector2(SIDEBAR_W, VIEW.y)
+	panel.set_anchors_preset(Control.PRESET_RIGHT_WIDE)
+	panel.offset_left = -SIDEBAR_W
+	panel.offset_right = 0
 	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.072, 0.065, 0.115)))
 	hud_layer.add_child(panel)
 
@@ -130,6 +143,9 @@ func _build_sidebar() -> void:
 	sb_ability = Ui.label("", 13, Color.WHITE, false, true, SIDEBAR_W - 56); v.add_child(sb_ability)
 	v.add_child(_section("ÉTATS"))
 	status_box = Ui.vbox(3); v.add_child(status_box)
+	v.add_child(_section("INSPECTION"))
+	inspect_box = Ui.vbox(3); v.add_child(inspect_box)
+	show_inspect(null)
 	v.add_child(_section("ÉQUIPEMENT"))
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
 	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
@@ -184,19 +200,35 @@ func _stat_cell(sid: String, glyph: String, col: Color, tip: String) -> Control:
 	stat_labels[sid] = val
 	return cell
 
-func _build_log() -> void:
-	var play_w := VIEW.x - SIDEBAR_W
+## Bande d'ordre des tours : n mini-portraits juste au-dessus du journal,
+## rendent visible l'économie d'énergie/vitesse (cf. Main.preview_turn_order).
+func _build_turn_strip() -> void:
 	var panel := PanelContainer.new()
-	panel.position = Vector2(12, VIEW.y - LOG_H)
-	panel.size = Vector2(play_w - 24, LOG_H - 10)
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	panel.offset_left = 12
+	panel.offset_right = -SIDEBAR_W - 12
+	panel.offset_top = -(LOG_H + TURN_STRIP_H)
+	panel.offset_bottom = -LOG_H
+	panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	hud_layer.add_child(panel)
+
+	turn_strip = Ui.hbox(4)
+	panel.add_child(turn_strip)
+
+func _build_log() -> void:
+	var panel := PanelContainer.new()
+	panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	panel.offset_left = 12
+	panel.offset_right = -SIDEBAR_W - 12
+	panel.offset_top = -LOG_H
+	panel.offset_bottom = -10
 	panel.add_theme_stylebox_override("panel", Ui.panel_style(Color(0.08, 0.07, 0.11)))
 	hud_layer.add_child(panel)
 
 	log_label = RichTextLabel.new()
 	log_label.bbcode_enabled = true
-	log_label.fit_content = true
-	log_label.scroll_active = false
-	log_label.custom_minimum_size = Vector2(play_w - 48, LOG_H - 32)
+	log_label.fit_content = false
+	log_label.scroll_active = true
 	panel.add_child(log_label)
 
 func _build_menu() -> void:
@@ -300,7 +332,8 @@ func _build_hub_ui() -> void:
 	hint.add_child(Ui.label("⛫ Pied de la Tour — approche un bâtiment pour y entrer.", 15, Ui.INK))
 
 	var back := Ui.button("↩ Menu principal", 40, 14)
-	back.position = Vector2(VIEW.x - 216, 20)
+	back.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	back.position = Vector2(-216, 20)
 	back.pressed.connect(game.return_to_title)
 	hub_layer.add_child(back)
 
@@ -360,6 +393,7 @@ func show_shop(stock: Array, shards: int) -> void:
 	var leave := Ui.button("Quitter la boutique", 42)
 	leave.pressed.connect(game.leave_shop)
 	overlay_content.add_child(leave)
+	_focus_first_button()
 
 ## Récompense de fin d'étage (Phase 4) : choisir 1 butin parmi ceux proposés.
 func show_floor_reward(rewards: Array, is_elite: bool) -> void:
@@ -377,6 +411,7 @@ func show_floor_reward(rewards: Array, is_elite: bool) -> void:
 		overlay_content.add_child(btn)
 		if r.get("desc", "") != "":
 			overlay_content.add_child(Ui.label("   " + String(r["desc"]), 12, Color(0.7, 0.7, 0.78), false, true, 700))
+	_focus_first_button()
 
 func show_event(event: Dictionary) -> void:
 	overlay_layer.visible = true
@@ -388,6 +423,7 @@ func show_event(event: Dictionary) -> void:
 		var btn := Ui.button(event["choices"][i]["label"], 46, 17)
 		btn.pressed.connect(game.resolve_event.bind(i))
 		overlay_content.add_child(btn)
+	_focus_first_button()
 
 func show_rest() -> void:
 	overlay_layer.visible = true
@@ -405,6 +441,7 @@ func show_rest() -> void:
 		var b3 := Ui.button("Forger   (renforce une pièce d'équipement)", 46, 17)
 		b3.pressed.connect(game.rest_choice.bind("forge"))
 		overlay_content.add_child(b3)
+	_focus_first_button()
 
 ## Forge Itinérante (Phase 5) : choisir la pièce d'équipement à renforcer
 ## (~30% de bonus supplémentaires) plutôt qu'un choix aléatoire silencieux.
@@ -426,6 +463,7 @@ func show_forge(equipment: Dictionary) -> void:
 	var back := Ui.button("Renoncer", 40)
 	back.pressed.connect(game.forge_cancel)
 	overlay_content.add_child(back)
+	_focus_first_button()
 
 # --- Écran-titre --------------------------------------------------------------
 # Chemin de l'illustration finale (Aria devant la Tour). Tant qu'elle n'existe
@@ -784,13 +822,28 @@ func _build_run_journal(col: VBoxContainer) -> void:
 	if r.is_empty():
 		return
 	col.add_child(Ui.label("— Journal du run —", 16, Color(0.6, 0.85, 1.0), true))
+	var killed_by: String = str(r.get("killed_by", ""))
+	if killed_by != "":
+		col.add_child(Ui.label("Terrassée par %s." % killed_by, 15, Color(1.0, 0.55, 0.5), true))
 	col.add_child(Ui.label("Étage atteint : %d        Niveau : %d" % [int(r.get("floor", 1)), int(r.get("level", 1))], 15, Color(0.85, 0.85, 0.92), true))
+	var prev_best: int = int(r.get("prev_best_floor", GameState.best_floor))
+	var gap: int = prev_best - int(r.get("floor", 1))
+	if gap > 0 and gap <= 3:
+		col.add_child(Ui.label("À %d étage(s) de ton record." % gap, 14, Color(0.85, 0.75, 0.5), true))
 	col.add_child(Ui.label("Ennemis vaincus : %d        Meilleur coup : %d" % [int(r.get("kills", 0)), int(r.get("best_hit", 0))], 15, Color(0.85, 0.85, 0.92), true))
 	col.add_child(Ui.label("Éclats du run : %d   (banque : %d)" % [int(r.get("shards", 0)), GameState.shards], 15, Color(1.0, 0.85, 0.35), true))
 	var item_name: String = str(r.get("item", ""))
 	if item_name != "":
 		col.add_child(Ui.label("Objet le plus marquant : %s" % item_name, 15, Color.html(str(r.get("item_color", "d2d2e0"))), true))
 	col.add_child(Ui.label("Records — Étage %d · %d ennemis vaincus" % [GameState.best_floor, GameState.best_kills], 14, Color(0.7, 0.95, 0.7), true))
+	var timeline: Array = r.get("timeline", [])
+	if not timeline.is_empty():
+		col.add_child(_spacer(4))
+		col.add_child(Ui.label("— Chronologie —", 14, Color(0.6, 0.85, 1.0), true))
+		var start_i: int = maxi(0, timeline.size() - 10)
+		for i in range(start_i, timeline.size()):
+			col.add_child(Ui.label(str(timeline[i]), 12, Color(0.75, 0.75, 0.82), true))
+	col.add_child(Ui.label("Seed du run : %d" % int(r.get("seed", 0)), 11, Color(0.5, 0.5, 0.58), true))
 
 # --- Options (overlay au-dessus du menu) --------------------------------------
 func show_options() -> void:
@@ -800,15 +853,38 @@ func show_options() -> void:
 	var fs := Ui.button(_fullscreen_label(), 46, 17)
 	fs.pressed.connect(_toggle_fullscreen)
 	overlay_content.add_child(fs)
-	overlay_content.add_child(Ui.label("Volume musique / effets — à venir dans une prochaine mise à jour.", 13, Ui.MUTED))
+	overlay_content.add_child(HSeparator.new())
+	overlay_content.add_child(_volume_row("Volume effets", "sfx_vol"))
+	overlay_content.add_child(_volume_row("Volume musique", "music_vol"))
+	var shake := CheckButton.new()
+	shake.text = "Tremblement d'écran"
+	shake.button_pressed = bool(GameState.settings.get("screenshake", true))
+	shake.toggled.connect(func(v): GameState.settings["screenshake"] = v; GameState.save_game())
+	overlay_content.add_child(shake)
 	overlay_content.add_child(HSeparator.new())
 	overlay_content.add_child(Ui.label("Commandes", 16, Color(0.6, 0.85, 1.0)))
 	overlay_content.add_child(Ui.label("Déplacer : WASD / flèches / HJKL    Capacité : ESPACE", 13, Ui.MUTED))
-	overlay_content.add_child(Ui.label("Attendre : .    Inventaire : I    Retour menu : Échap", 13, Ui.MUTED))
+	overlay_content.add_child(Ui.label("Attendre : .    Inventaire : I    Pause : Échap", 13, Ui.MUTED))
 	overlay_content.add_child(HSeparator.new())
 	var back := Ui.button("Retour", 44, 16)
 	back.pressed.connect(hide_overlay)
 	overlay_content.add_child(back)
+
+func _volume_row(label_txt: String, key: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(Ui.label(label_txt, 14, Ui.INK, false, false, 130))
+	var slider := HSlider.new()
+	slider.min_value = 0.0
+	slider.max_value = 1.0
+	slider.step = 0.05
+	slider.value = float(GameState.settings.get(key, 0.8))
+	slider.custom_minimum_size = Vector2(180, 0)
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(func(v): GameState.settings[key] = v)
+	slider.drag_ended.connect(func(_changed): GameState.save_game(); Sfx.play("ui"))
+	row.add_child(slider)
+	return row
 
 func _fullscreen_label() -> String:
 	var mode := DisplayServer.window_get_mode()
@@ -821,18 +897,38 @@ func _toggle_fullscreen() -> void:
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if on else DisplayServer.WINDOW_MODE_FULLSCREEN)
 	show_options()
 
+# --- Overlay : pause -----------------------------------------------------------
+func show_pause() -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("⏸  PAUSE", Ui.ACCENT_SOFT)
+	var resume := Ui.button("▶  Reprendre", 46, 18)
+	resume.pressed.connect(game.close_pause)
+	overlay_content.add_child(resume)
+	var opts := Ui.button("⚙  Options", 46, 17)
+	opts.pressed.connect(show_options)
+	overlay_content.add_child(opts)
+	overlay_content.add_child(HSeparator.new())
+	var abandon := Ui.button("✖  Abandonner l'ascension", 46, 16)
+	abandon.pressed.connect(game.abandon_run)
+	overlay_content.add_child(abandon)
+	overlay_content.add_child(HSeparator.new())
+	overlay_content.add_child(Ui.label("Seed du run : %d" % game.run_seed, 12, Ui.MUTED))
+	var copy_seed := Ui.button("Copier la seed dans le journal", 36, 13)
+	copy_seed.pressed.connect(func(): game.add_message("Seed du run : %d" % game.run_seed))
+	overlay_content.add_child(copy_seed)
+	_focus_first_button()
+
 # --- Overlay : montée de niveau ----------------------------------------------
 func show_levelup(level: int) -> void:
 	overlay_layer.visible = true
 	_overlay_clear()
 	_overlay_title("★ NIVEAU %d — choisis un talent" % level, Color(0.7, 1.0, 0.7))
-	var pool: Array = Data.TALENTS.duplicate()
-	pool.shuffle()
-	for i in min(3, pool.size()):
-		var t: Dictionary = pool[i]
+	for t in game.roll_talent_choices():
 		var btn := Ui.button("%s — %s" % [t["name"], t["desc"]], 46, 18)
 		btn.pressed.connect(game.pick_talent.bind(t))
 		overlay_content.add_child(btn)
+	_focus_first_button()
 
 # --- Overlay : inventaire -----------------------------------------------------
 func show_inventory() -> void:
@@ -960,6 +1056,23 @@ func _overlay_title(txt: String, col: Color) -> void:
 func _overlay_label(txt: String, col: Color) -> void:
 	overlay_content.add_child(Ui.label(txt, 15, col))
 
+## Navigation clavier des overlays : place le focus sur le 1er bouton du
+## panneau — la chaîne de focus native de Godot (flèches/Tab + Entrée) fait
+## le reste sans code supplémentaire. À appeler en fin de chaque show_*.
+func _focus_first_button() -> void:
+	var btn: Button = _first_button(overlay_content)
+	if btn != null:
+		btn.grab_focus()
+
+func _first_button(node: Node) -> Button:
+	for c in node.get_children():
+		if c is Button:
+			return c
+		var found: Button = _first_button(c)
+		if found != null:
+			return found
+	return null
+
 # --- Rafraîchissement (lecture de l'état du jeu) ------------------------------
 func refresh() -> void:
 	var player = game.player
@@ -1009,35 +1122,88 @@ func refresh() -> void:
 	_rebuild_powers()
 	_rebuild_synergies()
 	_rebuild_statuses()
+	_rebuild_turn_strip()
 	log_label.text = "\n".join(game.messages)
+	log_label.scroll_to_line(log_label.get_line_count() - 1)
+
+## Ne reconstruit la bande d'ordre des tours que si l'ordre calculé a changé
+## (cache une liste d'instance_id) — évite de recréer des TextureRect à chaque
+## rafraîchissement (plusieurs fois par tour).
+func _rebuild_turn_strip() -> void:
+	var order: Array = game.preview_turn_order(TURN_STRIP_N)
+	var ids: Array = []
+	for e in order:
+		ids.append(e.get_instance_id())
+	if ids == _turn_strip_ids:
+		return
+	_turn_strip_ids = ids
+	for c in turn_strip.get_children():
+		turn_strip.remove_child(c)
+		c.queue_free()
+	for e in order:
+		var is_player: bool = e.faction == Entity.Faction.PLAYER
+		var slot := PanelContainer.new()
+		slot.custom_minimum_size = Vector2(26, 26)
+		var box := StyleBoxFlat.new()
+		box.bg_color = Color(0.08, 0.07, 0.11, 0.9)
+		box.set_border_width_all(2 if is_player else 1)
+		box.border_color = Ui.ACCENT if is_player else Color(0.4, 0.38, 0.5, 0.6)
+		box.set_corner_radius_all(4)
+		box.set_content_margin_all(1)
+		slot.add_theme_stylebox_override("panel", box)
+		var path := "res://assets/%s.png" % e.sprite
+		if e.sprite != "" and ResourceLoader.exists(path):
+			var tr := TextureRect.new()
+			tr.texture = load(path)
+			tr.custom_minimum_size = Vector2(22, 22)
+			tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+			slot.add_child(tr)
+		else:
+			slot.add_child(Ui.label(e.glyph, 14, e.color, true))
+		turn_strip.add_child(slot)
 
 func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
 
 func _rebuild_artifacts() -> void:
+	var items: Array = game.player.artifacts
+	var fp: String = ",".join(items.map(func(a): return str(a.get("name", "?"))))
+	if fp == _artifact_fp:
+		return
+	_artifact_fp = fp
 	for c in artifact_box.get_children():
 		c.queue_free()
-	if game.player.artifacts.is_empty():
+	if items.is_empty():
 		artifact_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for a in game.player.artifacts:
+	for a in items:
 		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
 		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_powers() -> void:
+	var items: Array = game.player.powers
+	var fp: String = ",".join(items.map(func(p): return str(p.get("name", "?"))))
+	if fp == _power_fp:
+		return
+	_power_fp = fp
 	for c in power_box.get_children():
 		c.queue_free()
-	if game.player.powers.is_empty():
+	if items.is_empty():
 		power_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for p in game.player.powers:
+	for p in items:
 		power_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
 		power_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
+	var syns: Array = game.player.active_synergies
+	var fp: String = ",".join(syns.map(func(s): return str(s.get("name", "?"))))
+	if fp == _synergy_fp:
+		return
+	_synergy_fp = fp
 	for c in synergy_box.get_children():
 		c.queue_free()
-	var syns: Array = game.player.active_synergies
 	if syns.is_empty():
 		synergy_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
 		return
@@ -1057,9 +1223,13 @@ const STATUS_LABEL := {
 }
 
 func _rebuild_statuses() -> void:
+	var st: Array = game.player.statuses
+	var fp: String = ",".join(st.map(func(s): return "%s:%d:%d" % [str(s["id"]), int(s.get("stacks", 1)), int(s["turns"])]))
+	if fp == _status_fp:
+		return
+	_status_fp = fp
 	for c in status_box.get_children():
 		c.queue_free()
-	var st: Array = game.player.statuses
 	if st.is_empty():
 		status_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return
@@ -1072,3 +1242,47 @@ func _rebuild_statuses() -> void:
 			txt += " ×%d" % stacks
 		txt += "  (%d t)" % int(s["turns"])
 		status_box.add_child(Ui.label(txt, 14, meta[1]))
+
+const BEHAVIOR_LABEL := {
+	"melee": "Corps à corps", "ranged": "Tireur", "caster": "Invocateur/Hurleuse",
+	"charger": "Chargeur", "fleer": "Fuyard", "teleporter": "Insaisissable",
+	"ambush": "Mimique", "stationary": "Gardien lié",
+}
+
+## Section INSPECTION (survol souris, cf. MapView.tile_at_mouse) : détail de
+## l'ennemi visible survolé. `e` peut être null (rien survolé -> placeholder).
+## TODO parité clavier : pas d'inspection au clavier pour l'instant, souris seule.
+func show_inspect(e) -> void:
+	for c in inspect_box.get_children():
+		c.queue_free()
+	if e == null:
+		inspect_box.add_child(Ui.label("— survole un ennemi —", 12, Color(0.5, 0.5, 0.58)))
+		return
+	inspect_box.add_child(Ui.label(str(e.display_name), 14, e.color, false, true, SIDEBAR_W - 60))
+	inspect_box.add_child(Ui.label("PV %d / %d" % [e.hp, e.max_hp], 12, Color(0.85, 0.85, 0.92)))
+	var atk_line: String = "ATK %d" % e.atk
+	if e.ai.get("pack", false):
+		atk_line += "  (meute)"
+	inspect_box.add_child(Ui.label(atk_line, 12, Color(0.85, 0.85, 0.92)))
+	inspect_box.add_child(Ui.label("VIT %d" % e.speed, 12, Color(0.85, 0.85, 0.92)))
+	var behavior: String = String(e.ai.get("behavior", "melee"))
+	inspect_box.add_child(Ui.label(BEHAVIOR_LABEL.get(behavior, behavior), 12, Color(0.7, 0.85, 1.0)))
+	var oh: Dictionary = e.ai.get("on_hit", {})
+	if not oh.is_empty():
+		var sid: String = String(oh.get("id", ""))
+		var slabel: String = str(STATUS_LABEL.get(sid, [sid, Color.WHITE])[0])
+		inspect_box.add_child(Ui.label("Au contact : %s (%d t)" % [slabel, int(oh.get("turns", 1))], 12, Color(0.9, 0.75, 0.55)))
+	var rp: float = float(e.ai.get("resist_phys", 0.0))
+	if rp > 0.0:
+		inspect_box.add_child(Ui.label("Résiste au physique %d%%" % int(round(rp * 100.0)), 12, Color(0.6, 0.75, 0.9)))
+	elif rp < 0.0:
+		inspect_box.add_child(Ui.label("Vulnérable au physique", 12, Color(0.9, 0.6, 0.6)))
+	var rm: float = float(e.ai.get("resist_magic", 0.0))
+	if rm > 0.0:
+		inspect_box.add_child(Ui.label("Résiste à la magie %d%%" % int(round(rm * 100.0)), 12, Color(0.6, 0.75, 0.9)))
+	elif rm < 0.0:
+		inspect_box.add_child(Ui.label("Vulnérable à la magie", 12, Color(0.9, 0.6, 0.6)))
+	if e.ai.get("immune_fire", false):
+		inspect_box.add_child(Ui.label("Insensible au feu", 12, Color(0.6, 0.75, 0.9)))
+	elif float(e.ai.get("weak_fire", 0.0)) > 0.0:
+		inspect_box.add_child(Ui.label("Craint le feu", 12, Color(0.9, 0.6, 0.5)))
