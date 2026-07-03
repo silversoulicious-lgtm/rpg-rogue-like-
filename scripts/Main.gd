@@ -37,6 +37,10 @@ var map_act: int = 0       # nombre de Gardiens vaincus ce run (sélection du bo
 var act_floor: int = 0     # étages réels complétés depuis le dernier Gardien
 var _act_rest_done: bool = false   # garantit 1 pause Repos/Boutique avant chaque Gardien
 var current_node_type: String = "combat"
+# Nature de l'écran CHOICE actuellement ouvert : "reward"/"shop"/"event"/"rest".
+# Plusieurs types de nœud partagent State.CHOICE ; ce tag les désambiguïse pour
+# le harnais d'auto-jeu (Phase 5.1) et toute logique qui inspecte l'état.
+var current_choice: String = ""
 var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
@@ -432,6 +436,7 @@ func _node_cleared() -> void:
 func _open_floor_reward(is_elite: bool) -> void:
 	pending_rewards = _make_floor_rewards(is_elite)
 	state = State.CHOICE
+	current_choice = "reward"
 	hud.show_floor_reward(pending_rewards, is_elite)
 
 ## Construit le butin de fin d'étage : soin, équipement, Éclats (+ bonus élite),
@@ -645,8 +650,12 @@ func _boss_update_phase(e: Entity) -> void:
 func _pick_enemy_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ENEMIES:
-		if def["min_floor"] <= floor_num:
-			pool.append(def)
+		if def["min_floor"] > floor_num:
+			continue
+		# Phase 5.2 : les espèces faibles se retirent au lieu de scaler à l'infini.
+		if def.has("max_floor") and floor_num > int(def["max_floor"]):
+			continue
+		pool.append(def)
 	if pool.is_empty():
 		pool = [Data.ENEMIES[0]]
 	return pool[rng.randi_range(0, pool.size() - 1)]
@@ -654,19 +663,27 @@ func _pick_enemy_def() -> Dictionary:
 ## Crée un ennemi (ou un boss si is_boss) à partir d'une définition, scalé par l'étage.
 func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false) -> Entity:
 	var e := Entity.new()
-	var scale: float = 1.0 + float(floor - 1) * (0.18 if is_boss else 0.12)
+	# Phase 5.2 : pentes d'échelle SÉPARÉES par stat (PV / ATK / DEF) — leviers
+	# d'équilibrage distincts, tous dans Data.gd. La Défense est désormais scalée.
+	var step: float = float(floor - 1)
+	var hp_scale: float = 1.0 + step * (Data.BOSS_HP_SLOPE if is_boss else Data.ENEMY_HP_SLOPE)
+	var atk_scale: float = 1.0 + step * (Data.BOSS_ATK_SLOPE if is_boss else Data.ENEMY_ATK_SLOPE)
+	var def_scale: float = 1.0 + step * (Data.BOSS_DEF_SLOPE if is_boss else Data.ENEMY_DEF_SLOPE)
 	e.display_name = def["name"]
 	e.glyph = def["glyph"]
 	e.sprite = def.get("sprite", "boss" if is_boss else "")
 	e.color = def["color"]
 	e.faction = Entity.Faction.ENEMY
 	e.is_boss = is_boss
-	e.max_hp = int(round(def["max_hp"] * scale))
+	e.max_hp = int(round(def["max_hp"] * hp_scale))
 	e.hp = e.max_hp
-	e.atk = int(round(def["atk"] * scale))
-	e.defense = int(def.get("defense", 0))
+	e.atk = int(round(def["atk"] * atk_scale))
+	e.defense = int(round(int(def.get("defense", 0)) * def_scale))
 	e.speed = int(def.get("speed", 100))
 	e.shard_value = def["shards"]
+	# Phase 5.2 : l'XP est découplée des Éclats (champ "xp" explicite, par défaut
+	# égal aux Éclats). Permet de régler la courbe de niveau sans toucher l'économie.
+	e.xp_value = int(def.get("xp", def["shards"]))
 	e.x = p.x
 	e.y = p.y
 	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
@@ -1734,7 +1751,7 @@ func on_enemy_killed(e: Entity) -> void:
 	Sfx.play("danger" if e.is_boss else "kill")
 	run_kills += 1
 	run_shards += e.shard_value
-	player.xp += e.shard_value
+	player.xp += e.xp_value
 	if player.has_proc("moisson"):
 		var bonus_shards: int = int(round(player.proc_value("moisson")))
 		run_shards += bonus_shards
@@ -2557,6 +2574,7 @@ func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
 # --- Boutique -----------------------------------------------------------------
 func open_shop() -> void:
 	state = State.CHOICE
+	current_choice = "shop"
 	shop_stock = []
 	for i in 3:
 		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
@@ -2605,6 +2623,7 @@ func leave_shop() -> void:
 # --- Événement ----------------------------------------------------------------
 func open_event() -> void:
 	state = State.CHOICE
+	current_choice = "event"
 	current_event = Data.EVENTS[rng.randi_range(0, Data.EVENTS.size() - 1)]
 	hud.show_event(current_event)
 
@@ -2627,13 +2646,16 @@ func _apply_event_effect(ch: Dictionary) -> void:
 			run_shards += int(ch["value"])
 			add_message("+%d Éclats." % int(ch["value"]))
 		"gamble":
-			if rng.randf() < 0.6:
-				run_shards += 30
-				add_message("[color=#9fff9f]Chance ! +30 Éclats.[/color]")
+			# Phase 5.2 : vrai pari — 55% gain, 45% perte de 15% des PV max (met
+			# vraiment en jeu, indépendamment de l'étage grâce au pourcentage).
+			if rng.randf() < 0.55:
+				run_shards += 25
+				add_message("[color=#9fff9f]Chance ! +25 Éclats.[/color]")
 			else:
 				last_damage_source = str(current_event.get("title", "un événement"))
-				player.take_damage(10)
-				add_message("[color=#ff8a8a]Piège ! −10 PV.[/color]")
+				var loss: int = maxi(1, int(round(player.max_hp * 0.15)))
+				player.take_damage(loss)
+				add_message("[color=#ff8a8a]Piège ! −%d PV (15%%).[/color]" % loss)
 		"trade_artifact":
 			if run_shards >= 20:
 				var a: Dictionary = _pick_artifact_def()
@@ -2676,6 +2698,7 @@ func _apply_event_effect(ch: Dictionary) -> void:
 # --- Repos (feu de camp) ------------------------------------------------------
 func open_rest() -> void:
 	state = State.CHOICE
+	current_choice = "rest"
 	hud.show_rest()
 
 func rest_choice(kind: String) -> void:
@@ -2780,7 +2803,9 @@ func abandon_run() -> void:
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:
-	return 6 + level * 5
+	# Phase 5.2 : courbe quadratique — coupe le flot de niveaux du début de run
+	# (avant : 6 + level*5, quasi linéaire).
+	return 10 + level * level * 3
 
 func _check_level_up() -> void:
 	while player.xp >= xp_to_next(player.level):

@@ -1206,6 +1206,32 @@ func _ready() -> void:
 	assert(main.hud.artifact_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les artefacts changent")
 	print("OK Phase 7.7: sections sidebar (artefacts/pouvoirs/synergies/états) mises en cache par empreinte")
 
+	# --- Phase 5.2 : leviers d'échelle, XP découplée, filtre max_floor ----------
+	# Courbe d'XP quadratique.
+	assert(main.xp_to_next(1) == 10 + 1 * 1 * 3 and main.xp_to_next(5) == 10 + 5 * 5 * 3, "xp_to_next est quadratique (10 + level²·3)")
+	# Pentes d'échelle séparées : à l'étage 11 (step 10), les multiplicateurs valent
+	# 1 + 10·pente. On vérifie que HP et ATK utilisent des pentes distinctes.
+	var gob_def: Dictionary = main._enemy_def_by_sprite("gobelin")
+	var scaled: Entity = main._make_enemy(gob_def, 11, Vector2i(3, 3))
+	assert(scaled.max_hp == int(round(gob_def["max_hp"] * (1.0 + 10.0 * Data.ENEMY_HP_SLOPE))), "PV ennemis scalés par ENEMY_HP_SLOPE")
+	assert(scaled.atk == int(round(gob_def["atk"] * (1.0 + 10.0 * Data.ENEMY_ATK_SLOPE))), "ATK ennemis scalée par ENEMY_ATK_SLOPE (pente distincte des PV)")
+	# XP découplée : xp_value = shards par défaut, mais champ indépendant.
+	assert(scaled.xp_value == int(gob_def["shards"]), "xp_value par défaut = shards (découplage en place)")
+	# Défense scalée : un ennemi à défense de base > 0 gagne de la défense avec l'étage.
+	var orc_def: Dictionary = main._enemy_def_by_sprite("orc")
+	var orc_hi: Entity = main._make_enemy(orc_def, 11, Vector2i(3, 3))
+	assert(orc_hi.defense == int(round(int(orc_def["defense"]) * (1.0 + 10.0 * Data.ENEMY_DEF_SLOPE))), "défense ennemie désormais scalée par ENEMY_DEF_SLOPE")
+	# Filtre max_floor : le Gobelin (max_floor 14) se retire du pool tardif.
+	main.floor_num = 20
+	var late_pool_has_gobelin := false
+	for _i in range(60):
+		if String(main._pick_enemy_def().get("sprite", "")) == "gobelin":
+			late_pool_has_gobelin = true
+			break
+	assert(not late_pool_has_gobelin, "le Gobelin (max_floor 14) ne réapparaît plus à l'étage 20")
+	main.floor_num = 1
+	print("OK Phase 5.2: XP quadratique découplée, pentes HP/ATK/DEF séparées, retrait des espèces faibles (max_floor)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

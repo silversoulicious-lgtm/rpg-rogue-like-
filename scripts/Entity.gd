@@ -18,6 +18,7 @@ var is_legendary: bool = false    # spawn rare : stats boostées, lâche un pouv
 var facing: Vector2i = Vector2i(0, 1)   # orientation (sprites directionnels) : bas par défaut
 var enraged: bool = false        # boss : passe en rage sous 50% PV (dégâts accrus)
 var shard_value: int = 0
+var xp_value: int = 0            # XP lâchée à la mort (Phase 5.2 : découplée des Éclats)
 # IA / traits d'ENNEMI (data-driven, réutilisable). Vide pour le héros et les
 # ennemis simples (comportement "melee" par défaut). Clés possibles : behavior,
 # resist_phys, resist_magic, weak_fire, on_hit {id,turns,value}, lifesteal,

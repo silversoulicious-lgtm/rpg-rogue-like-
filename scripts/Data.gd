@@ -104,6 +104,21 @@ const CAP_DODGE := 0.60
 const CAP_CRIT := 0.75
 const CAP_LIFESTEAL := 0.50
 
+# --- COURBES D'ÉCHELLE (Phase 5.2 : leviers d'équilibrage, data-driven) --------
+# Pente d'échelle par étage appliquée aux stats ennemies dans Main._make_enemy.
+# HP et ATK ont des pentes SÉPARÉES (avant Phase 5.2 elles partageaient 0.12) :
+# on peut durcir les PV sans gonfler les dégâts, ou l'inverse. La Défense était
+# NON scalée — elle l'est désormais (pente douce) pour que les tanks tardifs
+# tiennent. Objectif : étage de mort médian sans méta ≈ 12-15.
+const ENEMY_HP_SLOPE := 0.12
+const ENEMY_ATK_SLOPE := 0.10
+const ENEMY_DEF_SLOPE := 0.06
+const BOSS_HP_SLOPE := 0.18
+const BOSS_ATK_SLOPE := 0.15
+const BOSS_DEF_SLOPE := 0.08
+# Pente d'échelle des objets procéduraux (cf. _generate_procedural_item).
+const ITEM_SCALE_SLOPE := 0.08
+
 # --- TERRAIN ÉLÉMENTAIRE (Phase 4) ---------------------------------------------
 # Chance par tour, par arbre adjacent à une case en feu, de s'embraser à son
 # tour. `static var` (pas `const`) pour que le smoke test puisse la forcer à
@@ -257,8 +272,12 @@ static func weighted_pick(pool: Array, rng: RandomNumberGenerator) -> String:
 
 # --- ENNEMIS ------------------------------------------------------------------
 const ENEMIES := [
-	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },
-	{ "name": "Loup",     "glyph": "w", "sprite": "loup",      "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1 },
+	# Phase 5.2 : champ optionnel "max_floor" — l'espèce se retire de la sélection
+	# au-delà de cet étage (les faibles cèdent la place au lieu de scaler à
+	# l'infini). Champ optionnel "xp" (défaut = shards, cf. Main._make_enemy) pour
+	# régler l'XP indépendamment de l'économie d'Éclats.
+	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1, "max_floor": 14 },
+	{ "name": "Loup",     "glyph": "w", "sprite": "loup",      "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1, "max_floor": 16 },
 	{ "name": "Squelette","glyph": "s", "sprite": "squelette", "color": Color(0.9, 0.9, 0.85),"max_hp": 14, "atk": 5, "defense": 2, "speed": 100, "shards": 4, "min_floor": 3 },
 	{ "name": "Orc",      "glyph": "o", "sprite": "orc",       "color": Color(0.4, 0.7, 0.4), "max_hp": 20, "atk": 7, "defense": 3, "speed": 90,  "shards": 6, "min_floor": 5 },
 	{ "name": "Spectre",  "glyph": "S", "sprite": "spectre",   "color": Color(0.7, 0.5, 1.0), "max_hp": 18, "atk": 9, "defense": 1, "speed": 115, "shards": 8, "min_floor": 7 },
@@ -295,7 +314,7 @@ const ENEMIES := [
 	  "ai": { "behavior": "melee", "pack": true, "pack_bonus": 2 } },
 	{ "name": "Troll des cavernes", "glyph": "T", "sprite": "troll", "color": Color(0.45, 0.6, 0.45), "max_hp": 40, "atk": 7, "defense": 2, "speed": 85, "shards": 9, "min_floor": 7, "hp_regen": 4,
 	  "ai": { "behavior": "melee", "weak_fire": 1.0 } },
-	{ "name": "Kobold", "glyph": "k", "sprite": "kobold", "color": Color(0.8, 0.5, 0.35), "max_hp": 7, "atk": 3, "defense": 0, "speed": 125, "shards": 3, "min_floor": 2,
+	{ "name": "Kobold", "glyph": "k", "sprite": "kobold", "color": Color(0.8, 0.5, 0.35), "max_hp": 7, "atk": 3, "defense": 0, "speed": 125, "shards": 3, "min_floor": 2, "max_floor": 14,
 	  "ai": { "behavior": "fleer", "pack": true, "pack_bonus": 1, "drops_trap": true } },
 	{ "name": "Cultiste", "glyph": "c", "sprite": "cultiste", "color": Color(0.75, 0.4, 0.5), "max_hp": 18, "atk": 5, "defense": 0, "speed": 100, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "kobold", "summon_max": 3, "cast_range": 6, "cooldown": 3, "sacrifice": true, "sac_radius": 2, "sac_mult": 1.6, "kite_at": 3 } },
@@ -647,7 +666,7 @@ static func _generate_procedural_item(slot: String, floor: int, rarity: Dictiona
 		if b["slot"] == slot:
 			bases.append(b)
 	var base: Dictionary = bases[rng.randi_range(0, bases.size() - 1)]
-	var fscale: float = 1.0 + float(floor - 1) * 0.08
+	var fscale: float = 1.0 + float(floor - 1) * ITEM_SCALE_SLOPE
 	var bonus: Dictionary = {}
 	for k in base["primary"]:
 		var v: float = float(base["primary"][k]) * fscale * rarity["mult"]
