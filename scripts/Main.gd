@@ -45,6 +45,8 @@ var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
 var oil_fire_turns: int = 0            # Huile ardente (Phase 6.3) : tours de brûlure-au-contact restants
+var _bark_cooldown: int = 0            # Barks (Phase 6.7) : tours avant la prochaine réplique autorisée
+var _last_bark: String = ""            # dernière réplique dite (jamais répétée d'affilée)
 
 # Compétences (Phase 2)
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
@@ -284,6 +286,8 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	run_best_item = {}
 	run_bosses = 0
 	oil_fire_turns = 0
+	_bark_cooldown = 0
+	_last_bark = ""
 	pending_levelups = 0
 	last_damage_source = ""
 	run_timeline.clear()
@@ -514,7 +518,8 @@ func generate_floor(node_type: String = "combat") -> void:
 	var msize: Vector2i = Data.random_map_size(rng)
 	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_act(map_act))
 	var biome_id: String = str(dungeon.biome.get("id", ""))
-	if biome_id != _last_timeline_biome:
+	var biome_changed: bool = biome_id != _last_timeline_biome
+	if biome_changed:
 		_last_timeline_biome = biome_id
 		_push_timeline("Étage %d — %s" % [floor_num, str(dungeon.biome.get("name", ""))])
 	player.x = dungeon.start.x
@@ -561,6 +566,11 @@ func generate_floor(node_type: String = "combat") -> void:
 			occupied.append(boss_spots[0])
 			_boss_on_spawn(boss, occupied)
 			add_message("[color=#ff6464]⚠ %s t'attend ! Vaincs-le pour ouvrir l'escalier.[/color]" % boss.display_name)
+			# Barks (Phase 6.7) : intro de boss variée selon les rencontres passées.
+			var bsprite: String = String(boss.sprite)
+			var faced: int = int(GameState.boss_faced.get(bsprite, 0))
+			bark(boss.pos(), Barks.boss_intro(bsprite, faced, rng))
+			GameState.boss_faced[bsprite] = faced + 1
 		else:
 			add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ![/color]")
 	elif is_elite:
@@ -580,6 +590,10 @@ func generate_floor(node_type: String = "combat") -> void:
 			dungeon.mark_explored(item["pos"])
 
 	refresh()        # règle map_view.dungeon, le brouillard et la caméra
+
+	# Barks (Phase 6.7) : commentaire d'ambiance à l'entrée d'un nouveau biome.
+	if biome_changed:
+		bark(player.pos(), Barks.pick(Barks.BIOME_ENTER.get(biome_id, []), rng))
 
 ## Phase 6.2 : applique un affixe d'élite (comportement, pas éponge plate). Bump
 ## de PV réduit à +15%, un affixe tiré donne le vrai caractère de l'élite.
@@ -1881,6 +1895,7 @@ func on_enemy_killed(e: Entity) -> void:
 		run_bosses += 1
 		_push_timeline("★ Gardien vaincu : %s (Étage %d)" % [e.display_name, floor_num])
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
+		bark(death_pos, Barks.pick(Barks.BOSS_KILL, rng))   # Barks (Phase 6.7)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
 		_bag_add(reward)
@@ -2189,6 +2204,11 @@ func _trigger_powers() -> void:
 func _player_acted() -> void:
 	if oil_fire_turns > 0:
 		oil_fire_turns -= 1
+	if _bark_cooldown > 0:
+		_bark_cooldown -= 1
+	# Barks (Phase 6.7) : plainte quand les PV passent sous 30%.
+	if player.is_alive() and player.hp <= int(player.max_hp * 0.30):
+		bark(player.pos(), Barks.pick(Barks.LOW_HP, rng))
 	_tick_terrain()
 	player.energy -= Entity.ACTION_COST
 	_begin_turn(player)
@@ -3016,6 +3036,18 @@ func add_message(msg: String) -> void:
 	messages.append(msg)
 	while messages.size() > MAX_LOG:
 		messages.pop_front()
+
+## Réplique d'Aria (Phase 6.7) : une ligne au journal + un flottant sur la carte.
+## Cadence limitée (max 1 barque / 10 tours) et jamais deux fois la même ligne
+## d'affilée. `text` vide = pas de réplique disponible → ignoré silencieusement.
+func bark(speaker_pos: Vector2i, text: String, color: Color = Barks.COLOR) -> void:
+	if text == "" or _bark_cooldown > 0 or text == _last_bark:
+		return
+	_bark_cooldown = 10
+	_last_bark = text
+	add_message("[i][color=#%s]Aria : %s[/color][/i]" % [color.to_html(false), text])
+	if map_view != null:
+		map_view.fx_bark(speaker_pos, text, color)
 
 ## Jalon du run (récap de fin de run) : entrée de biome, Gardien vaincu, pouvoir
 ## ramassé... Plafonné, seuls les RUN_TIMELINE_CAP derniers jalons sont gardés.

@@ -18,6 +18,9 @@ var knowledge_nodes: Array = []
 var discovered: Dictionary = { "skill": {}, "power": {}, "unique": {}, "monster": {} }
 # Bestiaire (Phase 6.5) : nombre de mises à mort par sprite d'ennemi (persisté).
 var kill_counts: Dictionary = {}
+# Barks (Phase 6.7) : nombre de fois qu'un boss (sprite) a été affronté (persiste
+# les rematchs pour varier les répliques d'intro).
+var boss_faced: Dictionary = {}
 # Niveaux d'amélioration achetés : { "vitalite": int, "force": int, "maitrise": int }
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
@@ -167,6 +170,7 @@ func save_game() -> void:
 		"last_loadout": last_loadout,
 		"settings": settings,
 		"kill_counts": kill_counts,
+		"boss_faced": boss_faced,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -205,6 +209,8 @@ func load_game() -> void:
 	# Bestiaire (Phase 6.5) — absent des sauvegardes v1/v2 antérieures : défaut {}.
 	var kc = parsed.get("kill_counts", {})
 	kill_counts = kc if typeof(kc) == TYPE_DICTIONARY else {}
+	var bf = parsed.get("boss_faced", {})   # Barks (Phase 6.7)
+	boss_faced = bf if typeof(bf) == TYPE_DICTIONARY else {}
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
 	last_loadout = str(parsed.get("last_loadout", "melee"))

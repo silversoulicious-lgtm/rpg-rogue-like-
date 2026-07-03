@@ -1362,6 +1362,27 @@ func _ready() -> void:
 	GameState.knowledge_nodes = []
 	print("OK Phase 6.5: bestiaire (record_kill, découverte, traits ≥ seuil, persistance)")
 
+	# --- Phase 6.7 : barks (répliques d'Aria) -----------------------------------
+	main.start_run("melee")
+	main._bark_cooldown = 0
+	main._last_bark = ""
+	var msg_before: int = main.messages.size()
+	main.bark(main.player.pos(), "Première réplique.")
+	assert(main.messages.size() == msg_before + 1, "bark ajoute une ligne au journal")
+	assert(main._bark_cooldown == 10, "bark arme une cadence de 10 tours")
+	# Cadence : une seconde barque immédiate est étouffée.
+	main.bark(main.player.pos(), "Deuxième réplique.")
+	assert(main.messages.size() == msg_before + 1, "cadence : pas de 2e barque avant 10 tours")
+	# Jamais deux fois la même ligne d'affilée, même cadence expirée.
+	main._bark_cooldown = 0
+	main.bark(main.player.pos(), "Première réplique.")
+	assert(main.messages.size() == msg_before + 1, "une réplique n'est jamais répétée d'affilée")
+	# Les pools de Barks existent et l'intro de boss varie selon les rencontres.
+	assert(not Barks.LOW_HP.is_empty() and not Barks.BOSS_KILL.is_empty(), "pools de barks non vides")
+	assert(Barks.BIOME_ENTER.has("volcan"), "un pool d'entrée existe par biome")
+	assert(Barks.boss_intro("_default", 0, main.rng) != "", "intro de boss (1re rencontre) fournit une ligne")
+	print("OK Phase 6.7: barks (journal + flottant, cadence 1/10 tours, jamais répétée, pools par déclencheur)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

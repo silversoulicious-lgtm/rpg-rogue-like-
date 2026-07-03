@@ -233,7 +233,7 @@ func _process(delta: float) -> void:
 	_dying = kept
 	var kept_floaters: Array = []
 	for fl in _floaters:
-		if _anim_t - float(fl["t"]) <= FLOATER_DUR:
+		if _anim_t - float(fl["t"]) <= float(fl.get("dur", FLOATER_DUR)):
 			kept_floaters.append(fl)
 	_floaters = kept_floaters
 	queue_redraw()
@@ -267,6 +267,12 @@ func fx_damage(pos: Vector2i, amount: int, kind: String) -> void:
 			col = Color(0.95, 0.95, 0.98); size = 12; text = str(amount)
 	var px: Vector2 = Vector2(pos.x * CELL + CELL * 0.5, pos.y * CELL + CELL * 0.3)
 	_floaters.append({ "text": text, "color": col, "size": size, "px": px, "t": _anim_t })
+
+## Réplique parlée (Phase 6.7) : réutilise le pipeline des nombres flottants
+## avec une durée plus longue et le préfixe « Aria : ». Une ligne, toujours.
+func fx_bark(pos: Vector2i, text: String, color: Color) -> void:
+	var px: Vector2 = Vector2(pos.x * CELL + CELL * 0.5, pos.y * CELL - CELL * 0.2)
+	_floaters.append({ "text": "Aria : " + text, "color": color, "size": 13, "px": px, "t": _anim_t, "dur": 2.5 })
 
 ## Repeuple les particules d'ambiance pour le biome courant (semées au hasard
 ## sur toute la zone de jeu, en espace écran).
