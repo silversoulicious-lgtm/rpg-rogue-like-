@@ -48,8 +48,7 @@ var turn_strip: HBoxContainer
 var _turn_strip_ids: Array = []      # cache : ne reconstruit que si l'ordre a changé
 # Empreintes des sections sidebar reconstruites à chaque refresh() (plusieurs
 # fois par tour) — ne reconstruire les nœuds que si le contenu a changé.
-var _artifact_fp: String = ""
-var _power_fp: String = ""
+var _relic_fp: String = ""
 var _synergy_fp: String = ""
 var _status_fp: String = ""
 # Sidebar
@@ -62,8 +61,7 @@ var hp_text: Label
 var xp_bar: ProgressBar
 var stat_labels: Dictionary = {}
 var equip_panel: Control
-var artifact_box: VBoxContainer
-var power_box: VBoxContainer
+var relic_box: VBoxContainer     # Phase 6.4 : artefacts + pouvoirs unifiés
 var synergy_box: VBoxContainer
 var status_box: VBoxContainer
 var inspect_box: VBoxContainer
@@ -150,10 +148,9 @@ func _build_sidebar() -> void:
 	equip_panel = load("res://scripts/EquipPanel.gd").new()
 	equip_panel.custom_minimum_size = Vector2(SIDEBAR_W - 56, 148)
 	v.add_child(equip_panel)
-	v.add_child(_section("ARTEFACTS"))
-	artifact_box = Ui.vbox(5); v.add_child(artifact_box)
-	v.add_child(_section("POUVOIRS"))
-	power_box = Ui.vbox(5); v.add_child(power_box)
+	# Phase 6.4 : artefacts et pouvoirs fusionnés en une seule section « Reliques ».
+	v.add_child(_section("RELIQUES"))
+	relic_box = Ui.vbox(5); v.add_child(relic_box)
 	v.add_child(_section("SYNERGIES"))
 	synergy_box = Ui.vbox(4); v.add_child(synergy_box)
 	v.add_child(Ui.label("[I] Inventaire", 11, Color(0.45, 0.65, 0.88)))
@@ -411,6 +408,24 @@ func show_floor_reward(rewards: Array, is_elite: bool) -> void:
 		overlay_content.add_child(btn)
 		if r.get("desc", "") != "":
 			overlay_content.add_child(Ui.label("   " + String(r["desc"]), 12, Color(0.7, 0.7, 0.78), false, true, 700))
+	_focus_first_button()
+
+## Écho d'Aria vaincu (Phase 6.8) : réclamer UN objet de son équipement.
+func show_echo_claim(items: Array) -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("✶ ÉCHO VAINCU — réclame une relique", Color(0.78, 0.68, 1.0))
+	_overlay_label("Le fantôme de ton dernier run cède l'un de ses objets. Un seul.", Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	for i in items.size():
+		var it: Dictionary = items[i]
+		var btn := Ui.button("%s  (%s)" % [String(it.get("name", "?")), Data.bonus_summary(it.get("bonus", {}))], 46, 16)
+		btn.add_theme_color_override("font_color", it.get("rarity_color", Color.WHITE))
+		btn.pressed.connect(game.claim_echo_item.bind(i))
+		overlay_content.add_child(btn)
+	var skip := Ui.button("Ne rien prendre", 42, 15)
+	skip.pressed.connect(game.claim_echo_item.bind(-1))
+	overlay_content.add_child(skip)
 	_focus_first_button()
 
 func show_event(event: Dictionary) -> void:
@@ -760,26 +775,70 @@ func show_codex() -> void:
 			skill_ids.append(sid)
 	_codex_section(col, "⚔ Compétences", "skill", skill_ids,
 		func(id): return String(Data.SKILLS[id]["name"]))
-	var power_ids: Array = []
-	for p in Data.POWERS:
-		power_ids.append(p["id"])
-	_codex_section(col, "Ω Pouvoirs", "power", power_ids, func(id): return _power_name(id))
+	# Phase 6.4 : Codex des Reliques (artefacts + pouvoirs unifiés).
+	var relic_ids: Array = []
+	for r in Data.relics():
+		relic_ids.append(r["id"])
+	_codex_section(col, "✦Ω Reliques", "relic", relic_ids, func(id): return _relic_name(id))
 	var uniq_names: Array = []
 	for u in Data.UNIQUE_ITEMS:
 		if not uniq_names.has(u["name"]):
 			uniq_names.append(u["name"])
 	_codex_section(col, "✦ Objets uniques", "unique", uniq_names, func(n): return String(n))
+	_codex_bestiary(col)
 
 	col.add_child(HSeparator.new())
 	var back := Ui.menu_button("↩   Retour à l'Arbre", 360.0, 16)
 	back.pressed.connect(game.open_knowledge)
 	col.add_child(back)
 
-func _power_name(id: String) -> String:
-	for p in Data.POWERS:
-		if p["id"] == id:
-			return String(p["name"])
+func _relic_name(id: String) -> String:
+	for r in Data.relics():
+		if String(r["id"]) == id:
+			return String(r["name"])
 	return id
+
+## Bestiaire (Phase 6.5) : liste ENEMIES + BOSSES. Nom révélé au 1er kill,
+## ligne de traits à partir de KILL_TRAITS_THRESHOLD kills, compteur de mises à mort.
+func _codex_bestiary(col: VBoxContainer) -> void:
+	var all: Array = []
+	for e in Data.ENEMIES:
+		all.append(e)
+	for b in Data.BOSSES:
+		all.append(b)
+	var seen: Dictionary = GameState.discovered.get("monster", {})
+	col.add_child(Ui.label("☠ Bestiaire   (%d / %d)" % [seen.size(), all.size()], 18, Color(0.8, 0.85, 0.95), true))
+	for def in all:
+		var sprite: String = String(def.get("sprite", ""))
+		if seen.has(sprite):
+			var kills: int = GameState.kills_of(sprite)
+			col.add_child(Ui.label("  ✓ %s   ×%d" % [str(def.get("name", "?")), kills], 14, Color(0.85, 0.9, 0.8)))
+			if kills >= GameState.KILL_TRAITS_THRESHOLD:
+				col.add_child(Ui.label("      " + enemy_traits_line(def), 12, Color(0.6, 0.65, 0.72), false, true, 740))
+		else:
+			col.add_child(Ui.label("  ??? — non découvert", 14, Color(0.45, 0.45, 0.52)))
+	col.add_child(_spacer(8))
+
+## Résumé FR des traits d'un ennemi (partagé avec l'inspection, Phase 2.7) :
+## comportement + effet au contact + résistances/faiblesses/meute notables.
+func enemy_traits_line(def: Dictionary) -> String:
+	var ai: Dictionary = def.get("ai", {})
+	var parts: Array = [BEHAVIOR_LABEL.get(String(ai.get("behavior", "melee")), "Corps à corps")]
+	var oh: Dictionary = ai.get("on_hit", {})
+	if not oh.is_empty():
+		var sid: String = String(oh.get("id", ""))
+		parts.append("au contact : " + str(STATUS_LABEL.get(sid, [sid, Color.WHITE])[0]))
+	if float(ai.get("resist_phys", 0.0)) > 0.0:
+		parts.append("résiste au physique")
+	if float(ai.get("resist_magic", 0.0)) > 0.0:
+		parts.append("résiste à la magie")
+	if float(ai.get("weak_fire", 0.0)) > 0.0:
+		parts.append("craint le feu")
+	if bool(ai.get("pack", false)):
+		parts.append("meute")
+	if bool(ai.get("immune_fire", false)):
+		parts.append("insensible au feu")
+	return ", ".join(parts)
 
 ## Affiche une section du Codex : titre + compteur + liste (découverts en clair,
 ## inconnus masqués en « ??? »).
@@ -1118,8 +1177,7 @@ func refresh() -> void:
 		sb_ability.add_theme_color_override("font_color", Color(0.85, 0.85, 0.5))
 
 	_rebuild_equip()
-	_rebuild_artifacts()
-	_rebuild_powers()
+	_rebuild_relics()
 	_rebuild_synergies()
 	_rebuild_statuses()
 	_rebuild_turn_strip()
@@ -1166,35 +1224,25 @@ func _rebuild_turn_strip() -> void:
 func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
 
-func _rebuild_artifacts() -> void:
-	var items: Array = game.player.artifacts
-	var fp: String = ",".join(items.map(func(a): return str(a.get("name", "?"))))
-	if fp == _artifact_fp:
+## Phase 6.4 : section « Reliques » unique, alimentée par player.relics (stockage
+## unifié). Glyphe selon le tier : ✦ artefact, Ω pouvoir.
+func _rebuild_relics() -> void:
+	var relics: Array = game.player.relics
+	var fp: String = ",".join(relics.map(func(r): return str(r.get("tier", "?")) + ":" + str(r.get("name", "?"))))
+	if fp == _relic_fp:
 		return
-	_artifact_fp = fp
-	for c in artifact_box.get_children():
+	_relic_fp = fp
+	for c in relic_box.get_children():
 		c.queue_free()
-	if items.is_empty():
-		artifact_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
+	if relics.is_empty():
+		relic_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for a in items:
-		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
-		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
-
-func _rebuild_powers() -> void:
-	var items: Array = game.player.powers
-	var fp: String = ",".join(items.map(func(p): return str(p.get("name", "?"))))
-	if fp == _power_fp:
-		return
-	_power_fp = fp
-	for c in power_box.get_children():
-		c.queue_free()
-	if items.is_empty():
-		power_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
-		return
-	for p in items:
-		power_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
-		power_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
+	for r in relics:
+		var is_art: bool = String(r.get("tier", "")) == "artifact"
+		var glyph: String = "✦ " if is_art else "Ω "
+		var col: Color = Color(0.95, 0.75, 1.0) if is_art else Color(1.0, 0.78, 0.45)
+		relic_box.add_child(Ui.label(glyph + str(r.get("name", "?")), 14, col))
+		relic_box.add_child(Ui.label(str(r.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
 	var syns: Array = game.player.active_synergies

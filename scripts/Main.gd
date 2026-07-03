@@ -37,9 +37,18 @@ var map_act: int = 0       # nombre de Gardiens vaincus ce run (sélection du bo
 var act_floor: int = 0     # étages réels complétés depuis le dernier Gardien
 var _act_rest_done: bool = false   # garantit 1 pause Repos/Boutique avant chaque Gardien
 var current_node_type: String = "combat"
+# Nature de l'écran CHOICE actuellement ouvert : "reward"/"shop"/"event"/"rest".
+# Plusieurs types de nœud partagent State.CHOICE ; ce tag les désambiguïse pour
+# le harnais d'auto-jeu (Phase 5.1) et toute logique qui inspecte l'état.
+var current_choice: String = ""
 var shop_stock: Array = []
 var current_event: Dictionary = {}
 var first_strike_used: bool = false   # pour le proc d'objet unique "premier_coup"
+var oil_fire_turns: int = 0            # Huile ardente (Phase 6.3) : tours de brûlure-au-contact restants
+var _bark_cooldown: int = 0            # Barks (Phase 6.7) : tours avant la prochaine réplique autorisée
+var _last_bark: String = ""            # dernière réplique dite (jamais répétée d'affilée)
+var _echo_spawned: bool = false        # Écho (Phase 6.8) : déjà apparu ce run ?
+var _echo_claim_pending: Array = []    # objets réclamables à la mort de l'Écho (overlay différé)
 
 # Compétences (Phase 2)
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
@@ -260,8 +269,7 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	player.ability_cd = 0
 	player.equipment = { "arme": Data.make_starter_weapon(loadout_id) }
 	player.active_skill_id = Data.WEAPON_TYPE_BASE_SKILL[loadout_id]
-	player.artifacts = []
-	player.powers = []
+	player.relics = []
 	player.talents = []
 	player.level = 1
 	player.xp = 0
@@ -278,6 +286,11 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	run_best_hit = 0
 	run_best_item = {}
 	run_bosses = 0
+	oil_fire_turns = 0
+	_bark_cooldown = 0
+	_last_bark = ""
+	_echo_spawned = false
+	_echo_claim_pending = []
 	pending_levelups = 0
 	last_damage_source = ""
 	run_timeline.clear()
@@ -301,7 +314,7 @@ func _grant_starting_bonuses() -> void:
 		for i in GameState.start_artifacts():
 			var a: Dictionary = _pick_any_artifact()
 			if not a.is_empty():
-				player.artifacts.append(a)
+				player.relics.append(_tag_relic(a, "artifact"))
 				add_message("[color=#f0b8ff]✦ Héritage : %s[/color]" % a["name"])
 		for i in GameState.start_talents():
 			var t: Dictionary = Data.TALENTS[rng.randi_range(0, Data.TALENTS.size() - 1)]
@@ -310,7 +323,7 @@ func _grant_starting_bonuses() -> void:
 		if GameState.starts_with_power():
 			var pw: Dictionary = _pick_power_def()
 			if not pw.is_empty():
-				player.powers.append(pw)
+				player.relics.append(_tag_relic(pw, "power"))
 				add_message("[color=#ffb84a]Ω Pacte de Pouvoir : %s[/color]" % pw["name"])
 	elif GameState.oaths_unlocked():
 		add_message("[color=#d88a8a]Serment de Pauvreté : aucun bonus de départ.[/color]")
@@ -356,7 +369,7 @@ func oath_knowledge_bonus() -> int:
 func _pick_any_artifact() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ARTIFACTS:
-		if not player.has_artifact(def["id"]):
+		if not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
@@ -432,6 +445,7 @@ func _node_cleared() -> void:
 func _open_floor_reward(is_elite: bool) -> void:
 	pending_rewards = _make_floor_rewards(is_elite)
 	state = State.CHOICE
+	current_choice = "reward"
 	hud.show_floor_reward(pending_rewards, is_elite)
 
 ## Construit le butin de fin d'étage : soin, équipement, Éclats (+ bonus élite),
@@ -505,9 +519,10 @@ func generate_floor(node_type: String = "combat") -> void:
 	_forest_fire_warned = false
 	player.clear_statuses()
 	var msize: Vector2i = Data.random_map_size(rng)
-	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_floor(floor_num))
+	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_act(map_act))
 	var biome_id: String = str(dungeon.biome.get("id", ""))
-	if biome_id != _last_timeline_biome:
+	var biome_changed: bool = biome_id != _last_timeline_biome
+	if biome_changed:
 		_last_timeline_biome = biome_id
 		_push_timeline("Étage %d — %s" % [floor_num, str(dungeon.biome.get("name", ""))])
 	player.x = dungeon.start.x
@@ -533,10 +548,7 @@ func generate_floor(node_type: String = "combat") -> void:
 	for p in dungeon.random_floor_tiles(count, rng, occupied):
 		var e: Entity = _make_enemy(_pick_enemy_def(), floor_num, p)
 		if is_elite:
-			e.max_hp = int(e.max_hp * 1.25)
-			e.hp = e.max_hp
-			e.atk = int(e.atk * 1.2)
-			e.ai["smart_path"] = true
+			_apply_elite_affix(e)
 		elif not is_boss and rng.randf() < _legendary_chance():
 			e.is_legendary = true
 			e.display_name = "Légendaire : " + e.display_name
@@ -557,10 +569,20 @@ func generate_floor(node_type: String = "combat") -> void:
 			occupied.append(boss_spots[0])
 			_boss_on_spawn(boss, occupied)
 			add_message("[color=#ff6464]⚠ %s t'attend ! Vaincs-le pour ouvrir l'escalier.[/color]" % boss.display_name)
+			# Barks (Phase 6.7) : intro de boss variée selon les rencontres passées.
+			var bsprite: String = String(boss.sprite)
+			var faced: int = int(GameState.boss_faced.get(bsprite, 0))
+			bark(boss.pos(), Barks.boss_intro(bsprite, faced, rng))
+			GameState.boss_faced[bsprite] = faced + 1
 		else:
 			add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ![/color]")
 	elif is_elite:
 		add_message("[color=#ff9a64]☠ Salle d'élite : ennemis renforcés, meilleur butin.[/color]")
+
+	# Écho d'Aria (Phase 6.8) : surgit sur l'étage où tu es mort au run précédent.
+	if not is_boss and not _echo_spawned and not GameState.echo.is_empty() \
+			and int(GameState.echo.get("floor", -1)) == floor_num:
+		_spawn_echo(occupied)
 
 	var loot_count: int = mini(rng.randi_range(1, 3) + int(area / 9000) + (1 if is_elite else 0), 14)
 	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
@@ -576,6 +598,42 @@ func generate_floor(node_type: String = "combat") -> void:
 			dungeon.mark_explored(item["pos"])
 
 	refresh()        # règle map_view.dungeon, le brouillard et la caméra
+
+	# Barks (Phase 6.7) : commentaire d'ambiance à l'entrée d'un nouveau biome.
+	if biome_changed:
+		bark(player.pos(), Barks.pick(Barks.BIOME_ENTER.get(biome_id, []), rng))
+
+## Phase 6.2 : applique un affixe d'élite (comportement, pas éponge plate). Bump
+## de PV réduit à +15%, un affixe tiré donne le vrai caractère de l'élite.
+func _apply_elite_affix(e: Entity) -> void:
+	e.max_hp = int(round(e.max_hp * 1.15))
+	e.hp = e.max_hp
+	e.ai["smart_path"] = true
+	var af: Dictionary = Data.ELITE_AFFIXES[rng.randi_range(0, Data.ELITE_AFFIXES.size() - 1)]
+	e.ai["elite_affix"] = af["id"]
+	e.tint = af["tint"]
+	e.display_name = "Élite %s : %s" % [af["name"], e.display_name]
+	match String(af["id"]):
+		"rapide":
+			e.speed += 40
+		"explosif":
+			if not e.ai.has("explode"):
+				e.ai["explode"] = { "radius": 1, "mult": 1.3 }
+		"regenerant":
+			e.hp_regen = maxi(e.hp_regen, 4)
+		"voleur":
+			e.ai["steal"] = 4     # Éclats volés par coup (rendus à sa mort)
+			e.ai["stolen"] = 0
+		"chef":
+			e.ai["chef_aura"] = 3   # rayon d'aura +2 ATK aux alliés
+
+## Un ennemi « Chef » vivant est-il à portée d'aura de `e` ? (+2 ATK aux alliés)
+func _has_chef_aura(e: Entity) -> bool:
+	for o in enemies:
+		if o != e and o.is_alive() and o.ai.has("chef_aura"):
+			if _chebyshev(e.pos(), o.pos()) <= int(o.ai.get("chef_aura", 3)):
+				return true
+	return false
 
 ## Probabilité qu'un monstre soit légendaire (porteur de pouvoir), ×4 avec Chasseur.
 func _legendary_chance() -> float:
@@ -645,8 +703,12 @@ func _boss_update_phase(e: Entity) -> void:
 func _pick_enemy_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ENEMIES:
-		if def["min_floor"] <= floor_num:
-			pool.append(def)
+		if def["min_floor"] > floor_num:
+			continue
+		# Phase 5.2 : les espèces faibles se retirent au lieu de scaler à l'infini.
+		if def.has("max_floor") and floor_num > int(def["max_floor"]):
+			continue
+		pool.append(def)
 	if pool.is_empty():
 		pool = [Data.ENEMIES[0]]
 	return pool[rng.randi_range(0, pool.size() - 1)]
@@ -654,19 +716,27 @@ func _pick_enemy_def() -> Dictionary:
 ## Crée un ennemi (ou un boss si is_boss) à partir d'une définition, scalé par l'étage.
 func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false) -> Entity:
 	var e := Entity.new()
-	var scale: float = 1.0 + float(floor - 1) * (0.18 if is_boss else 0.12)
+	# Phase 5.2 : pentes d'échelle SÉPARÉES par stat (PV / ATK / DEF) — leviers
+	# d'équilibrage distincts, tous dans Data.gd. La Défense est désormais scalée.
+	var step: float = float(floor - 1)
+	var hp_scale: float = 1.0 + step * (Data.BOSS_HP_SLOPE if is_boss else Data.ENEMY_HP_SLOPE)
+	var atk_scale: float = 1.0 + step * (Data.BOSS_ATK_SLOPE if is_boss else Data.ENEMY_ATK_SLOPE)
+	var def_scale: float = 1.0 + step * (Data.BOSS_DEF_SLOPE if is_boss else Data.ENEMY_DEF_SLOPE)
 	e.display_name = def["name"]
 	e.glyph = def["glyph"]
 	e.sprite = def.get("sprite", "boss" if is_boss else "")
 	e.color = def["color"]
 	e.faction = Entity.Faction.ENEMY
 	e.is_boss = is_boss
-	e.max_hp = int(round(def["max_hp"] * scale))
+	e.max_hp = int(round(def["max_hp"] * hp_scale))
 	e.hp = e.max_hp
-	e.atk = int(round(def["atk"] * scale))
-	e.defense = int(def.get("defense", 0))
+	e.atk = int(round(def["atk"] * atk_scale))
+	e.defense = int(round(int(def.get("defense", 0)) * def_scale))
 	e.speed = int(def.get("speed", 100))
 	e.shard_value = def["shards"]
+	# Phase 5.2 : l'XP est découplée des Éclats (champ "xp" explicite, par défaut
+	# égal aux Éclats). Permet de régler la courbe de niveau sans toucher l'économie.
+	e.xp_value = int(def.get("xp", def["shards"]))
 	e.x = p.x
 	e.y = p.y
 	e.energy = rng.randi_range(0, Entity.ACTION_COST - 1)
@@ -711,7 +781,7 @@ func _spawn_loot(p: Vector2i, force_good: bool = false) -> void:
 func _pick_artifact_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.ARTIFACTS:
-		if def["min_floor"] <= floor_num and not player.has_artifact(def["id"]):
+		if def["min_floor"] <= floor_num and not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
@@ -949,7 +1019,11 @@ func use_ability() -> void:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
 		return
-	player.ability_cd = player.ability_cd_max
+	# Talent Écho Arcanique (Phase 6.1) : 15% de ne pas consommer la recharge.
+	if player.has_talent_hook("echo_arcanique") and rng.randf() < 0.15:
+		add_message("[color=#c8b0ff]✦ Écho arcanique : capacité toujours prête ![/color]")
+	else:
+		player.ability_cd = player.ability_cd_max
 	_player_acted()
 
 ## Dégâts de base d'une compétence selon le type d'arme, × multiplicateur "power".
@@ -1025,18 +1099,22 @@ func _cast_skill(skill: Dictionary) -> bool:
 		"pierce":
 			var tp: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tp == null: return false
-			return pierce_attack(player.pos(), _cardinal_to(tp.pos()), dmg, "%s transperce" % name, rng_tiles) > 0
+			# Talent Balistique (Phase 6.1) : +2 de portée de transpercement.
+			var pierce_rng: int = rng_tiles + (2 if player.has_talent_hook("balistique") else 0)
+			return pierce_attack(player.pos(), _cardinal_to(tp.pos()), dmg, "%s transperce" % name, pierce_rng) > 0
 		"bounce", "chain":
 			var tb: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tb == null: return false
-			return bounce_attack(tb, dmg, int(skill.get("bounces", 3)), "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
+			# Talent Balistique (Phase 6.1) : +1 rebond.
+			var bounces: int = int(skill.get("bounces", 3)) + (1 if player.has_talent_hook("balistique") else 0)
+			return bounce_attack(tb, dmg, bounces, "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
 		"push_strike":
 			var tk: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tk == null: return false
 			var pdir: Vector2i = _cardinal_to(tk.pos())
 			_player_attack(tk, dmg, "%s percute" % name)
 			if tk.is_alive():
-				push_entity(tk, pdir, int(skill.get("push", 2)))
+				push_entity(tk, pdir, int(skill.get("push", 2)), true)
 			return true
 		"status_shot":
 			var tst: Entity = _nearest_enemy_in_range(rng_tiles)
@@ -1154,10 +1232,14 @@ func dash(dir: Vector2i, distance: int) -> int:
 ## cible est repoussée sur sa case d'origine ; eau → 3 dégâts + ralenti, stop
 ## au bord ; glace → glisse (1 case bonus) ; piège → se déclenche contre la
 ## cible poussée ; mur/arbre/rocher → stop net.
-func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
+func push_entity(target: Entity, dir: Vector2i, tiles: int, by_player: bool = false) -> void:
 	if dir == Vector2i.ZERO or target == null or not target.is_alive() or dungeon == null:
 		return
-	var remaining: int = tiles
+	# Talent Démolisseur (Phase 6.1) : les poussées de la joueuse gagnent +1 case
+	# et +3 dégâts environnementaux/de collision contre l'entité poussée.
+	var demo: bool = by_player and player != null and player.has_talent_hook("demolisseur")
+	var push_bonus: int = 3 if demo else 0
+	var remaining: int = tiles + (1 if demo else 0)
 	var slid: bool = false
 	while remaining > 0:
 		remaining -= 1
@@ -1170,7 +1252,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 			if target == player:
 				last_damage_source = "une collision avec %s" % occupant.display_name
 			target.take_damage(2)
-			occupant.take_damage(2)
+			occupant.take_damage(2 + push_bonus)
 			add_message("[color=#ffb86a]Collision : %s et %s encaissent (-2 chacun).[/color]" %
 				["toi" if target == player else target.display_name,
 				 "toi" if occupant == player else occupant.display_name])
@@ -1182,7 +1264,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 				# Lave : morsure ardente, la cible rebondit sur sa case d'origine.
 				if target == player:
 					last_damage_source = "la lave"
-				target.take_damage(8 + floor_num)
+				target.take_damage(8 + floor_num + push_bonus)
 				apply_burn(target, 3, 3.0)
 				add_message("[color=#ff8a4a]La lave mord %s ![/color]" %
 					("ta chair" if target == player else target.display_name))
@@ -1190,7 +1272,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 				# Eau : reste sur la dernière case valide, trempé et ralenti.
 				if target == player:
 					last_damage_source = "l'eau glacée"
-				target.take_damage(3)
+				target.take_damage(3 + push_bonus)
 				apply_slow(target, 2, 0.4)
 				add_message("[color=#9fdfff]%s au bord de l'eau, trempé et ralenti.[/color]" %
 					("Tu vacilles" if target == player else "%s vacille" % target.display_name))
@@ -1232,12 +1314,26 @@ func _nearest_enemy_excluding(from: Vector2i, rng_tiles: int, exclude: Dictionar
 	return best
 
 # --- Statuts : application (utilisés par compétences/pouvoirs) -----------------
+## La joueuse subit-elle un dégât-sur-la-durée ? (talent Berserker, Phase 6.1)
+func _player_has_dot() -> bool:
+	return player != null and (player.has_status("poison") or player.has_status("burn")
+		or player.has_status("bleed") or player.has_status("disease"))
+
 func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 10) -> void:
-	target.add_status("poison", turns, dmg_per_turn, max_stacks)
+	var v: float = dmg_per_turn
+	# Talent Toxicologue (Phase 6.1) : ×1.6 sur les poisons que la joueuse inflige
+	# aux ennemis (les statuts ne tracent pas leur applicant — v1 honnête : on
+	# gate sur « cible ennemie » pour ne jamais amplifier un poison subi).
+	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("toxicologue"):
+		v *= 1.6
+	target.add_status("poison", turns, v, max_stacks)
 
 func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
 	if not target.ai.is_empty() and target.ai.get("immune_fire", false):
 		return                                   # Élémentaire de feu : insensible au feu
+	# Talent Pyromane (Phase 6.1) : +1 palier de brûlure max sur les cibles ennemies.
+	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("pyromane"):
+		max_stacks += 1
 	var v: float = dmg_per_turn
 	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
 	if wf > 0.0:
@@ -1472,10 +1568,14 @@ func _tick_terrain() -> void:
 					if ent != null and ent.is_alive():
 						apply_burn(ent, 2, 2.0 + floor_num * 0.2, 3)
 			# Propagation : chaque arbre 4-adjacent non touché a une chance de s'embraser.
+			# Talent Pyromane (Phase 6.1) : propagation à 50% au lieu de FIRE_SPREAD_CHANCE.
+			var spread_chance: float = Data.FIRE_SPREAD_CHANCE
+			if player != null and player.has_talent_hook("pyromane"):
+				spread_chance = maxf(spread_chance, 0.50)
 			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 				var np2: Vector2i = p + d
 				if dungeon.tiles[np2.y][np2.x] == Dungeon.TREE and dungeon.effects[np2.y][np2.x] == Dungeon.EFF_NONE:
-					if rng.randf() < Data.FIRE_SPREAD_CHANCE:
+					if rng.randf() < spread_chance:
 						ignite(np2)
 			if dungeon.effect_timer[p.y][p.x] <= 0:
 				dungeon.effects[p.y][p.x] = Dungeon.EFF_BURNT
@@ -1561,6 +1661,13 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		raw *= clampf(1.0 - float(target.ai["guardians"].get("resist", 0.85)), 0.02, 1.0)
 		if rng.randf() < 0.34:
 			add_message("[color=#9fb8ff]%s est protégé — détruis ses gardiens ![/color]" % target.display_name)
+	# Talents mécaniques (Phase 6.1) :
+	# Berserker — +25% de dégâts tant que la joueuse subit un DoT.
+	if player.has_talent_hook("berserker") and _player_has_dot():
+		raw *= 1.25
+	# Chasseur nocturne — +10% de dégâts à distance ≥ 4 (saveur « tir à distance »).
+	if player.has_talent_hook("chasseur_nuit") and _chebyshev(player.pos(), target.pos()) >= 4:
+		raw *= 1.10
 	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
 		raw *= 1.0 + player.proc_value("frenesie")
@@ -1604,8 +1711,11 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 	elif crit:
 		flair = "  [color=#ffec5a]CRITIQUE![/color]"
 	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
-	if player.has_power("venin") and target.is_alive():
+	if player.has_relic("venin") and target.is_alive():
 		apply_poison(target, 3, maxf(1.0, round(float(dealt) * 0.25)))
+	# Huile ardente (Phase 6.3) : brûlure au contact tant que le buff est actif.
+	if oil_fire_turns > 0 and target.is_alive():
+		apply_burn(target, 2, maxf(1.0, 2.0 + floor_num * 0.2))
 	if player.lifesteal_pct > 0.0 and dealt > 0:
 		var healed: int = int(ceil(dealt * player.lifesteal_pct))
 		if healed > 0:
@@ -1707,6 +1817,14 @@ func _enemy_hit_player(attacker: Entity) -> bool:
 		var drained: int = maxi(1, int(round(dealt * ls)))
 		attacker.heal(drained)
 		add_message("[color=#ff7a8a]%s te draine (+%d PV).[/color]" % [attacker.display_name, drained])
+	# Élite « Voleur » (Phase 6.2) : dérobe des Éclats à chaque coup (rendus à sa mort).
+	var steal: int = int(attacker.ai.get("steal", 0))
+	if steal > 0 and dealt > 0:
+		var taken: int = mini(steal, run_shards)
+		if taken > 0:
+			run_shards -= taken
+			attacker.ai["stolen"] = int(attacker.ai.get("stolen", 0)) + taken
+			add_message("[color=#ffd24a]%s te dérobe %d Éclats ![/color]" % [attacker.display_name, taken])
 	if player.thorns_flat > 0:
 		var d2: int = attacker.take_damage(player.thorns_flat)
 		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
@@ -1731,10 +1849,15 @@ func _check_revive() -> void:
 func on_enemy_killed(e: Entity) -> void:
 	if not enemies.has(e):
 		return
+	# Écho d'Aria (Phase 6.8) : mort spéciale (pas de butin/XP normal, overlay de butin).
+	if not e.ai.is_empty() and e.ai.get("is_echo", false):
+		_on_echo_killed(e)
+		return
 	Sfx.play("danger" if e.is_boss else "kill")
 	run_kills += 1
 	run_shards += e.shard_value
-	player.xp += e.shard_value
+	player.xp += e.xp_value
+	GameState.record_kill(String(e.sprite))   # Bestiaire (Phase 6.5)
 	if player.has_proc("moisson"):
 		var bonus_shards: int = int(round(player.proc_value("moisson")))
 		run_shards += bonus_shards
@@ -1765,7 +1888,7 @@ func on_enemy_killed(e: Entity) -> void:
 	var cloud_chance: float = float(e.ai.get("death_cloud", 0.0)) if not e.ai.is_empty() else 0.0
 	if cloud_chance > 0.0 and rng.randf() < cloud_chance:
 		spawn_poison_cloud(death_pos, 1)
-	if player.has_power("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
+	if player.has_relic("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
 		var boom: int = maxi(2, player.atk / 2 + player.ability_power)
 		var hits: int = aoe_attack(death_pos, 1, boom, "Détonation frappe")
 		if hits > 0:
@@ -1784,6 +1907,7 @@ func on_enemy_killed(e: Entity) -> void:
 		run_bosses += 1
 		_push_timeline("★ Gardien vaincu : %s (Étage %d)" % [e.display_name, floor_num])
 		add_message("[color=#ffd24a]★ Le Gardien tombe ! +%d Éclats. La voie est libre.[/color]" % e.shard_value)
+		bark(death_pos, Barks.pick(Barks.BOSS_KILL, rng))   # Barks (Phase 6.7)
 		var reward: Dictionary = Data.generate_boss_reward(floor_num, rng)
 		add_message("[color=#ffb86a]✦ Butin garanti du Gardien : %s ![/color]" % reward["name"])
 		_bag_add(reward)
@@ -1792,6 +1916,11 @@ func on_enemy_killed(e: Entity) -> void:
 			_drop_power(death_pos)
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
+		# Élite « Voleur » (Phase 6.2) : restitue tous les Éclats dérobés à sa mort.
+		var stolen: int = int(e.ai.get("stolen", 0)) if not e.ai.is_empty() else 0
+		if stolen > 0:
+			run_shards += stolen
+			add_message("[color=#ffd24a]Tu récupères %d Éclats dérobés.[/color]" % stolen)
 		if was_legendary:
 			_drop_power(death_pos)
 		elif rng.randf() < SKILL_DROP_CHANCE:
@@ -1973,17 +2102,63 @@ func use_consumable(item: Dictionary) -> void:
 			var s: int = int(item["value"])
 			run_shards += s
 			add_message("[color=#ffd24a]%s : +%d Éclats.[/color]" % [item["name"], s])
+		"bomb":
+			# Phase 6.3 : explose en zone sur l'ennemi visible le plus proche
+			# (à défaut, sur la joueuse — auto-dégât possible, c'est une bombe).
+			var bt: Entity = _nearest_enemy_in_range(8)
+			var center: Vector2i = bt.pos() if bt != null else player.pos()
+			var radius: int = int(item.get("radius", 2))
+			var boom: int = maxi(4, player.atk + player.ability_power + floor_num)
+			Sfx.play("danger")
+			aoe_attack(center, radius, boom, "%s explose sur" % item["name"])
+			ignite_area(center, radius)
+			add_message("[color=#ff8a4a]%s détone (rayon %d) ![/color]" % [item["name"], radius])
+		"cure":
+			var removed: Array = []
+			for st in player.statuses.duplicate():
+				var sid: String = String(st["id"])
+				if sid == "poison" or sid == "burn" or sid == "bleed" or sid == "disease":
+					player.statuses.erase(st)
+					removed.append(sid)
+			Sfx.play("heal")
+			if removed.is_empty():
+				add_message("[color=#9fdf9f]%s : rien à purger.[/color]" % item["name"])
+			else:
+				add_message("[color=#9fdf9f]%s purge tes maux (%d).[/color]" % [item["name"], removed.size()])
+		"recall":
+			var dest: Vector2i = _random_walkable_near(dungeon.stairs, 2) if dungeon != null else NO_TILE
+			if dest == NO_TILE:
+				add_message("[color=#9fb8ff]%s grésille sans effet.[/color]" % item["name"])
+			else:
+				player.x = dest.x
+				player.y = dest.y
+				dungeon.reveal(player.pos(), player.vision)
+				if map_view != null:
+					map_view.snap_entity(player)
+				_pickup_loot_at(player.pos())
+				add_message("[color=#9fb8ff]%s : te voilà près de l'escalier.[/color]" % item["name"])
+		"oil_fire":
+			oil_fire_turns = int(item.get("value", 20))
+			add_message("[color=#ff9a5a]%s : tes coups brûlent pour %d tours.[/color]" % [item["name"], oil_fire_turns])
 	inventory.erase(item)
 	refresh()
 
+## Phase 6.4 : copie une définition d'artefact/pouvoir en la taguant de son tier,
+## prête à être rangée dans player.relics (jamais la const partagée directement).
+func _tag_relic(def: Dictionary, tier: String) -> Dictionary:
+	var r: Dictionary = def.duplicate(true)
+	r["tier"] = tier
+	return r
+
 func _acquire_artifact(def: Dictionary) -> void:
-	if player.has_artifact(def["id"]):
+	if player.has_relic(def["id"]):
 		run_shards += 5
 		add_message("Artefact %s déjà actif (+5 Éclats)." % def["name"])
 		return
-	player.artifacts.append(def)
+	player.relics.append(_tag_relic(def, "artifact"))
 	player.recompute_stats()
 	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
+	_discover("relic", String(def["id"]), String(def["name"]))
 	refresh()
 
 # --- Pouvoirs passifs (Phase 3) ------------------------------------------------
@@ -1998,25 +2173,26 @@ func _drop_power(pos: Vector2i) -> void:
 func _pick_power_def() -> Dictionary:
 	var pool: Array = []
 	for def in Data.POWERS:
-		if not player.has_power(def["id"]):
+		if not player.has_relic(def["id"]):
 			pool.append(def)
 	if pool.is_empty():
 		return {}
 	return pool[rng.randi_range(0, pool.size() - 1)]
 
 ## Renvoie le pouvoir déjà actif qui s'exclut mutuellement avec `def` (vide si aucun).
+## N'inspecte que les reliques de tier "power" (les artefacts n'ont pas d'excludes).
 func _power_conflict(def: Dictionary) -> Dictionary:
 	for ex_id in def.get("excludes", []):
-		for p in player.powers:
+		for p in player.relics:
 			if p.get("id", "") == ex_id:
 				return p
-	for p in player.powers:
+	for p in player.relics:
 		if p.get("excludes", []).has(def["id"]):
 			return p
 	return {}
 
 func _acquire_power(def: Dictionary) -> void:
-	if player.has_power(def["id"]):
+	if player.has_relic(def["id"]):
 		run_shards += 10
 		add_message("Pouvoir %s déjà actif (+10 Éclats)." % def["name"])
 		return
@@ -2025,28 +2201,35 @@ func _acquire_power(def: Dictionary) -> void:
 		run_shards += 10
 		add_message("[color=#ff8a8a]%s est incompatible avec %s, déjà actif (+10 Éclats).[/color]" % [def["name"], conflict["name"]])
 		return
-	player.powers.append(def)
+	player.relics.append(_tag_relic(def, "power"))
 	player.recompute_stats()
 	add_message("[color=#ffb84a]Ω Pouvoir : %s — %s[/color]" % [def["name"], def["desc"]])
 	_push_timeline("Ω Pouvoir obtenu : %s" % def["name"])
-	_discover("power", String(def["id"]), String(def["name"]))
+	_discover("relic", String(def["id"]), String(def["name"]))
 	refresh()
 
 ## Déclenche les pouvoirs à activation automatique (drone/tourelle), après l'action du joueur.
 func _trigger_powers() -> void:
 	if not player.is_alive():
 		return
-	if player.has_power("drone"):
+	if player.has_relic("drone"):
 		var t: Entity = _nearest_enemy_in_range(6)
 		if t != null:
 			_player_attack(t, maxi(1, int(round(player.atk * 0.5)) + player.ability_power), "Le drone tire sur")
-	if player.has_power("turret"):
+	if player.has_relic("turret"):
 		var t2: Entity = _nearest_enemy_in_range(8)
 		if t2 != null:
 			aoe_attack(t2.pos(), 1, maxi(1, int(round(player.atk * 0.35)) + player.ability_power), "La tourelle frappe")
 
 # --- Boucle de tour à énergie -------------------------------------------------
 func _player_acted() -> void:
+	if oil_fire_turns > 0:
+		oil_fire_turns -= 1
+	if _bark_cooldown > 0:
+		_bark_cooldown -= 1
+	# Barks (Phase 6.7) : plainte quand les PV passent sous 30%.
+	if player.is_alive() and player.hp <= int(player.max_hp * 0.30):
+		bark(player.pos(), Barks.pick(Barks.LOW_HP, rng))
 	_tick_terrain()
 	player.energy -= Entity.ACTION_COST
 	_begin_turn(player)
@@ -2060,6 +2243,10 @@ func _player_acted() -> void:
 		return
 	advance_world()
 	if state != State.PLAYING:
+		return
+	# Écho vaincu ce tour : ouvre l'overlay de butin à un point sûr (hors action).
+	if not _echo_claim_pending.is_empty():
+		_open_echo_claim()
 		return
 	refresh()
 	_check_level_up()
@@ -2314,6 +2501,9 @@ func _enemy_atk(e: Entity) -> int:
 	if e.ai.get("pack", false):
 		var allies: int = _count_allies_near(e, 2)
 		a += int(round(float(e.ai.get("pack_bonus", 2)) * float(mini(allies, 3))))
+	# Aura d'un « Chef » d'élite proche (Phase 6.2) : +2 ATK aux alliés.
+	if _has_chef_aura(e):
+		a += 2
 	if e.has_status("weaken"):
 		a -= int(round(e.status_value("weaken")))
 	return maxi(1, a)
@@ -2530,6 +2720,10 @@ func _drop_trap(p: Vector2i) -> void:
 func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
 	if victim == null:
 		victim = player
+	# Talent Pied léger (Phase 6.1) : les pièges ne se déclenchent plus sous les
+	# pas de la joueuse (ils restent actifs contre les ennemis poussés dessus).
+	if victim == player and player != null and player.has_talent_hook("pied_leger"):
+		return
 	for h in hazards.duplicate():
 		if h["pos"] == p:
 			hazards.erase(h)
@@ -2557,6 +2751,7 @@ func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
 # --- Boutique -----------------------------------------------------------------
 func open_shop() -> void:
 	state = State.CHOICE
+	current_choice = "shop"
 	shop_stock = []
 	for i in 3:
 		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
@@ -2605,7 +2800,21 @@ func leave_shop() -> void:
 # --- Événement ----------------------------------------------------------------
 func open_event() -> void:
 	state = State.CHOICE
-	current_event = Data.EVENTS[rng.randi_range(0, Data.EVENTS.size() - 1)]
+	current_choice = "event"
+	# Phase 6.3 : les événements thématiques (champ "biome") ne sortent que dans
+	# le biome de l'étage À VENIR ; les génériques (sans "biome") sont toujours
+	# éligibles. Les événements se déclenchent entre deux étages.
+	# L'étage à venir reste dans la strate courante (seul un Gardien change de
+	# strate, jamais un événement) — on gate donc sur le biome de la strate.
+	var upcoming: String = String(Data.biome_for_act(map_act).get("id", ""))
+	var pool: Array = []
+	for ev in Data.EVENTS:
+		var b: String = String(ev.get("biome", ""))
+		if b == "" or b == upcoming:
+			pool.append(ev)
+	if pool.is_empty():
+		pool = Data.EVENTS
+	current_event = pool[rng.randi_range(0, pool.size() - 1)]
 	hud.show_event(current_event)
 
 func resolve_event(choice_idx: int) -> void:
@@ -2627,13 +2836,16 @@ func _apply_event_effect(ch: Dictionary) -> void:
 			run_shards += int(ch["value"])
 			add_message("+%d Éclats." % int(ch["value"]))
 		"gamble":
-			if rng.randf() < 0.6:
-				run_shards += 30
-				add_message("[color=#9fff9f]Chance ! +30 Éclats.[/color]")
+			# Phase 5.2 : vrai pari — 55% gain, 45% perte de 15% des PV max (met
+			# vraiment en jeu, indépendamment de l'étage grâce au pourcentage).
+			if rng.randf() < 0.55:
+				run_shards += 25
+				add_message("[color=#9fff9f]Chance ! +25 Éclats.[/color]")
 			else:
 				last_damage_source = str(current_event.get("title", "un événement"))
-				player.take_damage(10)
-				add_message("[color=#ff8a8a]Piège ! −10 PV.[/color]")
+				var loss: int = maxi(1, int(round(player.max_hp * 0.15)))
+				player.take_damage(loss)
+				add_message("[color=#ff8a8a]Piège ! −%d PV (15%%).[/color]" % loss)
 		"trade_artifact":
 			if run_shards >= 20:
 				var a: Dictionary = _pick_artifact_def()
@@ -2676,6 +2888,7 @@ func _apply_event_effect(ch: Dictionary) -> void:
 # --- Repos (feu de camp) ------------------------------------------------------
 func open_rest() -> void:
 	state = State.CHOICE
+	current_choice = "rest"
 	hud.show_rest()
 
 func rest_choice(kind: String) -> void:
@@ -2764,6 +2977,7 @@ func game_over(abandoned := false) -> void:
 		GameState.add_knowledge(knowledge_gained)
 	stats["knowledge"] = knowledge_gained
 	GameState.record_run(stats)
+	_record_echo()   # Écho (Phase 6.8) : instantané du run pour le prochain
 	state = State.GAMEOVER
 	var summary: String
 	if abandoned:
@@ -2780,7 +2994,9 @@ func abandon_run() -> void:
 
 # --- Montée de niveau & talents -----------------------------------------------
 func xp_to_next(level: int) -> int:
-	return 6 + level * 5
+	# Phase 5.2 : courbe quadratique — coupe le flot de niveaux du début de run
+	# (avant : 6 + level*5, quasi linéaire).
+	return 10 + level * level * 3
 
 func _check_level_up() -> void:
 	while player.xp >= xp_to_next(player.level):
@@ -2846,6 +3062,118 @@ func add_message(msg: String) -> void:
 	messages.append(msg)
 	while messages.size() > MAX_LOG:
 		messages.pop_front()
+
+## Réplique d'Aria (Phase 6.7) : une ligne au journal + un flottant sur la carte.
+## Cadence limitée (max 1 barque / 10 tours) et jamais deux fois la même ligne
+## d'affilée. `text` vide = pas de réplique disponible → ignoré silencieusement.
+func bark(speaker_pos: Vector2i, text: String, color: Color = Barks.COLOR) -> void:
+	if text == "" or _bark_cooldown > 0 or text == _last_bark:
+		return
+	_bark_cooldown = 10
+	_last_bark = text
+	add_message("[i][color=#%s]Aria : %s[/color][/i]" % [color.to_html(false), text])
+	if map_view != null:
+		map_view.fx_bark(speaker_pos, text, color)
+
+# --- Écho d'Aria (Phase 6.8) --------------------------------------------------
+## Rend un objet d'équipement JSON-safe : les `Color` (rarity_color) deviennent
+## des chaînes html — le round-trip JSON de la sauvegarde ne les détruit plus.
+func _echo_serialize_item(item: Dictionary) -> Dictionary:
+	var it: Dictionary = item.duplicate(true)
+	if it.has("rarity_color") and it["rarity_color"] is Color:
+		it["rarity_color"] = it["rarity_color"].to_html()
+	return it
+
+## Reconstitue un objet d'équipement chargé depuis l'écho (html → Color).
+func _echo_deserialize_item(item: Dictionary) -> Dictionary:
+	var it: Dictionary = item.duplicate(true)
+	if typeof(it.get("rarity_color", null)) == TYPE_STRING:
+		it["rarity_color"] = Color(it["rarity_color"])
+	return it
+
+## Enregistre l'instantané du run courant comme futur Écho (le plus récent
+## remplace l'ancien). Appelé à la mort.
+func _record_echo() -> void:
+	var equip: Dictionary = {}
+	for slot in player.equipment:
+		equip[slot] = _echo_serialize_item(player.equipment[slot])
+	var arme: Dictionary = player.equipment.get("arme", {})
+	GameState.store_echo({
+		"floor": floor_num,
+		"level": player.level,
+		"loadout": GameState.last_loadout,
+		"max_hp": player.max_hp,
+		"atk": player.atk,
+		"equipment": equip,
+		"proc": String(arme.get("proc", "")),
+		"proc_val": float(arme.get("proc_val", 0.0)),
+	})
+
+## Fait apparaître « l'Écho d'Aria » sur l'étage où la joueuse est morte au run
+## précédent. Une seule fois par run, hors étage de Gardien.
+func _spawn_echo(occupied: Array) -> void:
+	var spots: Array = dungeon.random_floor_tiles(1, rng, occupied)
+	if spots.is_empty():
+		return
+	var p: Vector2i = spots[0]
+	var echo: Dictionary = GameState.echo
+	var e := Entity.new()
+	e.display_name = "l'Écho d'Aria"
+	e.sprite = "aria"
+	e.glyph = "@"
+	e.color = Color(0.72, 0.62, 1.0)
+	e.tint = Color(0.72, 0.62, 1.0)   # teinte arcane (Phase 6.2 pipeline)
+	e.faction = Entity.Faction.ENEMY
+	e.max_hp = maxi(10, int(echo.get("max_hp", 30)))
+	e.hp = e.max_hp
+	e.atk = maxi(1, int(round(float(echo.get("atk", 5)) * 0.9)))
+	e.defense = 0
+	e.speed = 100
+	e.x = p.x
+	e.y = p.y
+	e.energy = 0
+	e.awake = true
+	e.ai = { "behavior": "melee", "is_echo": true, "smart_path": true }
+	# Porte le proc d'arme de l'écho (ex. frappe double) s'il en avait un.
+	var proc: String = String(echo.get("proc", ""))
+	if proc != "":
+		e.ai["on_hit"] = { "id": "bleed", "turns": 2, "value": 3.0 }
+	enemies.append(e)
+	occupied.append(p)
+	_echo_spawned = true
+	add_message("[color=#c8b0ff]✶ L'Écho d'Aria surgit — le fantôme de ton dernier run.[/color]")
+	bark(p, Barks.pick(Barks.ECHO_SEEN, rng))
+
+## Mort de l'Écho : pas de butin normal ; on diffère un overlay pour réclamer UN
+## objet de son équipement, puis on consomme l'écho.
+func _on_echo_killed(e: Entity) -> void:
+	if map_view != null:
+		map_view.fx_death(e)
+	enemies.erase(e)
+	Sfx.play("danger")
+	add_message("[color=#c8b0ff]L'Écho se dissipe. Réclame une relique de ton passé.[/color]")
+	var items: Array = []
+	for slot in GameState.echo.get("equipment", {}):
+		items.append(_echo_deserialize_item(GameState.echo["equipment"][slot]))
+	GameState.clear_echo()   # consommé à la mort, quoi qu'on réclame
+	if items.is_empty():
+		return
+	_echo_claim_pending = items   # ouvert à un point sûr (fin de _player_acted)
+
+func _open_echo_claim() -> void:
+	state = State.CHOICE
+	current_choice = "echo"
+	hud.show_echo_claim(_echo_claim_pending)
+
+## Réclame l'objet `idx` de l'Écho (ou aucun si idx < 0), puis reprend la partie.
+func claim_echo_item(idx: int) -> void:
+	if idx >= 0 and idx < _echo_claim_pending.size():
+		_bag_add(_echo_claim_pending[idx])
+		add_message("[color=#c8b0ff]Tu récupères %s de ton écho.[/color]" % String(_echo_claim_pending[idx].get("name", "?")))
+	_echo_claim_pending = []
+	state = State.PLAYING
+	hud.hide_overlay()
+	refresh()
 
 ## Jalon du run (récap de fin de run) : entrée de biome, Gardien vaincu, pouvoir
 ## ramassé... Plafonné, seuls les RUN_TIMELINE_CAP derniers jalons sont gardés.

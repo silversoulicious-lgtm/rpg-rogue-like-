@@ -42,7 +42,7 @@ func _ready() -> void:
 	GameState.knowledge_nodes = ["pacte_pouvoir"]
 	main.active_oaths = ["pauvrete"]
 	main.start_run("melee")
-	assert(main.player.powers.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
+	assert(main.player.relics.is_empty(), "Serment de Pauvreté : aucun pouvoir de départ, même avec Pacte de Pouvoir débloqué")
 	main.active_oaths = []
 	GameState.knowledge_nodes = []
 	print("OK Phase 1.10: le Serment de Pauvreté annule bien le Pacte de Pouvoir")
@@ -374,7 +374,7 @@ func _ready() -> void:
 	# Isole ce test d'un Pacte de Pouvoir "Cœur de Verre" (+50% ATK, potentiellement
 	# accordé au hasard au démarrage) : son arrondi rendrait le delta de +5 à plat
 	# non exact et casserait les comparaisons ci-dessous.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	main.unequip_item("arme")   # retire l'arme de loadout pour une base propre
 	main.inventory.clear()
 	var atk0 = main.player.atk
@@ -445,7 +445,7 @@ func _ready() -> void:
 		GameState.buy_upgrade("instinct")
 	assert(GameState.is_maxed("instinct") and not GameState.buy_upgrade("instinct"), "achat bloqué au plafond")
 	main.start_run("melee")
-	assert(main.player.artifacts.size() >= 1, "Héritage : artefact de départ accordé")
+	assert(main.player.relics.size() >= 1, "Héritage : artefact de départ accordé")
 	assert(main.player.talents.size() >= 1, "Instinct : talent de départ accordé")
 	assert(main.run_shards >= GameState.bonus_start_shards() and main.run_shards > 0, "Fortune : Éclats de départ")
 	print("OK méta élargie: bonus de départ appliqués, plafonds respectés")
@@ -621,7 +621,7 @@ func _ready() -> void:
 
 	# --- Phase 3 : pouvoirs passifs (cumul illimité, exclusions, drops) -----------
 	main.start_run("melee")
-	main.player.powers.clear()
+	main.player.relics.clear()
 	var pdrone = {}
 	var pturret = {}
 	var pglass = {}
@@ -630,14 +630,14 @@ func _ready() -> void:
 		if d["id"] == "turret": pturret = d
 		if d["id"] == "coeur_de_verre": pglass = d
 	main._acquire_power(pdrone)
-	assert(main.player.has_power("drone"), "pouvoir drone acquis")
+	assert(main.player.has_relic("drone"), "pouvoir drone acquis")
 	main._acquire_power(pdrone)
-	assert(main.player.powers.size() == 1, "doublon de pouvoir refusé (Éclats à la place)")
+	assert(main.player.relics.size() == 1, "doublon de pouvoir refusé (Éclats à la place)")
 	main._acquire_power(pglass)
-	assert(main.player.has_power("coeur_de_verre"), "cœur de verre acquis (cumul avec drone)")
+	assert(main.player.has_relic("coeur_de_verre"), "cœur de verre acquis (cumul avec drone)")
 	var atk_before = main.player.atk
 	main._acquire_power(pturret)
-	assert(not main.player.has_power("turret"), "tourelle refusée : exclusion mutuelle avec cœur de verre")
+	assert(not main.player.has_relic("turret"), "tourelle refusée : exclusion mutuelle avec cœur de verre")
 	assert(main.player.atk == atk_before, "stats inchangées après refus d'un pouvoir exclu")
 
 	# Le drone tire automatiquement sur l'ennemi le plus proche après l'action du joueur.
@@ -652,7 +652,7 @@ func _ready() -> void:
 	assert(de.hp < hp_before_drone, "le drone tire automatiquement sur l'ennemi le plus proche")
 
 	# Venin : applique un poison automatique sur les attaques.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	main._acquire_power(pdrone)   # gardé inerte: pas de venin -> pas de poison
 	main.enemies.clear()
 	var dv = Entity.new()
@@ -680,7 +680,7 @@ func _ready() -> void:
 	# Pacte de Pouvoir : le run démarre avec un pouvoir.
 	main.active_oaths = []
 	main.start_run("melee")
-	assert(main.player.powers.size() >= 1, "Pacte de Pouvoir : pouvoir de départ accordé")
+	assert(main.player.relics.size() >= 1, "Pacte de Pouvoir : pouvoir de départ accordé")
 	# Serments : nécessitent le nœud 'serments' ; les majeurs un palier de plus.
 	assert(GameState.buy_knowledge_node("serments"), "achat du nœud Serments")
 	main.active_oaths = []
@@ -720,13 +720,13 @@ func _ready() -> void:
 
 	# --- Phase 5 (2/2) : Codex, découvertes, Forge, Œil du Devin -------------------
 	GameState.knowledge = 100
-	GameState.discovered = { "skill": {}, "power": {}, "unique": {} }
-	assert(not GameState.note_discovery("power", "drone"), "sans Codex, aucune découverte enregistrée")
+	GameState.discovered = { "skill": {}, "relic": {}, "unique": {}, "monster": {} }
+	assert(not GameState.note_discovery("relic", "drone"), "sans Codex, aucune découverte enregistrée")
 	assert(GameState.buy_knowledge_node("codex"), "achat du nœud Codex")
 	var k0 = GameState.knowledge
-	assert(GameState.note_discovery("power", "drone"), "1ʳᵉ découverte enregistrée")
+	assert(GameState.note_discovery("relic", "drone"), "1ʳᵉ découverte enregistrée")
 	assert(GameState.knowledge == k0 + 1, "une découverte inédite rapporte +1 Connaissance")
-	assert(not GameState.note_discovery("power", "drone"), "doublon de découverte ignoré")
+	assert(not GameState.note_discovery("relic", "drone"), "doublon de découverte ignoré")
 	# Forge : renforce le bonus d'une pièce équipée.
 	assert(GameState.buy_knowledge_node("forge"), "achat du nœud Forge")
 	main.start_run("melee")
@@ -802,7 +802,7 @@ func _ready() -> void:
 	# haut) : un pouvoir de départ comme le Drone attaquerait automatiquement à
 	# chaque tour et pourrait achever un monstre fragile (ex. Chauve-souris,
 	# 9 PV) avant la fin des 14 tours, faussant l'objectif du test.
-	main.player.powers.clear()
+	main.player.relics.clear()
 	var new_count := 0
 	for edef in Data.ENEMIES:
 		if not edef.has("ai"):
@@ -1195,16 +1195,226 @@ func _ready() -> void:
 	print("OK Phase 7.5: sprites legacy absents, plus de collision de glyphe Drake/Kobold ni Ours/boss")
 
 	# --- Phase 7.7 : la sidebar ne reconstruit ses sections que si le contenu change ---
-	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
+	# (section Reliques unifiée depuis la Phase 6.4)
+	main.player.relics = [main._tag_relic(Data.ARTIFACTS[0], "artifact")]
 	main.hud.refresh()
-	var art_child_before: int = main.hud.artifact_box.get_child_count()
-	var art_id_before: int = main.hud.artifact_box.get_child(0).get_instance_id()
-	main.hud.refresh()   # rien n'a changé côté artefacts
-	assert(main.hud.artifact_box.get_child_count() == art_child_before and main.hud.artifact_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement d'artefacts ne recrée pas les nœuds de la sidebar")
-	main.player.artifacts = []
+	var art_child_before: int = main.hud.relic_box.get_child_count()
+	var art_id_before: int = main.hud.relic_box.get_child(0).get_instance_id()
+	main.hud.refresh()   # rien n'a changé côté reliques
+	assert(main.hud.relic_box.get_child_count() == art_child_before and main.hud.relic_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement de reliques ne recrée pas les nœuds de la sidebar")
+	main.player.relics = []
 	main.hud.refresh()
-	assert(main.hud.artifact_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les artefacts changent")
-	print("OK Phase 7.7: sections sidebar (artefacts/pouvoirs/synergies/états) mises en cache par empreinte")
+	assert(main.hud.relic_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les reliques changent")
+	print("OK Phase 7.7: sections sidebar (reliques/synergies/états) mises en cache par empreinte")
+
+	# --- Phase 5.2 : leviers d'échelle, XP découplée, filtre max_floor ----------
+	# Courbe d'XP quadratique.
+	assert(main.xp_to_next(1) == 10 + 1 * 1 * 3 and main.xp_to_next(5) == 10 + 5 * 5 * 3, "xp_to_next est quadratique (10 + level²·3)")
+	# Pentes d'échelle séparées : à l'étage 11 (step 10), les multiplicateurs valent
+	# 1 + 10·pente. On vérifie que HP et ATK utilisent des pentes distinctes.
+	var gob_def: Dictionary = main._enemy_def_by_sprite("gobelin")
+	var scaled: Entity = main._make_enemy(gob_def, 11, Vector2i(3, 3))
+	assert(scaled.max_hp == int(round(gob_def["max_hp"] * (1.0 + 10.0 * Data.ENEMY_HP_SLOPE))), "PV ennemis scalés par ENEMY_HP_SLOPE")
+	assert(scaled.atk == int(round(gob_def["atk"] * (1.0 + 10.0 * Data.ENEMY_ATK_SLOPE))), "ATK ennemis scalée par ENEMY_ATK_SLOPE (pente distincte des PV)")
+	# XP découplée : xp_value = shards par défaut, mais champ indépendant.
+	assert(scaled.xp_value == int(gob_def["shards"]), "xp_value par défaut = shards (découplage en place)")
+	# Défense scalée : un ennemi à défense de base > 0 gagne de la défense avec l'étage.
+	var orc_def: Dictionary = main._enemy_def_by_sprite("orc")
+	var orc_hi: Entity = main._make_enemy(orc_def, 11, Vector2i(3, 3))
+	assert(orc_hi.defense == int(round(int(orc_def["defense"]) * (1.0 + 10.0 * Data.ENEMY_DEF_SLOPE))), "défense ennemie désormais scalée par ENEMY_DEF_SLOPE")
+	# Filtre max_floor : le Gobelin (max_floor 14) se retire du pool tardif.
+	main.floor_num = 20
+	var late_pool_has_gobelin := false
+	for _i in range(60):
+		if String(main._pick_enemy_def().get("sprite", "")) == "gobelin":
+			late_pool_has_gobelin = true
+			break
+	assert(not late_pool_has_gobelin, "le Gobelin (max_floor 14) ne réapparaît plus à l'étage 20")
+	main.floor_num = 1
+	print("OK Phase 5.2: XP quadratique découplée, pentes HP/ATK/DEF séparées, retrait des espèces faibles (max_floor)")
+
+	# --- Phase 6.1 : talents mécaniques (hooks) ---------------------------------
+	main.start_run("melee")
+	assert(not main.player.has_talent_hook("toxicologue"), "aucun hook de talent au départ")
+	# Toxicologue : ×1.6 sur les poisons infligés aux ennemis.
+	var tox_target: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(5, 5))
+	main.apply_poison(tox_target, 3, 5.0)
+	var base_poison: float = tox_target.status_value("poison")
+	assert(abs(base_poison - 5.0) < 0.01, "poison de base non modifié sans talent")
+	main.player.talents.append({ "id": "toxicologue", "name": "Toxicologue", "hook": "toxicologue" })
+	assert(main.player.has_talent_hook("toxicologue"), "has_talent_hook détecte le talent mécanique")
+	var tox2: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(6, 6))
+	main.apply_poison(tox2, 3, 5.0)
+	assert(abs(tox2.status_value("poison") - 8.0) < 0.01, "Toxicologue : poison ×1.6 (5 → 8) sur un ennemi")
+	# Un poison SUBI par la joueuse n'est jamais amplifié par Toxicologue.
+	main.apply_poison(main.player, 3, 5.0)
+	assert(abs(main.player.status_value("poison") - 5.0) < 0.01, "Toxicologue n'amplifie pas un poison subi (gate faction ennemie)")
+	# Démolisseur : la poussée de la joueuse gagne +1 case.
+	main.player.talents.append({ "id": "demolisseur", "name": "Démolisseur", "hook": "demolisseur" })
+	assert(Data.TALENTS.size() >= 16, "TALENTS contient les 8 talents mécaniques + les stats plates")
+	var n_hooks: int = 0
+	for t in Data.TALENTS:
+		if t.has("hook"): n_hooks += 1
+	assert(n_hooks >= 8, "au moins 8 talents mécaniques (hooks) dans le pool")
+	print("OK Phase 6.1: talents mécaniques (has_talent_hook, Toxicologue ×1.6 gate ennemi, ≥8 hooks)")
+
+	# --- Phase 6.2 : affixes d'élite --------------------------------------------
+	assert(Data.ELITE_AFFIXES.size() >= 5, "au moins 5 affixes d'élite définis")
+	var elite_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 3, Vector2i(7, 7))
+	var hp_before_affix: int = elite_e.max_hp
+	main._apply_elite_affix(elite_e)
+	assert(elite_e.ai.has("elite_affix"), "un affixe d'élite est posé")
+	assert(elite_e.tint != Color.WHITE, "l'élite reçoit une teinte de rendu")
+	assert(elite_e.display_name.begins_with("Élite "), "le nom de l'élite est préfixé « Élite … »")
+	assert(elite_e.max_hp == int(round(hp_before_affix * 1.15)), "bump de PV d'élite réduit à +15%")
+	assert(bool(elite_e.ai.get("smart_path", false)), "l'élite reçoit le pathfinding intelligent")
+	# Voleur : dérobe des Éclats au coup, les rend à sa mort.
+	var thief: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 3, main._find_spot(main, main.player.pos()))
+	thief.ai["steal"] = 4
+	thief.ai["stolen"] = 0
+	thief.awake = true
+	main.enemies.append(thief)
+	main.run_shards = 100
+	main.player.x = thief.x - 1; main.player.y = thief.y
+	main._enemy_hit_player(thief)
+	assert(main.run_shards == 96 and int(thief.ai.get("stolen", 0)) == 4, "Voleur : 4 Éclats dérobés par coup")
+	var shards_pre_death: int = main.run_shards
+	main.on_enemy_killed(thief)
+	assert(main.run_shards == shards_pre_death + 4, "Voleur : Éclats dérobés restitués à sa mort")
+	print("OK Phase 6.2: affixes d'élite (teinte, +15% PV, préfixe de nom, Voleur vol/restitution)")
+
+	# --- Phase 6.3 : élargissement des pools + nouveaux consommables ------------
+	assert(Data.ARTIFACTS.size() >= 15, "pool d'artefacts élargi (≥15)")
+	assert(Data.POWERS.size() >= 12, "pool de pouvoirs élargi (≥12)")
+	assert(Data.EVENTS.size() >= 20, "pool d'événements élargi (≥20)")
+	assert(Data.CONSUMABLES.size() >= 10, "pool de consommables élargi (≥10)")
+	# Chaque artefact a bien une entrée dans la table de mods unifiée.
+	for a in Data.ARTIFACTS:
+		assert(Data.RELIC_MODS.has(a["id"]), "l'artefact %s a une entrée RELIC_MODS" % a["id"])
+	# Antidote : purge les DoT de la joueuse.
+	main.start_run("melee")
+	main.apply_poison(main.player, 3, 4.0)
+	main.apply_burn(main.player, 3, 4.0)
+	assert(main.player.has_status("poison") and main.player.has_status("burn"), "DoT posés avant antidote")
+	main.use_consumable({ "id": "antidote", "name": "Antidote", "effect": "cure", "kind": "consumable" })
+	assert(not main.player.has_status("poison") and not main.player.has_status("burn"), "Antidote purge poison et brûlure")
+	# Huile ardente : arme la brûlure au contact pour N tours.
+	main.use_consumable({ "id": "huile_ardente", "name": "Huile ardente", "effect": "oil_fire", "value": 20, "kind": "consumable" })
+	assert(main.oil_fire_turns == 20, "Huile ardente : 20 tours de brûlure-au-contact armés")
+	var oil_target: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(9, 9))
+	main._player_attack(oil_target, 3, "test")
+	assert(oil_target.has_status("burn"), "sous Huile ardente, l'attaque de base enflamme la cible")
+	# Événements : le filtre par biome ne renvoie jamais un pool vide.
+	main.floor_num = 5
+	main.open_event()
+	assert(not main.current_event.is_empty(), "open_event choisit toujours un événement (filtre biome non vide)")
+	print("OK Phase 6.3: pools élargis (artefacts/pouvoirs/événements/consommables), antidote/huile/rappel/bombe câblés")
+
+	# --- Phase 6.4 : registre unifié Reliques + section sidebar unique ----------
+	var relics: Array = Data.relics()
+	assert(relics.size() == Data.ARTIFACTS.size() + Data.POWERS.size(), "RELICS = artefacts ∪ pouvoirs")
+	var n_art_tier: int = 0
+	var n_pow_tier: int = 0
+	for r in relics:
+		if String(r.get("tier", "")) == "artifact": n_art_tier += 1
+		elif String(r.get("tier", "")) == "power": n_pow_tier += 1
+	assert(n_art_tier == Data.ARTIFACTS.size() and n_pow_tier == Data.POWERS.size(), "chaque relique porte le bon tier")
+	assert(Data.relic_mods("griffe_acier").get("atk", 0) == 4, "relic_mods lit la table (côté artefact)")
+	assert(Data.relic_mods("fureur").get("atk_pct", 0.0) > 0.0, "relic_mods lit la table (côté pouvoir)")
+	# Stockage unifié player.relics + section sidebar unique listant les deux tiers.
+	main.player.relics = [main._tag_relic(Data.ARTIFACTS[0], "artifact"), main._tag_relic(Data.POWERS[0], "power")]
+	main.hud.refresh()
+	assert(main.hud.relic_box.get_child_count() >= 4, "la section Reliques liste artefacts + pouvoirs")
+	# Un pouvoir à profil de stats appliqué via player.relics modifie bien les stats
+	# (recompute_stats lit RELIC_MODS par id, quel que soit le tier).
+	main.player.relics = [{ "id": "celerite_omega", "tier": "power" }]
+	main.player.recompute_stats()
+	assert(main.player.speed >= main.player.base_speed + 40, "un pouvoir dans player.relics applique ses mods (célérité +40)")
+	main.player.relics = []
+	main.player.recompute_stats()
+	print("OK Phase 6.4: stockage player.relics unifié (tier, RELIC_MODS, recompute_stats) + section sidebar unique")
+
+	# --- Phase 6.6 : alignement biome ↔ strate ----------------------------------
+	# Le biome dérive de map_act : change toutes les 2 strates, frontières alignées
+	# sur les Gardiens.
+	assert(Data.biome_for_act(0)["id"] == Data.biome_for_act(1)["id"], "strates 0 et 1 : même biome")
+	assert(Data.biome_for_act(2)["id"] != Data.biome_for_act(0)["id"], "le biome change à la strate 2")
+	assert(Data.biome_for_act(0)["id"] == Data.biome_for_act(2 * Data.BIOMES.size())["id"], "le cycle des biomes reboucle après toutes les strates")
+	for bdef in Data.BOSSES:
+		assert(bdef.has("home_biome"), "chaque boss porte une note de biome d'origine (%s)" % bdef["name"])
+	print("OK Phase 6.6: biome dérivé de la strate (biome_for_act), notes de biome par boss")
+
+	# --- Phase 6.5 : bestiaire dans le Codex ------------------------------------
+	GameState.knowledge_nodes = ["codex"]        # Codex débloqué : les découvertes se notent
+	GameState.kill_counts = {}
+	GameState.discovered["monster"] = {}
+	GameState.record_kill("gobelin")
+	assert(GameState.kills_of("gobelin") == 1, "record_kill incrémente le compteur de mises à mort")
+	assert(GameState.discovered.get("monster", {}).has("gobelin"), "1re mise à mort : monstre découvert dans le Codex")
+	GameState.record_kill("gobelin")
+	assert(GameState.kills_of("gobelin") == 2, "les mises à mort suivantes s'accumulent")
+	# Ligne de traits partagée (behavior + on_hit).
+	var spider_def: Dictionary = main._enemy_def_by_sprite("araignee")
+	var traits: String = main.hud.enemy_traits_line(spider_def)
+	assert(traits.contains("Corps à corps") and traits.to_lower().contains("contact"), "la ligne de traits résume comportement + effet au contact")
+	# Persistance : kill_counts survit à un save/load.
+	GameState.save_game()
+	GameState.kill_counts = {}
+	GameState.load_game()
+	assert(GameState.kills_of("gobelin") == 2, "kill_counts persiste (save/load)")
+	GameState.knowledge_nodes = []
+	print("OK Phase 6.5: bestiaire (record_kill, découverte, traits ≥ seuil, persistance)")
+
+	# --- Phase 6.7 : barks (répliques d'Aria) -----------------------------------
+	main.start_run("melee")
+	main._bark_cooldown = 0
+	main._last_bark = ""
+	var msg_before: int = main.messages.size()
+	main.bark(main.player.pos(), "Première réplique.")
+	assert(main.messages.size() == msg_before + 1, "bark ajoute une ligne au journal")
+	assert(main._bark_cooldown == 10, "bark arme une cadence de 10 tours")
+	# Cadence : une seconde barque immédiate est étouffée.
+	main.bark(main.player.pos(), "Deuxième réplique.")
+	assert(main.messages.size() == msg_before + 1, "cadence : pas de 2e barque avant 10 tours")
+	# Jamais deux fois la même ligne d'affilée, même cadence expirée.
+	main._bark_cooldown = 0
+	main.bark(main.player.pos(), "Première réplique.")
+	assert(main.messages.size() == msg_before + 1, "une réplique n'est jamais répétée d'affilée")
+	# Les pools de Barks existent et l'intro de boss varie selon les rencontres.
+	assert(not Barks.LOW_HP.is_empty() and not Barks.BOSS_KILL.is_empty(), "pools de barks non vides")
+	assert(Barks.BIOME_ENTER.has("volcan"), "un pool d'entrée existe par biome")
+	assert(Barks.boss_intro("_default", 0, main.rng) != "", "intro de boss (1re rencontre) fournit une ligne")
+	print("OK Phase 6.7: barks (journal + flottant, cadence 1/10 tours, jamais répétée, pools par déclencheur)")
+
+	# --- Phase 6.8 : Écho d'Aria ------------------------------------------------
+	main.start_run("melee")
+	# Sérialisation JSON-safe des Color (piège du guide) : round-trip préservé.
+	var fake_item := { "name": "Lame test", "slot": "arme", "bonus": { "atk": 5 },
+		"rarity_color": Color(0.3, 0.6, 0.9), "weapon_type": "melee" }
+	var ser := main._echo_serialize_item(fake_item)
+	assert(typeof(ser["rarity_color"]) == TYPE_STRING, "rarity_color sérialisée en html (JSON-safe)")
+	var deser := main._echo_deserialize_item(ser)
+	assert(deser["rarity_color"] is Color, "rarity_color reconstituée en Color au chargement")
+	# Enregistrement de l'écho à la « mort ».
+	main.player.equipment["arme"] = fake_item
+	main.floor_num = 7
+	main._record_echo()
+	assert(int(GameState.echo.get("floor", -1)) == 7 and GameState.echo.get("equipment", {}).has("arme"), "l'écho enregistre l'étage et l'équipement du run")
+	# Apparition de l'Écho + mort → overlay de butin différé, écho consommé.
+	main.enemies.clear()
+	main._echo_spawned = false
+	main._spawn_echo([])
+	var echo_ent = null
+	for en in main.enemies:
+		if not en.ai.is_empty() and en.ai.get("is_echo", false):
+			echo_ent = en
+	assert(echo_ent != null and echo_ent.awake and echo_ent.sprite == "aria", "l'Écho d'Aria apparaît (sprite aria, éveillé)")
+	main.on_enemy_killed(echo_ent)
+	assert(GameState.echo.is_empty(), "l'écho est consommé à sa mort")
+	assert(not main._echo_claim_pending.is_empty(), "un overlay de butin est mis en attente à la mort de l'Écho")
+	main.claim_echo_item(0)
+	assert(main._echo_claim_pending.is_empty(), "réclamer un objet vide la file d'attente de l'Écho")
+	print("OK Phase 6.8: Écho d'Aria (sérialisation Color, enregistrement, apparition, butin réclamable)")
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

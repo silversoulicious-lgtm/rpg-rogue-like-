@@ -233,7 +233,7 @@ func _process(delta: float) -> void:
 	_dying = kept
 	var kept_floaters: Array = []
 	for fl in _floaters:
-		if _anim_t - float(fl["t"]) <= FLOATER_DUR:
+		if _anim_t - float(fl["t"]) <= float(fl.get("dur", FLOATER_DUR)):
 			kept_floaters.append(fl)
 	_floaters = kept_floaters
 	queue_redraw()
@@ -267,6 +267,12 @@ func fx_damage(pos: Vector2i, amount: int, kind: String) -> void:
 			col = Color(0.95, 0.95, 0.98); size = 12; text = str(amount)
 	var px: Vector2 = Vector2(pos.x * CELL + CELL * 0.5, pos.y * CELL + CELL * 0.3)
 	_floaters.append({ "text": text, "color": col, "size": size, "px": px, "t": _anim_t })
+
+## Réplique parlée (Phase 6.7) : réutilise le pipeline des nombres flottants
+## avec une durée plus longue et le préfixe « Aria : ». Une ligne, toujours.
+func fx_bark(pos: Vector2i, text: String, color: Color) -> void:
+	var px: Vector2 = Vector2(pos.x * CELL + CELL * 0.5, pos.y * CELL - CELL * 0.2)
+	_floaters.append({ "text": "Aria : " + text, "color": color, "size": 13, "px": px, "t": _anim_t, "dur": 2.5 })
 
 ## Repeuple les particules d'ambiance pour le biome courant (semées au hasard
 ## sur toute la zone de jeu, en espace écran).
@@ -380,11 +386,17 @@ func _draw() -> void:
 				elif dist <= 3:
 					draw_rect(ecell, Color(0.9, 0.55, 0.15, 0.08), true)
 
-	# Pièges au sol : visibles uniquement dans le champ de vision actuel.
+	# Pièges au sol : visibles dans le champ de vision. Talent Pied léger
+	# (Phase 6.1) : la joueuse les repère aussi hors vision (affichés assombris)
+	# sur les cases déjà explorées.
+	var foresight: bool = player_entity != null and player_entity.has_talent_hook("pied_leger")
 	for hz in hazards:
 		var hp: Vector2i = hz["pos"]
+		var col: Color = hz.get("color", Color(0.95, 0.55, 0.45))
 		if dungeon.is_visible(hp.x, hp.y):
-			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), hz.get("color", Color(0.95, 0.55, 0.45)))
+			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), col)
+		elif foresight and dungeon.is_explored(hp.x, hp.y):
+			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), _alpha(col, 0.5))
 
 	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:
@@ -413,8 +425,9 @@ func _draw() -> void:
 			var dv: Dictionary = _directional_sprite(e)
 			var off: Vector2 = _entity_offset(e)
 			var base_px: Vector2 = _vis_pos.get(e.get_instance_id(), Vector2(e.x * CELL, e.y * CELL))
-			if not _blit_ex_px(dv["name"], base_px + off, dv["flip"]):
-				_draw_glyph(e.x, e.y, e.glyph, e.color)
+			# Teinte de rendu (élite affixé — Phase 6.2 ; blanc = neutre).
+			if not _blit_ex_px(dv["name"], base_px + off, dv["flip"], e.tint):
+				_draw_glyph(e.x, e.y, e.glyph, e.color if e.tint == Color.WHITE else e.tint)
 			var flash: float = _entity_flash(e)
 			if flash > 0.0:
 				draw_rect(Rect2(base_px, Vector2(CELL, CELL)), Color(1, 1, 1, 0.55 * flash), true)
@@ -558,13 +571,19 @@ func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
 
 ## Variante de _blit_ex à position PIXEL absolue (mouvement animé glissé, cf.
 ## _vis_pos ; `px` inclut déjà le décalage bob d'idle / bond d'attaque).
-func _blit_ex_px(name: String, px: Vector2, flip: bool) -> bool:
+## Recale la position visuelle glissée d'une entité sur sa case logique — à
+## appeler après un déplacement instantané (téléportation/rappel) pour éviter
+## qu'elle « glisse » à travers la carte.
+func snap_entity(e) -> void:
+	_vis_pos[e.get_instance_id()] = Vector2(e.x * CELL, e.y * CELL)
+
+func _blit_ex_px(name: String, px: Vector2, flip: bool, mod_color: Color = Color.WHITE) -> bool:
 	if name == "" or not tex.has(name):
 		return false
 	var r := Rect2(px, Vector2(CELL, CELL))
 	if flip:
 		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)
-	draw_texture_rect(tex[name], r, false)
+	draw_texture_rect(tex[name], r, false, mod_color)
 	return true
 
 ## Choisit la vue d'une entité selon son orientation. Seule Aria possède des

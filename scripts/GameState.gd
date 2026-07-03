@@ -6,7 +6,7 @@ const SAVE_PATH := "user://save.json"
 # Version du schéma de sauvegarde. Incrémenter à chaque changement de forme
 # des données persistées et ajouter une branche à la migration dans
 # `load_game()` (ne JAMAIS planter sur une sauvegarde d'une version passée).
-const SAVE_VERSION := 2
+const SAVE_VERSION := 3
 
 # Banque d'Éclats récoltés (monnaie méta dépensée pour les améliorations)
 var shards: int = 0
@@ -15,7 +15,16 @@ var knowledge: int = 0
 # Nœuds de l'Arbre de Connaissances déjà débloqués (ids de Data.KNOWLEDGE_NODES)
 var knowledge_nodes: Array = []
 # Codex : éléments déjà rencontrés, par catégorie -> { id/nom: true }
-var discovered: Dictionary = { "skill": {}, "power": {}, "unique": {} }
+var discovered: Dictionary = { "skill": {}, "relic": {}, "unique": {}, "monster": {} }
+# Bestiaire (Phase 6.5) : nombre de mises à mort par sprite d'ennemi (persisté).
+var kill_counts: Dictionary = {}
+# Barks (Phase 6.7) : nombre de fois qu'un boss (sprite) a été affronté (persiste
+# les rematchs pour varier les répliques d'intro).
+var boss_faced: Dictionary = {}
+# Écho (Phase 6.8) : instantané du dernier run (JSON-safe : couleurs déjà en
+# html) rejoué comme « l'Écho d'Aria » au prochain run. Un seul stocké, le plus
+# récent remplace l'ancien ; consommé à sa mort.
+var echo: Dictionary = {}
 # Niveaux d'amélioration achetés : { "vitalite": int, "force": int, "maitrise": int }
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
@@ -128,6 +137,32 @@ func note_discovery(category: String, key: String) -> bool:
 func discovered_count(category: String) -> int:
 	return int(discovered.get(category, {}).size())
 
+## Bestiaire (Phase 6.5) : enregistre une mise à mort. Incrémente le compteur
+## (toujours) et note la découverte dans le Codex (si débloqué). Le nom se révèle
+## au 1er kill, la ligne de traits à partir de KILL_TRAITS_THRESHOLD kills.
+const KILL_TRAITS_THRESHOLD := 5
+func record_kill(sprite: String) -> void:
+	if sprite == "":
+		return
+	kill_counts[sprite] = int(kill_counts.get(sprite, 0)) + 1
+	# note_discovery persiste (save_game) au 1er kill ; les incréments suivants
+	# sont persistés au prochain point de sauvegarde (record_run en fin de run) —
+	# on évite d'écrire le disque à chaque mise à mort.
+	note_discovery("monster", sprite)
+
+func kills_of(sprite: String) -> int:
+	return int(kill_counts.get(sprite, 0))
+
+# --- Écho (Phase 6.8) ---------------------------------------------------------
+## Range l'instantané du run (déjà JSON-safe) ; remplace tout écho antérieur.
+func store_echo(data: Dictionary) -> void:
+	echo = data
+	save_game()
+
+func clear_echo() -> void:
+	echo = {}
+	save_game()
+
 # Enregistre le bilan d'un run terminé (met à jour les records, persiste).
 func record_run(stats: Dictionary) -> void:
 	last_run = stats
@@ -148,6 +183,9 @@ func save_game() -> void:
 		"best_kills": best_kills,
 		"last_loadout": last_loadout,
 		"settings": settings,
+		"kill_counts": kill_counts,
+		"boss_faced": boss_faced,
+		"echo": echo,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -166,8 +204,8 @@ func load_game() -> void:
 		return
 	var version := int(parsed.get("version", 1))
 	match version:
-		1:
-			pass   # v1 : ni "version" ni "settings" — les valeurs par défaut ci-dessous suffisent.
+		1, 2:
+			pass   # v1/v2 : champs manquants comblés par les défauts ci-dessous.
 		SAVE_VERSION:
 			pass
 		_:
@@ -181,8 +219,19 @@ func load_game() -> void:
 			knowledge_nodes.append(str(nid))
 	var disc = parsed.get("discovered", {})
 	if typeof(disc) == TYPE_DICTIONARY:
-		for cat in ["skill", "power", "unique"]:
+		for cat in ["skill", "relic", "unique", "monster"]:
 			discovered[cat] = disc.get(cat, {})
+		# Migration v2→v3 (Phase 6.4) : l'ancien bucket "power" fusionne dans "relic".
+		if version < 3 and typeof(disc.get("power", {})) == TYPE_DICTIONARY:
+			for key in disc.get("power", {}).keys():
+				discovered["relic"][key] = true
+	# Bestiaire (Phase 6.5) — absent des sauvegardes v1/v2 antérieures : défaut {}.
+	var kc = parsed.get("kill_counts", {})
+	kill_counts = kc if typeof(kc) == TYPE_DICTIONARY else {}
+	var bf = parsed.get("boss_faced", {})   # Barks (Phase 6.7)
+	boss_faced = bf if typeof(bf) == TYPE_DICTIONARY else {}
+	var ec = parsed.get("echo", {})         # Écho (Phase 6.8)
+	echo = ec if typeof(ec) == TYPE_DICTIONARY else {}
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
 	last_loadout = str(parsed.get("last_loadout", "melee"))

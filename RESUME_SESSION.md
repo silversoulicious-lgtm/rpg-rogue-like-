@@ -201,11 +201,51 @@ ne pas les confondre).
   si elle a changé, sur le même principe que la bande d'ordre des tours
   (2.6) — `refresh()` tourne plusieurs fois par tour, ça évite de recréer
   des `Label`s pour rien.
-- **Phases 5, 6, 7 (reste : 7.3/7.8), 8** (équilibrage, contenu, refonte
-  modulaire de `Main.gd`, direction artistique 64×64) : à faire, voir
-  `IMPLEMENTATION_GUIDE.md` pour le détail. NB : la Phase 5 (harnais
-  d'auto-jeu + tuning) et le tuning associé exigent un Godot exécutable
-  pour produire/lire les CSV — à faire dans une session avec accès à Godot.
+- **Phase 5 — Instrumentation & réglage d'équilibrage : FAITE (code).**
+  5.1 : harnais d'auto-jeu `_balance_sim.gd` (SceneTree) — pilote N runs avec
+  une politique simple par état (méta neutralisée), écrit `user://balance_sim.csv`
+  + percentiles p25/p50/p75 de l'étage de mort ; `Main.current_choice`
+  désambiguïse les écrans CHOICE. 5.2 : pentes d'échelle séparées par stat
+  (`ENEMY_HP/ATK/DEF_SLOPE` + boss), défense ennemie enfin scalée ; XP
+  découplée des Éclats (`Entity.xp_value`) ; courbe d'XP quadratique
+  (`10 + level²·3`) ; événement « pari » réellement risqué (55 % / −15 % PV) ;
+  champ `max_floor` par espèce. `docs/balance/README.md` documente la
+  méthodo. **CSV avant/après NON produits** (pas de binaire Godot dans ce
+  bac à sable) — à générer lors d'une passe locale.
+- **Phase 6 — Profondeur de contenu : FAITE (6.1 à 6.7 ; 6.8 optionnelle
+  différée).**
+  - 6.1 : 8 talents **mécaniques** (hooks lus à des sites explicites via
+    `Entity.has_talent_hook`) remplacent 8 talents de stat plate.
+  - 6.2 : affixes d'élite (rapide/explosif/régénérant/voleur/chef) +
+    `Entity.tint` (modulate MapView), bump PV réduit à +15 %.
+  - 6.3 : pools élargis — artefacts 5→15, pouvoirs 5→12, événements 7→20
+    (6 thématiques par biome), consommables 4→10 (bombe/antidote/rappel/
+    huile ardente câblés).
+  - 6.4 : **FAITE (collapse complet).** Stockage unique `Entity.relics` (chaque
+    entrée taguée `tier`) remplace `artifacts`/`powers` ; `has_artifact`/
+    `has_power` → `has_relic` ; tables de mods fusionnées en `Data.RELIC_MODS`
+    (lue par `recompute_stats`) ; registre `Data.relics()` + `relic_tier()` ;
+    section sidebar et section Codex uniques « Reliques » ; découvertes notées
+    dans le bucket `discovered["relic"]`. Sauvegarde **v3** avec migration
+    v2→v3 (l'ancien bucket `power` fusionne dans `relic`).
+  - 6.5 : bestiaire dans le Codex (`discovered["monster"]` + `kill_counts`
+    persistés ; nom au 1er kill, traits à ≥5 kills ; `enemy_traits_line`
+    partagé avec l'inspection 2.7).
+  - 6.6 : biome dérivé de la strate (`Data.biome_for_act`) — frontières
+    alignées sur les Gardiens ; note `home_biome` par boss.
+  - 6.7 : barks (`scripts/Barks.gd`, `Main.bark`, `MapView.fx_bark`) —
+    cadence 1/10 tours, jamais répétée ; entrée de biome, PV bas, intro/mort
+    de boss (`GameState.boss_faced` persiste les rematchs).
+  - 6.8 : **FAITE.** « l'Écho d'Aria » — instantané JSON-safe du dernier run
+    (`GameState.echo`, couleurs sérialisées en html pour survivre au round-trip
+    JSON) enregistré à la mort, rejoué comme ennemi arcane sur l'étage où tu es
+    tombé ; à sa mort, overlay pour réclamer UN objet de son équipement, puis
+    écho consommé. Un seul stocké (le plus récent remplace).
+  Asserts de régression ajoutés au smoke test pour chaque sous-phase.
+- **Reste : Phase 7 (7.3 refonte modulaire de `Main.gd` / 7.8), Phase 8
+  (art 64×64), et le réglage chiffré de la Phase 5** — voir
+  `IMPLEMENTATION_GUIDE.md`. Tout ce qui exige d'itérer visuellement ou de
+  produire des CSV attend une session avec un binaire Godot exécutable.
   **Cette session (7.2/7.5/7.7) n'avait pas accès au binaire Godot**
   (`downloads.godotengine.org` redirige désormais vers
   `github.com/godotengine/godot-builds`, bloqué par la politique réseau du

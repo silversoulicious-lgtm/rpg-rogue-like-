@@ -104,6 +104,21 @@ const CAP_DODGE := 0.60
 const CAP_CRIT := 0.75
 const CAP_LIFESTEAL := 0.50
 
+# --- COURBES D'ÉCHELLE (Phase 5.2 : leviers d'équilibrage, data-driven) --------
+# Pente d'échelle par étage appliquée aux stats ennemies dans Main._make_enemy.
+# HP et ATK ont des pentes SÉPARÉES (avant Phase 5.2 elles partageaient 0.12) :
+# on peut durcir les PV sans gonfler les dégâts, ou l'inverse. La Défense était
+# NON scalée — elle l'est désormais (pente douce) pour que les tanks tardifs
+# tiennent. Objectif : étage de mort médian sans méta ≈ 12-15.
+const ENEMY_HP_SLOPE := 0.12
+const ENEMY_ATK_SLOPE := 0.10
+const ENEMY_DEF_SLOPE := 0.06
+const BOSS_HP_SLOPE := 0.18
+const BOSS_ATK_SLOPE := 0.15
+const BOSS_DEF_SLOPE := 0.08
+# Pente d'échelle des objets procéduraux (cf. _generate_procedural_item).
+const ITEM_SCALE_SLOPE := 0.08
+
 # --- TERRAIN ÉLÉMENTAIRE (Phase 4) ---------------------------------------------
 # Chance par tour, par arbre adjacent à une case en feu, de s'embraser à son
 # tour. `static var` (pas `const`) pour que le smoke test puisse la forcer à
@@ -207,9 +222,17 @@ const BIOMES := [
 ]
 
 ## Renvoie le biome correspondant à un étage (change tous les BIOME_SPAN étages).
+## Conservé pour l'outillage/les tests ; le jeu dérive désormais le biome de la
+## strate (cf. biome_for_act) pour aligner les frontières sur les Gardiens.
 static func biome_for_floor(floor: int) -> Dictionary:
 	var idx: int = int((max(1, floor) - 1) / BIOME_SPAN) % BIOMES.size()
 	return BIOMES[idx]
+
+## Phase 6.6 : biome dérivé de la STRATE (map_act = Gardiens vaincus). Le biome
+## change toutes les 2 strates — les frontières tombent donc pile après un
+## Gardien, plus jamais en plein milieu d'un acte.
+static func biome_for_act(map_act: int) -> Dictionary:
+	return BIOMES[int(max(0, map_act) / 2) % BIOMES.size()]
 
 static func biome_sprite(biome_id: String, role: String) -> String:
 	return "%s_%s" % [biome_id, role]
@@ -257,8 +280,12 @@ static func weighted_pick(pool: Array, rng: RandomNumberGenerator) -> String:
 
 # --- ENNEMIS ------------------------------------------------------------------
 const ENEMIES := [
-	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1 },
-	{ "name": "Loup",     "glyph": "w", "sprite": "loup",      "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1 },
+	# Phase 5.2 : champ optionnel "max_floor" — l'espèce se retire de la sélection
+	# au-delà de cet étage (les faibles cèdent la place au lieu de scaler à
+	# l'infini). Champ optionnel "xp" (défaut = shards, cf. Main._make_enemy) pour
+	# régler l'XP indépendamment de l'économie d'Éclats.
+	{ "name": "Gobelin",  "glyph": "g", "sprite": "gobelin",   "color": Color(0.5, 0.8, 0.3), "max_hp": 8,  "atk": 3, "defense": 0, "speed": 100, "shards": 2, "min_floor": 1, "max_floor": 14 },
+	{ "name": "Loup",     "glyph": "w", "sprite": "loup",      "color": Color(0.8, 0.8, 0.8), "max_hp": 10, "atk": 4, "defense": 0, "speed": 130, "shards": 3, "min_floor": 1, "max_floor": 16 },
 	{ "name": "Squelette","glyph": "s", "sprite": "squelette", "color": Color(0.9, 0.9, 0.85),"max_hp": 14, "atk": 5, "defense": 2, "speed": 100, "shards": 4, "min_floor": 3 },
 	{ "name": "Orc",      "glyph": "o", "sprite": "orc",       "color": Color(0.4, 0.7, 0.4), "max_hp": 20, "atk": 7, "defense": 3, "speed": 90,  "shards": 6, "min_floor": 5 },
 	{ "name": "Spectre",  "glyph": "S", "sprite": "spectre",   "color": Color(0.7, 0.5, 1.0), "max_hp": 18, "atk": 9, "defense": 1, "speed": 115, "shards": 8, "min_floor": 7 },
@@ -295,7 +322,7 @@ const ENEMIES := [
 	  "ai": { "behavior": "melee", "pack": true, "pack_bonus": 2 } },
 	{ "name": "Troll des cavernes", "glyph": "T", "sprite": "troll", "color": Color(0.45, 0.6, 0.45), "max_hp": 40, "atk": 7, "defense": 2, "speed": 85, "shards": 9, "min_floor": 7, "hp_regen": 4,
 	  "ai": { "behavior": "melee", "weak_fire": 1.0 } },
-	{ "name": "Kobold", "glyph": "k", "sprite": "kobold", "color": Color(0.8, 0.5, 0.35), "max_hp": 7, "atk": 3, "defense": 0, "speed": 125, "shards": 3, "min_floor": 2,
+	{ "name": "Kobold", "glyph": "k", "sprite": "kobold", "color": Color(0.8, 0.5, 0.35), "max_hp": 7, "atk": 3, "defense": 0, "speed": 125, "shards": 3, "min_floor": 2, "max_floor": 14,
 	  "ai": { "behavior": "fleer", "pack": true, "pack_bonus": 1, "drops_trap": true } },
 	{ "name": "Cultiste", "glyph": "c", "sprite": "cultiste", "color": Color(0.75, 0.4, 0.5), "max_hp": 18, "atk": 5, "defense": 0, "speed": 100, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "kobold", "summon_max": 3, "cast_range": 6, "cooldown": 3, "sacrifice": true, "sac_radius": 2, "sac_mult": 1.6, "kite_at": 3 } },
@@ -325,38 +352,49 @@ const BOSS := {
 # qui protègent le boss tant qu'ils vivent), spawn_on_hit/soh_max (pond à chaque
 # coup reçu), phases (change de comportement selon les PV).
 const BOSSES := [
-	{ "name": "Le Roi Liche Éternel", "glyph": "B", "sprite": "roi_liche", "color": Color(0.7, 0.55, 1.0),
+	{ "name": "Le Roi Liche Éternel", "glyph": "B", "sprite": "roi_liche", "home_biome": "toundra", "color": Color(0.7, 0.55, 1.0),
 	  "max_hp": 64, "atk": 10, "defense": 3, "speed": 100, "shards": 45, "min_floor": 1, "hp_regen": 5,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "squelette", "summon_max": 6, "cast_range": 9, "cooldown": 2, "kite_at": 3 } },
-	{ "name": "Le Seigneur Fantôme", "glyph": "B", "sprite": "seigneur_fantome", "color": Color(0.6, 0.85, 1.0),
+	{ "name": "Le Seigneur Fantôme", "glyph": "B", "sprite": "seigneur_fantome", "home_biome": "marais", "color": Color(0.6, 0.85, 1.0),
 	  "max_hp": 60, "atk": 11, "defense": 2, "speed": 110, "shards": 48, "min_floor": 1,
 	  "ai": { "behavior": "melee", "guardians": { "count": 3, "sprite": "ame", "resist": 0.9 } } },
-	{ "name": "Le Drake Ancien", "glyph": "B", "sprite": "wyrm", "color": Color(0.7, 0.5, 0.4),
+	{ "name": "Le Drake Ancien", "glyph": "B", "sprite": "wyrm", "home_biome": "volcan", "color": Color(0.7, 0.5, 0.4),
 	  "max_hp": 78, "atk": 11, "defense": 4, "speed": 100, "shards": 50, "min_floor": 1,
 	  "ai": { "behavior": "ranged", "ranged_range": 6, "cooldown": 1, "resist_phys": 0.2, "on_hit": { "id": "weaken", "turns": 3, "value": 4.0 } } },
-	{ "name": "L'Araignée Mère", "glyph": "B", "sprite": "araignee_mere", "color": Color(0.55, 0.8, 0.45),
+	{ "name": "L'Araignée Mère", "glyph": "B", "sprite": "araignee_mere", "home_biome": "foret", "color": Color(0.55, 0.8, 0.45),
 	  "max_hp": 70, "atk": 9, "defense": 2, "speed": 100, "shards": 50, "min_floor": 1,
 	  "ai": { "behavior": "melee", "spawn_on_hit": "araignee", "soh_max": 8, "on_hit": { "id": "poison", "turns": 3, "value": 4.0 } } },
-	{ "name": "Le Troll Ancestral", "glyph": "B", "sprite": "troll_ancestral", "color": Color(0.45, 0.62, 0.45),
+	{ "name": "Le Troll Ancestral", "glyph": "B", "sprite": "troll_ancestral", "home_biome": "toundra", "color": Color(0.45, 0.62, 0.45),
 	  "max_hp": 90, "atk": 11, "defense": 4, "speed": 90, "shards": 52, "min_floor": 1, "hp_regen": 8,
 	  "ai": { "behavior": "melee", "weak_fire": 1.2 } },
-	{ "name": "Le Paladin Déchu", "glyph": "B", "sprite": "paladin_dechu", "color": Color(0.85, 0.8, 0.6),
+	{ "name": "Le Paladin Déchu", "glyph": "B", "sprite": "paladin_dechu", "home_biome": "plaine", "color": Color(0.85, 0.8, 0.6),
 	  "max_hp": 72, "atk": 10, "defense": 5, "speed": 105, "shards": 52, "min_floor": 1,
 	  "ai": { "behavior": "melee", "copy_player": true, "copy_ratio": 1.0, "resist_phys": 0.2 } },
-	{ "name": "La Sorcière des Marais", "glyph": "B", "sprite": "sorciere", "color": Color(0.6, 0.75, 0.45),
+	{ "name": "La Sorcière des Marais", "glyph": "B", "sprite": "sorciere", "home_biome": "marais", "color": Color(0.6, 0.75, 0.45),
 	  "max_hp": 66, "atk": 10, "defense": 2, "speed": 100, "shards": 52, "min_floor": 1,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "serpent", "summon_max": 4, "cast_range": 7, "cooldown": 3, "kite_at": 3,
 	          "guardians": { "count": 3, "sprite": "chaudron", "resist": 0.5 } } },
-	{ "name": "Le Bourreau du Roi", "glyph": "B", "sprite": "bourreau", "color": Color(0.8, 0.3, 0.3),
+	{ "name": "Le Bourreau du Roi", "glyph": "B", "sprite": "bourreau", "home_biome": "volcan", "color": Color(0.8, 0.3, 0.3),
 	  "max_hp": 96, "atk": 16, "defense": 4, "speed": 70, "shards": 55, "min_floor": 1,
 	  "ai": { "behavior": "charger", "push": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 5.0 } } },
-	{ "name": "L'Œil du Néant", "glyph": "B", "sprite": "oeil_neant", "color": Color(0.7, 0.5, 0.95),
+	{ "name": "L'Œil du Néant", "glyph": "B", "sprite": "oeil_neant", "home_biome": "desert", "color": Color(0.7, 0.5, 0.95),
 	  "max_hp": 74, "atk": 12, "defense": 3, "speed": 100, "shards": 55, "min_floor": 1,
 	  "ai": { "behavior": "ranged", "ranged_range": 7, "cooldown": 1, "resist_phys": 0.3, "on_hit": { "id": "slow", "turns": 2, "value": 0.5 } } },
-	{ "name": "Le Dieu-Bête Corrompu", "glyph": "B", "sprite": "dieu_bete", "color": Color(0.9, 0.4, 0.5),
+	{ "name": "Le Dieu-Bête Corrompu", "glyph": "B", "sprite": "dieu_bete", "home_biome": "foret", "color": Color(0.9, 0.4, 0.5),
 	  "max_hp": 120, "atk": 13, "defense": 4, "speed": 105, "shards": 80, "min_floor": 1, "hp_regen": 4,
 	  "ai": { "behavior": "ranged", "phases": true, "ranged_range": 6, "cooldown": 1, "summon": "loup", "summon_max": 4, "cast": "summon",
 	          "on_hit": { "id": "burn", "turns": 3, "value": 4.0 } } },
+]
+
+# --- AFFIXES D'ÉLITE (Phase 6.2) ----------------------------------------------
+# Un affixe tiré par salle d'élite (remplace l'éponge ×1.25 plate) : donne un
+# comportement, pas juste des stats. "tint" = teinte de rendu (modulate MapView).
+const ELITE_AFFIXES := [
+	{ "id": "rapide",     "name": "Rapide",     "tint": Color(0.40, 0.90, 1.00) },
+	{ "id": "explosif",   "name": "Explosif",   "tint": Color(1.00, 0.55, 0.25) },
+	{ "id": "regenerant", "name": "Régénérant", "tint": Color(0.45, 0.90, 0.50) },
+	{ "id": "voleur",     "name": "Voleur",     "tint": Color(1.00, 0.82, 0.35) },
+	{ "id": "chef",       "name": "Chef",       "tint": Color(1.00, 0.40, 0.40) },
 ]
 
 # --- ÉQUIPEMENT (drops, scope = run) ------------------------------------------
@@ -647,7 +685,7 @@ static func _generate_procedural_item(slot: String, floor: int, rarity: Dictiona
 		if b["slot"] == slot:
 			bases.append(b)
 	var base: Dictionary = bases[rng.randi_range(0, bases.size() - 1)]
-	var fscale: float = 1.0 + float(floor - 1) * 0.08
+	var fscale: float = 1.0 + float(floor - 1) * ITEM_SCALE_SLOPE
 	var bonus: Dictionary = {}
 	for k in base["primary"]:
 		var v: float = float(base["primary"][k]) * fscale * rarity["mult"]
@@ -700,9 +738,20 @@ static func _pick_rarity(floor: int, rng: RandomNumberGenerator) -> Dictionary:
 # --- CONSOMMABLES (drops, scope = run) ----------------------------------------
 const CONSUMABLES := [
 	{ "id": "potion",  "name": "Potion de soin",   "effect": "heal_pct",  "value": 0.40, "weight": 5.0, "color": Color(0.95, 0.3, 0.4) },
+	{ "id": "potion_m","name": "Potion majeure",   "effect": "heal_pct",  "value": 0.55, "weight": 3.5, "color": Color(0.95, 0.3, 0.4) },
 	{ "id": "potion_g","name": "Grande potion",    "effect": "heal_pct",  "value": 0.75, "weight": 3.0, "color": Color(0.95, 0.3, 0.4) },
 	{ "id": "elixir",  "name": "Élixir de vie",    "effect": "heal_full", "value": 1.0,  "weight": 1.0, "color": Color(0.9, 0.5, 0.9) },
 	{ "id": "crystal", "name": "Cristal d'Éclats", "effect": "shards",    "value": 12.0, "weight": 2.0, "color": Color(1.0, 0.85, 0.35) },
+	{ "id": "crystal_g","name": "Géode d'Éclats",  "effect": "shards",    "value": 25.0, "weight": 1.2, "color": Color(1.0, 0.85, 0.35) },
+	# --- Phase 6.3 : consommables actifs (effets gérés par Main.use_consumable) ---
+	{ "id": "bombe",   "name": "Bombe incendiaire","effect": "bomb",      "value": 0.0,  "weight": 2.5, "color": Color(1.0, 0.5, 0.2), "radius": 2,
+	  "desc": "Explose en zone (rayon 2) sur l'ennemi visible le plus proche." },
+	{ "id": "antidote","name": "Antidote",         "effect": "cure",      "value": 0.0,  "weight": 2.0, "color": Color(0.5, 0.9, 0.5),
+	  "desc": "Purge poison, brûlure, saignement et maladie." },
+	{ "id": "rappel",  "name": "Parchemin de rappel","effect": "recall",  "value": 0.0,  "weight": 1.5, "color": Color(0.6, 0.8, 1.0),
+	  "desc": "Te téléporte près de l'escalier de l'étage." },
+	{ "id": "huile_ardente","name": "Huile ardente","effect": "oil_fire", "value": 20.0, "weight": 2.0, "color": Color(1.0, 0.55, 0.3),
+	  "desc": "Pendant 20 tours, tes attaques enflamment leur cible." },
 ]
 
 static func generate_consumable(floor: int, rng: RandomNumberGenerator) -> Dictionary:
@@ -722,23 +771,28 @@ static func generate_consumable(floor: int, rng: RandomNumberGenerator) -> Dicti
 	return CONSUMABLES[0].duplicate(true)
 
 # --- TALENTS (choix de montée de niveau pendant un run) -----------------------
+# Deux familles : talents de STAT plate (champ "mods", appliqués par
+# Entity.recompute_stats) et talents MÉCANIQUES (Phase 6.1, champ "hook" lu à un
+# site de jeu explicite via Entity.has_talent_hook — ils changent une règle,
+# pas un chiffre). Chasseur nocturne porte les deux (mods vision + hook dégâts).
 const TALENTS := [
 	{ "id": "vigueur",   "name": "Vigueur",       "desc": "+12 PV max",                 "mods": { "max_hp": 12 } },
 	{ "id": "puissance", "name": "Puissance",     "desc": "+2 Attaque",                 "mods": { "atk": 2 } },
-	{ "id": "arcane",    "name": "Arcane",        "desc": "+3 Magie",                   "mods": { "magic": 3 } },
 	{ "id": "carapace",  "name": "Carapace",      "desc": "+2 Défense",                 "mods": { "defense": 2 } },
 	{ "id": "celerite",  "name": "Célérité",      "desc": "+15 Vitesse",                "mods": { "speed": 15 } },
-	{ "id": "regen",     "name": "Régénération",  "desc": "+2 Régén PV/tour",           "mods": { "hp_regen": 2 } },
 	{ "id": "precision", "name": "Précision",     "desc": "+10% Coup critique",         "mods": { "crit_chance": 0.10 } },
 	{ "id": "agilite",   "name": "Agilité",       "desc": "+10% Esquive",               "mods": { "dodge_chance": 0.10 } },
-	{ "id": "sangsue",   "name": "Sangsue",       "desc": "+12% Vol de vie",            "mods": { "lifesteal_pct": 0.12 } },
-	{ "id": "represaille","name": "Représailles", "desc": "+4 Épines",                  "mods": { "thorns_flat": 4 } },
-	{ "id": "affutage",  "name": "Affûtage",      "desc": "+3 puissance de capacité",   "mods": { "ability_power": 3 } },
-	{ "id": "focus",     "name": "Concentration", "desc": "-1 recharge de capacité",    "mods": { "ability_cd": -1 } },
 	{ "id": "phenix",    "name": "Second souffle","desc": "+1 résurrection (50% PV)",   "mods": { "max_revives": 1 } },
-	{ "id": "brutalite", "name": "Brutalité",     "desc": "+1 ATK et +6% critique",     "mods": { "atk": 1, "crit_chance": 0.06 } },
 	{ "id": "clairvoyance", "name": "Clairvoyance", "desc": "+1 rayon de vision",        "mods": { "vision": 1 } },
-	{ "id": "oeil_lynx",  "name": "Œil de Lynx",   "desc": "+2 rayon de vision",         "mods": { "vision": 2 } },
+	# --- Talents mécaniques (hooks) ---
+	{ "id": "pyromane",  "name": "Pyromane",      "desc": "Tes ignitions se propagent à 50% et tes brûlures montent d'un palier de plus.", "hook": "pyromane" },
+	{ "id": "balistique","name": "Balistique",    "desc": "+1 rebond et +2 de portée de transpercement.", "hook": "balistique" },
+	{ "id": "toxicologue","name": "Toxicologue",  "desc": "Tes poisons infligent 60% de dégâts en plus.", "hook": "toxicologue" },
+	{ "id": "echo_arcanique","name": "Écho arcanique","desc": "15% de chances de ne pas consommer la recharge de ta capacité.", "hook": "echo_arcanique" },
+	{ "id": "pied_leger","name": "Pied léger",    "desc": "Les pièges ne se déclenchent plus sous tes pas et sont repérés hors vision.", "hook": "pied_leger" },
+	{ "id": "berserker", "name": "Berserker",     "desc": "+25% de dégâts tant que tu subis un poison, une brûlure ou un saignement.", "hook": "berserker" },
+	{ "id": "chasseur_nuit","name": "Chasseur nocturne","desc": "+2 Vision et +10% de dégâts à distance ≥ 4.", "mods": { "vision": 2 }, "hook": "chasseur_nuit" },
+	{ "id": "demolisseur","name": "Démolisseur",  "desc": "Tes poussées gagnent +1 case et infligent +3 dégâts.", "hook": "demolisseur" },
 ]
 
 # --- ARTEFACTS (drops, scope = run) -------------------------------------------
@@ -755,15 +809,58 @@ const ARTIFACTS := [
 	  "desc": "20% de chances d'esquiver complètement une attaque." },
 	{ "id": "phoenix",   "name": "Plume de Phénix",    "min_floor": 5, "color": Color(1.0, 0.75, 0.25),
 	  "desc": "Une fois par run : ressuscite à 50% PV au lieu de mourir." },
+	# --- Phase 6.3 : élargissement du pool (artefacts à stat passive) ---
+	{ "id": "vigueur_ancienne", "name": "Cœur de Titan",    "min_floor": 2, "color": Color(0.85, 0.4, 0.4),
+	  "desc": "+25 PV max." },
+	{ "id": "griffe_acier",     "name": "Griffe d'Acier",   "min_floor": 2, "color": Color(0.8, 0.8, 0.85),
+	  "desc": "+4 Attaque." },
+	{ "id": "plastron_runique", "name": "Plastron Runique",  "min_floor": 3, "color": Color(0.55, 0.7, 0.9),
+	  "desc": "+4 Défense." },
+	{ "id": "bottes_vent",      "name": "Bottes du Vent",    "min_floor": 3, "color": Color(0.5, 0.9, 0.85),
+	  "desc": "+30 Vitesse." },
+	{ "id": "amulette_regen",   "name": "Amulette de Sève",  "min_floor": 4, "color": Color(0.5, 0.9, 0.5),
+	  "desc": "+3 Régénération PV/tour." },
+	{ "id": "lentille_arcane",  "name": "Lentille Arcane",   "min_floor": 4, "color": Color(0.7, 0.55, 1.0),
+	  "desc": "+4 puissance de capacité." },
+	{ "id": "talisman_esquive", "name": "Talisman du Zéphyr","min_floor": 3, "color": Color(0.65, 0.85, 1.0),
+	  "desc": "+12% Esquive." },
+	{ "id": "coeur_ardent",     "name": "Braise Éternelle",  "min_floor": 4, "color": Color(1.0, 0.55, 0.3),
+	  "desc": "+15% Coup critique." },
+	{ "id": "sang_vif",         "name": "Fiole de Sang Vif", "min_floor": 5, "color": Color(0.9, 0.25, 0.35),
+	  "desc": "+15% Vol de vie." },
+	{ "id": "oeil_faucon",      "name": "Œil du Faucon",     "min_floor": 3, "color": Color(0.85, 0.8, 0.5),
+	  "desc": "+2 rayon de vision." },
 ]
 
-# Effets des artefacts, exprimés comme modificateurs (lus par Entity.recompute_stats).
-const ARTIFACT_MODS := {
+# Phase 6.4 : table de modificateurs UNIFIÉE (artefacts + pouvoirs), lue par
+# Entity.recompute_stats. Les entrées "*_pct" (atk_pct/max_hp_pct) ne concernent
+# que certains pouvoirs ; les artefacts n'en portent pas.
+const RELIC_MODS := {
+	# artefacts
 	"lifesteal": { "lifesteal_pct": 0.30 },
 	"thorns":    { "thorns_flat": 4 },
 	"crit":      { "crit_chance": 0.25 },
 	"dodge":     { "dodge_chance": 0.20 },
 	"phoenix":   { "max_revives": 1 },
+	"vigueur_ancienne": { "max_hp": 25 },
+	"griffe_acier":     { "atk": 4 },
+	"plastron_runique": { "defense": 4 },
+	"bottes_vent":      { "speed": 30 },
+	"amulette_regen":   { "hp_regen": 3 },
+	"lentille_arcane":  { "ability_power": 4 },
+	"talisman_esquive": { "dodge_chance": 0.12 },
+	"coeur_ardent":     { "crit_chance": 0.15 },
+	"sang_vif":         { "lifesteal_pct": 0.15 },
+	"oeil_faucon":      { "vision": 2 },
+	# pouvoirs
+	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
+	"garde_de_fer":   { "defense": 6, "max_hp_pct": 0.20 },
+	"fureur":         { "atk_pct": 0.30, "max_hp_pct": -0.10 },
+	"oeil_percant":   { "vision": 2, "crit_chance": 0.20 },
+	"sangsue_omega":  { "lifesteal_pct": 0.25 },
+	"celerite_omega": { "speed": 40 },
+	"carapace_epineuse": { "thorns_flat": 8 },
+	"arcaniste":      { "ability_power": 6, "ability_cd": -1 },
 }
 
 # --- POUVOIRS (Phase 3, drops rares, scope = run) -----------------------------
@@ -781,12 +878,50 @@ const POWERS := [
 	  "desc": "Chaque ennemi tué près de toi explose, infligeant des dégâts en zone aux alentours." },
 	{ "id": "venin", "name": "Glande à Venin", "color": Color(0.55, 0.9, 0.4), "excludes": [],
 	  "desc": "Chacune de tes attaques empoisonne sa cible." },
+	# --- Phase 6.3 : pouvoirs à profil de stats (cumulables, via RELIC_MODS) ---
+	{ "id": "garde_de_fer", "name": "Garde de Fer", "color": Color(0.6, 0.7, 0.85), "excludes": ["coeur_de_verre"],
+	  "desc": "+6 Défense et +20% PV max. La tour ne t'abattra pas." },
+	{ "id": "fureur", "name": "Fureur Sanguine", "color": Color(0.95, 0.35, 0.35), "excludes": [],
+	  "desc": "+30% Attaque, mais −10% PV max." },
+	{ "id": "oeil_percant", "name": "Œil Perçant", "color": Color(0.9, 0.8, 0.4), "excludes": [],
+	  "desc": "+2 Vision et +20% Coup critique." },
+	{ "id": "sangsue_omega", "name": "Sangsue Suprême", "color": Color(0.85, 0.2, 0.4), "excludes": [],
+	  "desc": "+25% Vol de vie." },
+	{ "id": "celerite_omega", "name": "Pas du Fantôme", "color": Color(0.5, 0.9, 0.9), "excludes": [],
+	  "desc": "+40 Vitesse." },
+	{ "id": "carapace_epineuse", "name": "Carapace Épineuse", "color": Color(0.7, 0.8, 0.45), "excludes": [],
+	  "desc": "+8 Épines : qui te frappe se blesse." },
+	{ "id": "arcaniste", "name": "Sceau de l'Arcaniste", "color": Color(0.7, 0.55, 1.0), "excludes": [],
+	  "desc": "+6 puissance de capacité et −1 recharge." },
 ]
 
-# Effets des pouvoirs exprimables en modificateurs de stats simples.
-const POWER_MODS := {
-	"coeur_de_verre": { "atk_pct": 0.50, "crit_chance": 0.20, "max_hp_pct": -0.30 },
-}
+# --- RELIQUES (Phase 6.4) -----------------------------------------------------
+# Registre unifié : artefacts ∪ pouvoirs, chaque entrée taguée d'un "tier"
+# ("artifact"/"power"). ARTIFACTS et POWERS restent les listes de DÉFINITIONS
+# (pickers, boutique, codex) ; relics() en est la vue fusionnée, RELIC_MODS la
+# table de mods unique. player.relics est le stockage unique côté Entity.
+static func relics() -> Array:
+	var out: Array = []
+	for a in ARTIFACTS:
+		var da: Dictionary = a.duplicate(true)
+		da["tier"] = "artifact"
+		out.append(da)
+	for p in POWERS:
+		var dp: Dictionary = p.duplicate(true)
+		dp["tier"] = "power"
+		out.append(dp)
+	return out
+
+## Modificateurs de stats d'une relique (vue directe sur la table unifiée).
+static func relic_mods(id: String) -> Dictionary:
+	return RELIC_MODS.get(id, {})
+
+## Tier d'une relique d'après son id ("artifact"/"power"), pour l'affichage.
+static func relic_tier(id: String) -> String:
+	for a in ARTIFACTS:
+		if String(a.get("id", "")) == id:
+			return "artifact"
+	return "power"
 
 # --- ÉVÉNEMENTS (salles "?") --------------------------------------------------
 # Chaque choix porte un "type" interprété par Main._apply_event_effect.
@@ -819,9 +954,64 @@ const EVENTS := [
 	  "choices": [
 		{ "label": "Se recueillir (+60% PV)", "type": "heal", "value": 0.60 },
 		{ "label": "Méditer (+1 Régén PV/tour ce run)", "type": "stat_regen" } ] },
-]
 
-# --- AMÉLIORATIONS MÉTA (entre les runs) --------------------------------------
+	# --- Phase 6.3 : événements thématiques par biome (champ "biome" optionnel :
+	# filtré sur le biome de l'étage À VENIR, cf. Main.open_event) ---
+	{ "title": "Prairie fleurie", "desc": "Un tapis de fleurs bourdonne d'une vie paisible.", "biome": "plaine",
+	  "choices": [
+		{ "label": "Se reposer dans l'herbe (+35% PV)", "type": "heal", "value": 0.35 },
+		{ "label": "Cueillir des herbes (+1 Régén PV/tour ce run)", "type": "stat_regen" } ] },
+	{ "title": "Clairière sacrée", "desc": "Les arbres s'écartent autour d'une source de lumière verte.", "biome": "foret",
+	  "choices": [
+		{ "label": "Communier (+50% PV)", "type": "heal", "value": 0.50 },
+		{ "label": "Remplir une fiole (1 consommable)", "type": "item_consumable" } ] },
+	{ "title": "Mirage doré", "desc": "Une silhouette scintille dans la cendre chaude — trésor ou illusion ?", "biome": "desert",
+	  "choices": [
+		{ "label": "Courir vers le mirage (pari)", "type": "gamble" },
+		{ "label": "Récupérer des tessons (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Source gelée", "desc": "Sous la glace, une eau ancienne fortifie le corps.", "biome": "toundra",
+	  "choices": [
+		{ "label": "Boire l'eau glaciale (+15 PV max ce run)", "type": "stat_hp" },
+		{ "label": "Se réchauffer (+40% PV)", "type": "heal", "value": 0.40 } ] },
+	{ "title": "Vapeurs putrides", "desc": "Le marais exhale une brume qui offre la puissance contre la chair.", "biome": "marais",
+	  "choices": [
+		{ "label": "Inhaler la brume (+5 ATK, −10 PV max ce run)", "type": "cursed_altar" },
+		{ "label": "Retenir son souffle", "type": "none" } ] },
+	{ "title": "Coulée ardente", "desc": "Tu peux tremper ta lame dans un filet de lave.", "biome": "volcan",
+	  "choices": [
+		{ "label": "Forger dans la lave (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Fouiller les scories (pari)", "type": "gamble" } ] },
+
+	# --- Événements génériques supplémentaires ---
+	{ "title": "Vieux grimoire", "desc": "Un livre de sorts abandonné vibre d'un savoir oublié.",
+	  "choices": [
+		{ "label": "Étudier (1 consommable)", "type": "item_consumable" },
+		{ "label": "Arracher les pages dorées (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Statue brisée", "desc": "Une effigie de héros gît en morceaux ; son aura persiste.",
+	  "choices": [
+		{ "label": "Épouser sa force (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Épouser sa constance (+15 PV max ce run)", "type": "stat_hp" } ] },
+	{ "title": "Puits d'échos", "desc": "Une eau noire et profonde renvoie ton reflet apaisé.",
+	  "choices": [
+		{ "label": "Boire longuement (+50% PV)", "type": "heal", "value": 0.50 },
+		{ "label": "Ne pas troubler l'eau", "type": "none" } ] },
+	{ "title": "Cache de brigands", "desc": "Un butin dissimulé sous une dalle — quelqu'un troque dans l'ombre.",
+	  "choices": [
+		{ "label": "Troquer 20 Éclats contre un artefact", "type": "trade_artifact" },
+		{ "label": "Rafler la menue monnaie (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Reliquaire scellé", "desc": "Un coffret verrouillé promet monts et merveilles — ou un piège.",
+	  "choices": [
+		{ "label": "Briser le sceau (pari)", "type": "gamble" },
+		{ "label": "Le laisser scellé", "type": "none" } ] },
+	{ "title": "Ermite bavard", "desc": "Un vieil ascète propose un pacte contre quelques Éclats.",
+	  "choices": [
+		{ "label": "Payer sa bénédiction (−15 Éclats, +1 résurrection)", "type": "buy_revive" },
+		{ "label": "Le remercier (+12 Éclats)", "type": "shards", "value": 12 } ] },
+	{ "title": "Champ de bataille", "desc": "Des armes rouillées jonchent le sol ; l'écho des combats galvanise.",
+	  "choices": [
+		{ "label": "Récupérer une arme (+3 ATK ce run)", "type": "stat_atk" },
+		{ "label": "Panser tes plaies (+30% PV)", "type": "heal", "value": 0.30 } ] },
+]
 const UPGRADES := {
 	"vitalite": { "name": "Vitalité",  "desc": "+5 PV max",                       "base_cost": 12, "max": 8 },
 	"force":    { "name": "Force",     "desc": "+1 Attaque",                      "base_cost": 15, "max": 8 },
