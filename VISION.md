@@ -52,14 +52,6 @@ Foudre/Venin, tuiles arbre/eau/rocher) se met soudain à interagir :
 - **Le poison stagne en nuages** dans le Marais ; le vent du Désert les déplace.
 - **La lave du Volcan** coule lentement, remodèle l'étage pendant le combat.
 
-> **État (Phase 4 du guide d'implémentation)** : feu qui se propage (4.1),
-> eau conductrice de foudre, gel praticable qui fond, nuages toxiques à la
-> mort des créatures du marais, lave punitive au volcan (4.2) et knockback
-> (4.3 — Coup de bélier, chargeurs, Bourreau) sont **implémentés**. Coupés
-> pour l'instant : le vent du désert qui déplace les nuages, et la lave qui
-> COULE (elle est statique — dangereuse seulement quand on y est poussé,
-> l'adjacence passive était trop punitive).
-
 Pourquoi c'est LE bon hook pour CE jeu : il ne demande presque aucun contenu
 nouveau — il convertit du contenu existant (biomes, statuts, préfixes, sorts)
 en gameplay émergent. Le positionnement devient réellement tactique (l'audit

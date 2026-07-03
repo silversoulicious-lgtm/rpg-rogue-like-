@@ -561,8 +561,52 @@ current 10-13 px micro-labels move to the font's native small size).
 **Assert**: two `start_run("melee", 12345)` calls produce identical
 `dungeon.start`, `dungeon.stairs`, enemy count and first-enemy position.
 
-**Phase 3 done when**: all seven in, smoke test green (incl. the seed
-assert), README « Interface »/« Contrôles » updated (pause, scrolling log).
+### 3.8 Combat & spell VFX layer (chain lightning must be SEEN)
+
+**Defect**: every multi-target / ranged resolution is instantaneous and
+invisible. `bounce_attack` (Main.gd:998) fully resolves the
+`chain_lightning` skill (Data.gd:68) in log text only; same for
+`pierce_attack` (:983), `aoe_attack` (:973), `_enemy_ranged_attack` (:1779)
+and `_enemy_cast` (:1806). MapView's `_fx` layer (MapView.gd:44) only knows
+lunge / hit-flash / death-fade. The most spectacular mechanics in the game
+produce zero pixels.
+
+**Fix**: implement the world-FX layer specified in
+**`ART_GENERATOR_SPEC.md` §10** — architecture, per-effect algorithms,
+element color table, restraint rules all live there; do not improvise
+visuals. MapView gains: `fx_bolt(path, elem)`, `fx_beam(from, to, elem)`,
+`fx_projectile(from, to, kind)`, `fx_burst(center, elem, radius)`,
+`fx_slash(pos, dir)`, `fx_heal(pos)`, `fx_cloud(pos, elem)`; `fx_hit` gains
+an optional `delay` param (bolt victims flash when their segment arrives,
+not all at once). Hooks in Main:
+
+- `bounce_attack`: build `hit_path: Array[Vector2i]` starting at the
+  attacker's cell, appending each victim in hit order; after the loop call
+  `map_view.fx_bolt(hit_path)` and flash victim *i* with
+  `delay = i * 0.06`. The function signature already iterates in order —
+  this is collection, not restructuring.
+- `pierce_attack` → `fx_beam`; `aoe_attack` / `explosive` / `ai.explode`
+  → `fx_burst`; `_enemy_ranged_attack` → `fx_projectile("fx_arrow")`;
+  `_enemy_cast` + player magic single-target → `fx_projectile(orb by
+  element)`; heal sites from 3.3's damage-number list → `fx_heal`.
+- Generate the §10.3 sprites (`fx_arrow`, 4 orbs, 2 spark frames) in
+  `_assets_gen.gd`; run the import pass after.
+
+**Traps**: (1) never consume `Main.rng` for FX jitter — that desyncs the
+seeded runs 3.7 just introduced; local per-fx RNG per spec §10.0. (2) never
+delay game logic to wait for an FX — logic instant, visuals staggered.
+(3) respect `settings.reduced_fx` (add the toggle next to screenshake in
+1.8's options).
+
+**Assert** (headless-safe — visuals can't be smoke-tested directly): set up
+three enemies in a line, cast `chain_lightning`; then
+`map_view._world_fx.size() >= 1` and the bolt entry's path size ==
+`hits + 1`. Plus one xvfb screenshot timed ~0.15 s after the cast showing
+the arc (manual/CI artifact, not asserted).
+
+**Phase 3 done when**: all eight in, smoke test green (incl. the seed and
+bolt asserts), README « Interface »/« Contrôles » updated (pause, scrolling
+log).
 
 ---
 
@@ -804,6 +848,58 @@ only for now).
   kill only; one stored (newest replaces). Clear on victory (when endings
   exist).
 
+### 6.9 Elemental proc reliques — procs you can SEE (requires 3.8)
+
+**Rationale**: the current 6 proc ids (Data.gd:489-506) are all silent
+number tweaks (`moisson`, `execution`, `frenesie`…) — a player can't feel
+them firing. This task adds a proc family whose entire identity is a
+visible elemental effect, giving the 3.8 VFX layer flagship consumers.
+Every proc here fires its VFX **and** a log line — a proc the player
+cannot perceive does not exist.
+
+New proc ids (extend the unique-item schema at Data.gd:489 and
+`Data.proc_desc` exactly like the existing six):
+
+- **`arc`** — flagship. On a basic-attack hit, `val` chance (0.20): a
+  lightning arc jumps from the struck enemy through up to **4 additional
+  enemies** (jump range 4 tiles, nearest-untouched-first — exactly
+  `bounce_attack`'s rule), each arc hit dealing 40 % of the triggering
+  damage as magic. Implementation: reuse `bounce_attack` with the struck
+  enemy's nearest neighbor as `first`, `bounces = 4`; the collected path
+  (prepended with the struck enemy's cell) goes to `fx_bolt` per 3.8.
+  Carrier: new unique relique **« Cœur d'Orage »**
+  (`slot: "relique", stat: {magic: 4, speed: 6}, proc: "arc", val: 0.20`),
+  desc FR: « À l'impact : 20 % de chances que la foudre saute sur jusqu'à
+  4 ennemis proches. »
+- **`nova_feu`** — when Aria takes a melee hit, 25 %: fire nova radius 1 —
+  `apply_burn` on adjacent enemies + `fx_burst(pos, "feu", 1)`. Carrier
+  « Manteau de Braises ». Synergizes with Phase 4 fire tiles when they
+  exist (ignite adjacent TREE cells — gate on the effects layer being
+  present).
+- **`onde_givre`** — on kill, 30 %: frost wave radius 2 — `apply_slow`
+  (2 turns) + `fx_burst(pos, "givre", 2)`. Carrier « Larme de Givre ».
+- **`nuage_venin`** — on crit: poison burst on the victim's tile —
+  adjacent enemies get `apply_poison` + `fx_cloud(pos, "venin")` (upgrade
+  to a lingering Phase 4 gas tile once 4.2 lands). Carrier
+  « Fiole Virulente ».
+
+**Trap — proc recursion**: `arc`'s bounce hits go through
+`_player_attack`, which triggers weapon prefixes and procs → an arc can
+proc an arc. Guard with a `_resolving_proc := true` flag around proc
+resolution; procs never trigger inside procs. (Check whether the existing
+`foudroyant` prefix already has this problem — it likely does via
+`frappe_double`.)
+
+**Balance**: all four go through the Phase 5 sim before shipping; `arc` at
+0.20/40 % is a guess — tune `val` and the 40 % falloff, one at a time.
+These are unique-tier reliques (drop via the existing unique roll), not
+base pool items.
+
+**Assert**: with `Cœur d'Orage` equipped, a forced proc (`val` temporarily
+1.0 in the test) against 5 clustered enemies damages exactly 5 (1 direct +
+4 arcs) and spawns one `fx_bolt` whose path length is 6; with `val = 0.0`,
+zero arcs over 50 attacks.
+
 ---
 
 ## PHASE 7 — Engineering hygiene (continuous; start right after Phase 1)
@@ -900,7 +996,9 @@ cleanup noted in RESUME_SESSION once the default branch changes.
   ramps, selective outlines, ground variants + seam removal, water/lava
   shoreline autotiling, road overlay blending, tall trees, animation
   frames, creature composition kit, contact sheets, readability validator,
-  UI pixel icons + 9-patch panels. **Follow that file.**
+  UI pixel icons + 9-patch panels. **Follow that file.** (Its §10 — the
+  combat/spell VFX visual language — is consumed much earlier, by 3.8/6.9,
+  and is deliberately off the C1-C10 ladder.)
 - 8.B (the 64×64 migration) decision table and wave plan:
 
 | Option | Viewport | Visible play area | Verdict |
