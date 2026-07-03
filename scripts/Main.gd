@@ -94,6 +94,7 @@ var hud                          # instance de Hud (scripts/Hud.gd)
 var enemy_ai                     # instance de EnemyAI (scripts/EnemyAI.gd)
 var combat                       # instance de CombatSystem (scripts/CombatSystem.gd)
 var loot_system                  # instance de LootSystem (scripts/LootSystem.gd)
+var run_progression               # instance de RunProgression (scripts/RunProgression.gd)
 
 func _ready() -> void:
 	rng.randomize()
@@ -101,6 +102,7 @@ func _ready() -> void:
 	enemy_ai = load("res://scripts/EnemyAI.gd").new(self)
 	combat = load("res://scripts/CombatSystem.gd").new(self)
 	loot_system = load("res://scripts/LootSystem.gd").new(self)
+	run_progression = load("res://scripts/RunProgression.gd").new(self)
 	map_view = Node2D.new()
 	map_view.set_script(load("res://scripts/MapView.gd"))
 	add_child(map_view)
@@ -392,130 +394,27 @@ func _pick_any_artifact() -> Dictionary:
 ## Gardien à sec. L'Élite devient plus fréquente à mesure que map_act
 ## augmente. Boutique/Événement restent volontairement rares : ce sont des
 ## pauses, pas le cœur du jeu.
+## Délèguent à RunProgression (Phase 7.3). Wrappers minces conservés sur Main
+## car appelés par le reste de Main (start_run, forge cancel...) et par
+## _smoketest.gd.
 func _roll_node_type() -> String:
-	if act_floor >= ACT_LENGTH:
-		return "boss"
-	if act_floor == ACT_LENGTH - 1 and not _act_rest_done:
-		_act_rest_done = true
-		return "rest" if rng.randf() < 0.5 else "shop"
-	var elite_bonus: float = minf(0.12, map_act * 0.015)
-	var combat_top: float = maxf(0.46, 0.58 - elite_bonus)
-	var elite_top: float = combat_top + 0.15 + elite_bonus
-	var shop_top: float = elite_top + 0.08
-	var event_top: float = shop_top + 0.08
-	var roll: float = rng.randf()
-	if roll < combat_top:
-		return "combat"
-	elif roll < elite_top:
-		return "elite"
-	elif roll < shop_top:
-		return "shop"
-	elif roll < event_top:
-		return "event"
-	return "rest"
+	return run_progression._roll_node_type()
 
 ## Avance vers le prochain nœud : plus de choix de chemin, la suite s'enchaîne
 ## automatiquement (forced_type sert au tout premier étage et à celui suivant
 ## un Gardien, toujours un Combat pour souffler après un affrontement dur).
 func _advance(forced_type: String = "") -> void:
-	hud.hide_overlay()
-	refresh()
-	var t: String = forced_type if forced_type != "" else _roll_node_type()
-	match t:
-		"shop":
-			open_shop()
-		"event":
-			open_event()
-		"rest":
-			open_rest()
-		_:
-			current_node_type = t
-			floor_num += 1
-			act_floor += 1
-			state = State.PLAYING
-			hud.show_game()
-			generate_floor(current_node_type)
+	run_progression._advance(forced_type)
 
 func _node_cleared() -> void:
-	Sfx.play("stairs")
-	if current_node_type == "boss":
-		var healed: int = 0 if has_oath("funeste") else int(round(player.max_hp * 0.2))
-		player.heal(healed)
-		map_act += 1
-		act_floor = 0
-		_act_rest_done = false
-		add_message("[color=#9b8cff]★ Gardien vaincu ! Tu poursuis l'ascension.[/color]")
-		_advance("combat")
-		return
-	# Combat / élite : récompense de fin d'étage au choix (Phase 4).
-	add_message("[color=#9b8cff]Voie dégagée. Choisis ta récompense.[/color]")
-	_open_floor_reward(current_node_type == "elite")
+	run_progression._node_cleared()
 
 # --- Récompense de fin d'étage (Phase 4) --------------------------------------
 func _open_floor_reward(is_elite: bool) -> void:
-	pending_rewards = _make_floor_rewards(is_elite)
-	state = State.CHOICE
-	current_choice = "reward"
-	hud.show_floor_reward(pending_rewards, is_elite)
-
-## Construit le butin de fin d'étage : soin, équipement, Éclats (+ bonus élite),
-## mis à l'échelle de l'étage. Le Serment Funeste retire l'option de soin.
-func _make_floor_rewards(is_elite: bool) -> Array:
-	var rewards: Array = []
-	var lvl: int = floor_num + (4 if is_elite else 0)
-	if not has_oath("funeste"):
-		var pct: float = 0.45 if is_elite else 0.30
-		rewards.append({ "type": "heal", "value": pct, "color": Color(0.4, 0.9, 0.45),
-			"label": "❤ Soin — +%d%% PV" % int(pct * 100),
-			"desc": "Récupère une partie de tes points de vie." })
-	var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
-	var item: Dictionary = Data.generate_item(slot, lvl, rng)
-	var idesc: String = "%s — %s" % [item.get("rarity_name", ""), Data.bonus_summary(item["bonus"])]
-	if item.get("desc", "") != "":
-		idesc += " — " + String(item["desc"])
-	rewards.append({ "type": "equip", "data": item, "color": item.get("rarity_color", Color.WHITE),
-		"label": "%s %s" % [Data.SLOT_GLYPH[slot], item["name"]],
-		"desc": idesc })
-	var amt: int = (8 + floor_num * 3) * (2 if is_elite else 1)
-	rewards.append({ "type": "shards", "value": amt, "color": Color(1.0, 0.85, 0.35),
-		"label": "✦ %d Éclats" % amt,
-		"desc": "Monnaie pour la boutique et le Sanctuaire." })
-	# Bonus d'élite : un parchemin de compétence si possible, sinon un consommable.
-	if is_elite:
-		var sid: String = _pick_droppable_skill()
-		if sid != "":
-			rewards.append({ "type": "skill", "data": sid, "color": Data.skill_rarity_color(sid),
-				"label": "✦ Parchemin — %s" % Data.SKILLS[sid]["name"],
-				"desc": String(Data.SKILLS[sid]["desc"]) })
-		else:
-			rewards.append(_consumable_reward())
-	return rewards
-
-func _consumable_reward() -> Dictionary:
-	var c: Dictionary = Data.generate_consumable(floor_num, rng)
-	return { "type": "consumable", "data": c, "color": c.get("color", Color.WHITE),
-		"label": "! %s" % c["name"], "desc": "Objet à usage unique." }
+	run_progression._open_floor_reward(is_elite)
 
 func resolve_floor_reward(idx: int) -> void:
-	if idx < 0 or idx >= pending_rewards.size():
-		return
-	var r: Dictionary = pending_rewards[idx]
-	match String(r["type"]):
-		"heal":
-			var amt: int = int(round(player.max_hp * float(r["value"])))
-			player.heal(amt)
-			add_message("[color=#7aff8a]Récompense : +%d PV.[/color]" % amt)
-		"shards":
-			run_shards += int(r["value"])
-			add_message("[color=#ffd24a]Récompense : +%d Éclats.[/color]" % int(r["value"]))
-		"equip":
-			_bag_add(r["data"])
-		"consumable":
-			_bag_add(r["data"])
-		"skill":
-			_acquire_skill(String(r["data"]))
-	pending_rewards = []
-	_advance()
+	run_progression.resolve_floor_reward(idx)
 
 func _boss_alive() -> bool:
 	for e in enemies:
@@ -1912,207 +1811,44 @@ func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
 				_check_revive()
 			return
 
-# --- Boutique -----------------------------------------------------------------
+# --- Boutique / événement / repos / forge --------------------------------------
+## Délèguent à RunProgression (Phase 7.3). Wrappers minces conservés sur Main
+## car appelés par le reste de Main (_advance, pause) et par Hud.gd / _smoketest.gd.
 func open_shop() -> void:
-	state = State.CHOICE
-	current_choice = "shop"
-	shop_stock = []
-	for i in 3:
-		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
-		var it: Dictionary = Data.generate_item(slot, floor_num + 1, rng)
-		it["price"] = int(it["salvage"] * 2.5)
-		shop_stock.append(it)
-	for i in 2:
-		var c: Dictionary = Data.generate_consumable(floor_num, rng)
-		c["price"] = 8 + floor_num
-		shop_stock.append(c)
-	if GameState.shop_always_power() or rng.randf() < 0.5:
-		var pdef: Dictionary = _pick_power_def()
-		if not pdef.is_empty():
-			var pitem: Dictionary = pdef.duplicate(true)
-			pitem["kind"] = "power"
-			pitem["price"] = 40
-			shop_stock.append(pitem)
-	hud.show_shop(shop_stock, run_shards)
+	run_progression.open_shop()
 
 func buy_shop_item(item: Dictionary) -> void:
-	var price: int = int(item.get("price", 99999))
-	if run_shards < price or not shop_stock.has(item):
-		return
-	run_shards -= price
-	shop_stock.erase(item)
-	Sfx.play("buy")
-	if item.get("kind", "") == "power":
-		_acquire_power(item)
-	else:
-		_bag_add(item)
-	hud.show_shop(shop_stock, run_shards)
+	run_progression.buy_shop_item(item)
 
 func buy_shop_heal() -> void:
-	var price := 15
-	if run_shards < price:
-		return
-	run_shards -= price
-	Sfx.play("buy")
-	player.heal(int(player.max_hp * 0.5))
-	add_message("Soin à la boutique (+50% PV).")
-	hud.show_shop(shop_stock, run_shards)
+	run_progression.buy_shop_heal()
 
 func leave_shop() -> void:
-	_advance()
+	run_progression.leave_shop()
 
-# --- Événement ----------------------------------------------------------------
 func open_event() -> void:
-	state = State.CHOICE
-	current_choice = "event"
-	# Phase 6.3 : les événements thématiques (champ "biome") ne sortent que dans
-	# le biome de l'étage À VENIR ; les génériques (sans "biome") sont toujours
-	# éligibles. Les événements se déclenchent entre deux étages.
-	# L'étage à venir reste dans la strate courante (seul un Gardien change de
-	# strate, jamais un événement) — on gate donc sur le biome de la strate.
-	var upcoming: String = String(Data.biome_for_act(map_act).get("id", ""))
-	var pool: Array = []
-	for ev in Data.EVENTS:
-		var b: String = String(ev.get("biome", ""))
-		if b == "" or b == upcoming:
-			pool.append(ev)
-	if pool.is_empty():
-		pool = Data.EVENTS
-	current_event = pool[rng.randi_range(0, pool.size() - 1)]
-	hud.show_event(current_event)
+	run_progression.open_event()
 
 func resolve_event(choice_idx: int) -> void:
-	_apply_event_effect(current_event["choices"][choice_idx])
-	if not player.is_alive():
-		game_over()
-		return
-	_advance()
+	run_progression.resolve_event(choice_idx)
 
 func _apply_event_effect(ch: Dictionary) -> void:
-	match ch.get("type", "none"):
-		"heal":
-			var a: int = int(player.max_hp * float(ch["value"]))
-			player.heal(a)
-			add_message("Tu récupères %d PV." % a)
-		"item_consumable":
-			_bag_add(Data.generate_consumable(floor_num, rng))
-		"shards":
-			run_shards += int(ch["value"])
-			add_message("+%d Éclats." % int(ch["value"]))
-		"gamble":
-			# Phase 5.2 : vrai pari — 55% gain, 45% perte de 15% des PV max (met
-			# vraiment en jeu, indépendamment de l'étage grâce au pourcentage).
-			if rng.randf() < 0.55:
-				run_shards += 25
-				add_message("[color=#9fff9f]Chance ! +25 Éclats.[/color]")
-			else:
-				last_damage_source = str(current_event.get("title", "un événement"))
-				var loss: int = maxi(1, int(round(player.max_hp * 0.15)))
-				player.take_damage(loss)
-				add_message("[color=#ff8a8a]Piège ! −%d PV (15%%).[/color]" % loss)
-		"trade_artifact":
-			if run_shards >= 20:
-				var a: Dictionary = _pick_artifact_def()
-				if not a.is_empty():
-					run_shards -= 20
-					_acquire_artifact(a)
-				else:
-					add_message("Le marchand n'a plus rien pour toi.")
-			else:
-				add_message("Pas assez d'Éclats.")
-		"stat_atk":
-			player.base_atk += 3
-			player.recompute_stats()
-			add_message("Entraînement : +3 ATK (ce run).")
-		"stat_hp":
-			player.base_max_hp += 15
-			player.recompute_stats()
-			player.heal(15)
-			add_message("Trempe : +15 PV max (ce run).")
-		"stat_regen":
-			player.base_hp_regen += 1
-			player.recompute_stats()
-			add_message("Méditation : +1 Régén PV/tour (ce run).")
-		"cursed_altar":
-			player.base_atk += 5
-			player.base_max_hp = max(10, player.base_max_hp - 10)
-			player.recompute_stats()
-			add_message("[color=#ff8a8a]Autel maudit : +5 ATK mais −10 PV max (ce run).[/color]")
-		"buy_revive":
-			if run_shards >= 15:
-				run_shards -= 15
-				player.talents.append({ "name": "Bénédiction", "mods": { "max_revives": 1 } })
-				player.recompute_stats()
-				add_message("[color=#ffd24a]Bénédiction : +1 résurrection.[/color]")
-			else:
-				add_message("Pas assez d'Éclats.")
-		_:
-			add_message("Tu passes ton chemin.")
+	run_progression._apply_event_effect(ch)
 
-# --- Repos (feu de camp) ------------------------------------------------------
 func open_rest() -> void:
-	state = State.CHOICE
-	current_choice = "rest"
-	hud.show_rest()
+	run_progression.open_rest()
 
 func rest_choice(kind: String) -> void:
-	match kind:
-		"heal":
-			var amt: int = int(player.max_hp * 0.4)
-			player.heal(amt)
-			if map_view != null:
-				map_view.fx_damage(player.pos(), amt, "heal")
-			add_message("Repos : +%d PV." % amt)
-			_advance()
-		"forge":
-			open_forge()
-		_:
-			player.base_atk += 3
-			player.recompute_stats()
-			add_message("Entraînement : +3 ATK (ce run).")
-			_advance()
+	run_progression.rest_choice(kind)
 
-## Forge Itinérante (rest_choice "forge") : ouvre l'écran de choix de la pièce
-## d'équipement à renforcer plutôt que d'en tirer une au hasard en silence.
 func open_forge() -> void:
-	if player.equipment.is_empty():
-		add_message("La forge reste froide : aucune pièce à renforcer.")
-		_advance()
-		return
-	state = State.CHOICE
-	hud.show_forge(player.equipment)
+	run_progression.open_forge()
 
-## Renforce de ~30% les bonus de la pièce d'équipement choisie à la Forge.
 func forge_choice(slot: String) -> void:
-	if not player.equipment.has(slot):
-		_advance()
-		return
-	var it: Dictionary = player.equipment[slot]
-	var bonus: Dictionary = it.get("bonus", {})
-	var boosted := false
-	for stat in bonus.keys():
-		var v = bonus[stat]
-		if typeof(v) == TYPE_INT and int(v) <= 0:
-			continue
-		elif typeof(v) == TYPE_FLOAT and float(v) <= 0.0:
-			continue
-		elif typeof(v) == TYPE_INT and int(v) != 0:
-			bonus[stat] = int(v) + maxi(1, int(round(abs(int(v)) * 0.3))) * signi(int(v))
-			boosted = true
-		elif typeof(v) == TYPE_FLOAT and float(v) != 0.0:
-			bonus[stat] = float(v) * 1.3
-			boosted = true
-	if not boosted:
-		bonus["atk"] = int(bonus.get("atk", 0)) + 2
-	it["bonus"] = bonus
-	player.equipment[slot] = it
-	player.recompute_stats()
-	add_message("[color=#ffd24a]Forge : %s renforcé ![/color]" % it.get("name", "ton équipement"))
-	_advance()
+	run_progression.forge_choice(slot)
 
-## Annule le passage à la Forge et revient au choix du feu de camp.
 func forge_cancel() -> void:
-	open_rest()
+	run_progression.forge_cancel()
 
 ## `abandoned` : la joueuse a quitté volontairement (pause -> Abandonner
 ## l'ascension) plutôt que d'être vaincue — l'étage atteint compte quand même
