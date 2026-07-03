@@ -171,6 +171,9 @@ func _enemy_atk(e: Entity) -> int:
 	if e.ai.get("pack", false):
 		var allies: int = _count_allies_near(e, 2)
 		a += int(round(float(e.ai.get("pack_bonus", 2)) * float(mini(allies, 3))))
+	# Aura d'un « Chef » d'élite proche (Phase 6.2) : +2 ATK aux alliés.
+	if game._has_chef_aura(e):
+		a += 2
 	if e.has_status("weaken"):
 		a -= int(round(e.status_value("weaken")))
 	return maxi(1, a)

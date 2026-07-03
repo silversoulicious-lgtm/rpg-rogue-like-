@@ -92,11 +92,13 @@ var hud                          # instance de Hud (scripts/Hud.gd)
 # chacun tient une back-reference `game` vers Main et lit/écrit l'état
 # partagé (player, enemies, rng, dungeon, floor_num...) via `game.`.
 var enemy_ai                     # instance de EnemyAI (scripts/EnemyAI.gd)
+var combat                       # instance de CombatSystem (scripts/CombatSystem.gd)
 
 func _ready() -> void:
 	rng.randomize()
 	_setup_input_actions()
 	enemy_ai = load("res://scripts/EnemyAI.gd").new(self)
+	combat = load("res://scripts/CombatSystem.gd").new(self)
 	map_view = Node2D.new()
 	map_view.set_script(load("res://scripts/MapView.gd"))
 	add_child(map_view)
@@ -1168,137 +1170,23 @@ func _nearest_enemy_in_range(rng_tiles: int) -> Entity:
 	return best
 
 # --- Primitives de combat (briques réutilisées par les compétences/pouvoirs) --
-## Zone : frappe tous les ennemis vivants dans le rayon (Chebyshev) du centre.
+## Primitives de combat (aoe/pierce/bounce/dash/push) : délèguent à
+## CombatSystem (Phase 7.3). Wrappers minces car appelés par le reste de
+## Main (lancers de compétences, terrain) et par _smoketest.gd.
 func aoe_attack(center: Vector2i, radius: int, base: int, verb: String) -> int:
-	var hits := 0
-	for e in enemies.duplicate():
-		if not e.is_alive() or _chebyshev(center, e.pos()) > radius:
-			continue
-		# À bout portant (rayon 1), les murs n'arrêtent pas le souffle ; au-delà,
-		# la ligne de vue doit être dégagée.
-		if radius >= 2 and not dungeon.has_los(center, e.pos()):
-			continue
-		_player_attack(e, base, verb)
-		hits += 1
-	return hits
+	return combat.aoe_attack(center, radius, base, verb)
 
-## Transpercement : depuis `from`, avance selon `dir` et frappe tous les ennemis
-## alignés jusqu'à un obstacle/bord (ou max_range cases).
 func pierce_attack(from: Vector2i, dir: Vector2i, base: int, verb: String, max_range: int = 12) -> int:
-	var hits := 0
-	var p: Vector2i = from
-	for i in max_range:
-		p += dir
-		if not dungeon.is_walkable(p.x, p.y):
-			break
-		var e: Entity = enemy_at(p.x, p.y)
-		if e != null and e.is_alive():
-			_player_attack(e, base, verb)
-			hits += 1
-	return hits
+	return combat.pierce_attack(from, dir, base, verb, max_range)
 
-## Rebond / chaîne : frappe une 1re cible puis saute vers l'ennemi vivant le plus
-## proche non encore touché (jusqu'à `bounces` sauts), avec atténuation `falloff`.
 func bounce_attack(first: Entity, base: int, bounces: int, verb: String, falloff: float = 0.85, jump_range: int = 6) -> int:
-	if first == null or not first.is_alive():
-		return 0
-	var hit_ids := {}
-	var current: Entity = first
-	var dmg: int = base
-	var hits := 0
-	for i in bounces + 1:
-		if current == null or not current.is_alive():
-			break
-		_player_attack(current, dmg, verb)
-		hit_ids[current.get_instance_id()] = true
-		hits += 1
-		dmg = max(1, int(round(dmg * falloff)))
-		current = _nearest_enemy_excluding(current.pos(), jump_range, hit_ids)
-	return hits
+	return combat.bounce_attack(first, base, bounces, verb, falloff, jump_range)
 
-## Dash : déplace le joueur de `distance` cases dans `dir`, s'arrêtant avant un
-## obstacle ou un ennemi. Renvoie le nombre de cases parcourues.
 func dash(dir: Vector2i, distance: int) -> int:
-	var moved := 0
-	for i in distance:
-		var nx: int = player.x + dir.x
-		var ny: int = player.y + dir.y
-		if not dungeon.is_walkable(nx, ny) or enemy_at(nx, ny) != null or Vector2i(nx, ny) == dungeon.stairs:
-			break
-		player.x = nx
-		player.y = ny
-		moved += 1
-	if moved > 0:
-		_pickup_loot_at(player.pos())
-	return moved
+	return combat.dash(dir, distance)
 
-## Projection (Phase 4.3) : pousse `target` (joueuse ou ennemi) de `tiles`
-## cases dans `dir`. Chaque case rencontrée applique sa règle : entité →
-## collision (2 dégâts chacun, stop) ; lave (volcan) → brûlure sévère, la
-## cible est repoussée sur sa case d'origine ; eau → 3 dégâts + ralenti, stop
-## au bord ; glace → glisse (1 case bonus) ; piège → se déclenche contre la
-## cible poussée ; mur/arbre/rocher → stop net.
 func push_entity(target: Entity, dir: Vector2i, tiles: int, by_player: bool = false) -> void:
-	if dir == Vector2i.ZERO or target == null or not target.is_alive() or dungeon == null:
-		return
-	# Talent Démolisseur (Phase 6.1) : les poussées de la joueuse gagnent +1 case
-	# et +3 dégâts environnementaux/de collision contre l'entité poussée.
-	var demo: bool = by_player and player != null and player.has_talent_hook("demolisseur")
-	var push_bonus: int = 3 if demo else 0
-	var remaining: int = tiles + (1 if demo else 0)
-	var slid: bool = false
-	while remaining > 0:
-		remaining -= 1
-		var next: Vector2i = target.pos() + dir
-		if next.x <= 0 or next.x >= dungeon.width - 1 or next.y <= 0 or next.y >= dungeon.height - 1:
-			break
-		var occupant: Entity = _entity_at(next)
-		if occupant != null and occupant != target:
-			# Collision : les deux encaissent.
-			if target == player:
-				last_damage_source = "une collision avec %s" % occupant.display_name
-			target.take_damage(2)
-			occupant.take_damage(2 + push_bonus)
-			add_message("[color=#ffb86a]Collision : %s et %s encaissent (-2 chacun).[/color]" %
-				["toi" if target == player else target.display_name,
-				 "toi" if occupant == player else occupant.display_name])
-			if occupant != player and not occupant.is_alive():
-				on_enemy_killed(occupant)
-			break
-		if dungeon.tiles[next.y][next.x] == Dungeon.WATER and dungeon.effects[next.y][next.x] != Dungeon.EFF_FROZEN:
-			if dungeon.is_lava():
-				# Lave : morsure ardente, la cible rebondit sur sa case d'origine.
-				if target == player:
-					last_damage_source = "la lave"
-				target.take_damage(8 + floor_num + push_bonus)
-				apply_burn(target, 3, 3.0)
-				add_message("[color=#ff8a4a]La lave mord %s ![/color]" %
-					("ta chair" if target == player else target.display_name))
-			else:
-				# Eau : reste sur la dernière case valide, trempé et ralenti.
-				if target == player:
-					last_damage_source = "l'eau glacée"
-				target.take_damage(3 + push_bonus)
-				apply_slow(target, 2, 0.4)
-				add_message("[color=#9fdfff]%s au bord de l'eau, trempé et ralenti.[/color]" %
-					("Tu vacilles" if target == player else "%s vacille" % target.display_name))
-			break
-		if not dungeon.is_walkable(next.x, next.y):
-			break                              # mur / arbre / rocher : stop net
-		target.x = next.x
-		target.y = next.y
-		if dungeon.effects[next.y][next.x] == Dungeon.EFF_FROZEN and not slid:
-			slid = true
-			remaining += 1                     # glace : glisse une case de plus
-		_trigger_hazard_at(target.pos(), target)   # les pièges coupent enfin dans les deux sens
-		if not target.is_alive():
-			break
-	if target == player:
-		_check_revive()
-		if player.is_alive():
-			_pickup_loot_at(player.pos())
-	elif not target.is_alive():
-		on_enemy_killed(target)
+	combat.push_entity(target, dir, tiles, by_player)
 
 ## Cible du prochain saut de rebond/chaîne : mêmes filtres de visibilité que
 ## _nearest_enemy_in_range, SAUF la ligne de vue (magie arquée entre les sauts
@@ -1320,49 +1208,37 @@ func _nearest_enemy_excluding(from: Vector2i, rng_tiles: int, exclude: Dictionar
 	return best
 
 # --- Statuts : application (utilisés par compétences/pouvoirs) -----------------
+## Délèguent à CombatSystem (Phase 7.3). Wrappers minces : appelés par le
+## reste de Main (terrain, hasards, compétences) et par _smoketest.gd.
+func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 10) -> void:
+	combat.apply_poison(target, turns, dmg_per_turn, max_stacks)
+
+func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
+	combat.apply_burn(target, turns, dmg_per_turn, max_stacks)
+
+func apply_slow(target: Entity, turns: int, pct: float) -> void:
+	combat.apply_slow(target, turns, pct)
+
+func apply_stun(target: Entity, turns: int) -> void:
+	combat.apply_stun(target, turns)
+
+func apply_bleed(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 8) -> void:
+	combat.apply_bleed(target, turns, dmg_per_turn, max_stacks)
+
+func apply_disease(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 6) -> void:
+	combat.apply_disease(target, turns, dmg_per_turn, max_stacks)
+
+func apply_weaken(target: Entity, turns: int, amount: float) -> void:
+	combat.apply_weaken(target, turns, amount)
+
+func apply_confuse(target: Entity, turns: int) -> void:
+	combat.apply_confuse(target, turns)
+
 ## La joueuse subit-elle un dégât-sur-la-durée ? (talent Berserker, Phase 6.1)
+## Reste sur Main (lit l'état partagé) ; lu par CombatSystem via `game.`.
 func _player_has_dot() -> bool:
 	return player != null and (player.has_status("poison") or player.has_status("burn")
 		or player.has_status("bleed") or player.has_status("disease"))
-
-func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 10) -> void:
-	var v: float = dmg_per_turn
-	# Talent Toxicologue (Phase 6.1) : ×1.6 sur les poisons que la joueuse inflige
-	# aux ennemis (les statuts ne tracent pas leur applicant — v1 honnête : on
-	# gate sur « cible ennemie » pour ne jamais amplifier un poison subi).
-	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("toxicologue"):
-		v *= 1.6
-	target.add_status("poison", turns, v, max_stacks)
-
-func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
-	if not target.ai.is_empty() and target.ai.get("immune_fire", false):
-		return                                   # Élémentaire de feu : insensible au feu
-	# Talent Pyromane (Phase 6.1) : +1 palier de brûlure max sur les cibles ennemies.
-	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("pyromane"):
-		max_stacks += 1
-	var v: float = dmg_per_turn
-	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
-	if wf > 0.0:
-		v *= 1.0 + wf
-	target.add_status("burn", turns, v, max_stacks)
-
-func apply_slow(target: Entity, turns: int, pct: float) -> void:
-	target.add_status("slow", turns, pct)
-
-func apply_stun(target: Entity, turns: int) -> void:
-	target.add_status("stun", turns)
-
-func apply_bleed(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 8) -> void:
-	target.add_status("bleed", turns, dmg_per_turn, max_stacks)
-
-func apply_disease(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 6) -> void:
-	target.add_status("disease", turns, dmg_per_turn, max_stacks)
-
-func apply_weaken(target: Entity, turns: int, amount: float) -> void:
-	target.add_status("weaken", turns, amount)
-
-func apply_confuse(target: Entity, turns: int) -> void:
-	target.add_status("confusion", turns)
 
 # --- Terrain élémentaire (Phase 4) --------------------------------------------
 ## Embrase un ARBRE (case TREE, sans effet en cours). Renvoie false si la case
@@ -1654,191 +1530,23 @@ func _apply_enemy_on_hit(attacker: Entity) -> void:
 # --- Combat -------------------------------------------------------------------
 ## Attaque du JOUEUR vers un ennemi : gère critique, défense, vol de vie,
 ## et les procs d'objets uniques (exécution, frénésie, premier coup, frappe double).
+## Combat joueur/ennemi (attaque, préfixes d'arme, résurrection) : délègue à
+## CombatSystem (Phase 7.3). Wrappers minces conservés sur Main car appelés
+## par le reste de Main (compétences, terrain) et par _smoketest.gd.
 func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: bool = false) -> void:
-	var raw: float = float(base_raw)
-	# Résistances de l'ennemi (data-driven via ai.resist_phys / resist_magic ;
-	# une valeur négative = vulnérabilité, ex. le Golem face aux sorts).
-	if not target.ai.is_empty():
-		var resist: float = float(target.ai.get("resist_magic", 0.0)) if _attack_dmg_type == "magic" else float(target.ai.get("resist_phys", 0.0))
-		if resist != 0.0:
-			raw *= clampf(1.0 - resist, 0.05, 2.5)
-	# Boss protégé par ses gardiens (âmes-boucliers / chaudrons) tant qu'ils vivent.
-	if target.is_boss and target.ai.has("guardians") and _living_guardians(target) > 0:
-		raw *= clampf(1.0 - float(target.ai["guardians"].get("resist", 0.85)), 0.02, 1.0)
-		if rng.randf() < 0.34:
-			add_message("[color=#9fb8ff]%s est protégé — détruis ses gardiens ![/color]" % target.display_name)
-	# Talents mécaniques (Phase 6.1) :
-	# Berserker — +25% de dégâts tant que la joueuse subit un DoT.
-	if player.has_talent_hook("berserker") and _player_has_dot():
-		raw *= 1.25
-	# Chasseur nocturne — +10% de dégâts à distance ≥ 4 (saveur « tir à distance »).
-	if player.has_talent_hook("chasseur_nuit") and _chebyshev(player.pos(), target.pos()) >= 4:
-		raw *= 1.10
-	var is_execute := false
-	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
-		raw *= 1.0 + player.proc_value("frenesie")
-	if player.has_proc("execution") and target.hp <= target.max_hp * 0.25:
-		raw *= 1.0 + player.proc_value("execution")
-		is_execute = true
-	var force_crit: bool = player.has_proc("premier_coup") and not first_strike_used
-	first_strike_used = true
-	var crit: bool = force_crit or rng.randf() < player.crit_chance
-	if crit:
-		raw *= 2.0
-	var def: int = 0 if ignore_def else target.defense
-	if map_view != null:
-		map_view.fx_attack(player, target.pos())
-		map_view.fx_hit(target)
-	Sfx.play("crit" if crit else "hit")
-	var dealt: int = target.take_damage(max(1, int(round(raw)) - def))
-	run_best_hit = max(run_best_hit, dealt)
-	if map_view != null:
-		map_view.fx_damage(target.pos(), dealt, "crit" if crit else "hit")
-		if crit:
-			map_view.fx_freeze(0.05)
-			map_view.fx_shake(4.0)
-	# Araignée Mère : pond une créature à chaque coup reçu (jusqu'à un quota).
-	if target.is_boss and target.ai.has("spawn_on_hit") and target.is_alive() and target.spawned_count < int(target.ai.get("soh_max", 6)):
-		var ssp: Vector2i = _free_adjacent(target.pos())
-		if ssp != NO_TILE:
-			var smdef: Dictionary = _enemy_def_by_sprite(String(target.ai["spawn_on_hit"]))
-			if not smdef.is_empty():
-				var sm: Entity = _make_enemy(smdef, floor_num, ssp)
-				sm.energy = 0
-				sm.awake = true
-				enemies.append(sm)
-				target.spawned_count += 1
-				add_message("[color=#9fdf6a]%s pond une créature ![/color]" % target.display_name)
-	var flair := ""
-	if force_crit:
-		flair = "  [color=#ffd24a]COUP MORTEL![/color]"
-	elif is_execute:
-		flair = "  [color=#c0303a]EXÉCUTION![/color]"
-	elif crit:
-		flair = "  [color=#ffec5a]CRITIQUE![/color]"
-	add_message("%s %s (-%d)%s" % [verb, target.display_name, dealt, flair])
-	if player.has_relic("venin") and target.is_alive():
-		apply_poison(target, 3, maxf(1.0, round(float(dealt) * 0.25)))
-	# Huile ardente (Phase 6.3) : brûlure au contact tant que le buff est actif.
-	if oil_fire_turns > 0 and target.is_alive():
-		apply_burn(target, 2, maxf(1.0, 2.0 + floor_num * 0.2))
-	if player.lifesteal_pct > 0.0 and dealt > 0:
-		var healed: int = int(ceil(dealt * player.lifesteal_pct))
-		if healed > 0:
-			player.heal(healed)
-			if map_view != null:
-				map_view.fx_damage(player.pos(), healed, "heal")
-			add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
-	_trigger_weapon_prefixes(target)
-	_elemental_reaction(target.pos(), dealt)
-	if not target.is_alive():
-		on_enemy_killed(target)
-		return
-	if player.has_proc("frappe_double") and rng.randf() < player.proc_value("frappe_double"):
-		var raw2: int = int(round(base_raw * 0.5))
-		var dealt2: int = target.take_damage(max(1, raw2 - target.defense))
-		run_best_hit = max(run_best_hit, dealt2)
-		add_message("[color=#ffb86a]Frappe double sur %s (-%d).[/color]" % [target.display_name, dealt2])
-		if player.lifesteal_pct > 0.0 and dealt2 > 0:
-			var healed2: int = int(ceil(dealt2 * player.lifesteal_pct))
-			player.heal(healed2)
-			if map_view != null:
-				map_view.fx_damage(player.pos(), healed2, "heal")
-		if not target.is_alive():
-			on_enemy_killed(target)
+	combat._player_attack(target, base_raw, verb, ignore_def)
 
-## Déclenche les préfixes de combat de l'ARME équipée (façon Dungeonmans),
-## indépendants des procs d'objets uniques : dégâts de feu bonus ("ardent"),
-## puis chances de ralentir/empoisonner/étourdir la cible touchée. N'agit
-## que sur le coup principal (pas sur la Frappe Double), comme le Venin/Vol
-## de vie déjà présents.
 func _trigger_weapon_prefixes(target: Entity) -> void:
-	if player.has_proc("ardent") and target.is_alive():
-		var fdmg: int = _fire_prefix_damage(target, player.proc_value("ardent"))
-		if fdmg > 0:
-			var extra: int = target.take_damage(fdmg)
-			run_best_hit = max(run_best_hit, extra)
-			if map_view != null:
-				map_view.fx_damage(target.pos(), extra, "hit")
-			add_message("[color=#ff9a5a]Brasier : %s subit -%d (feu).[/color]" % [target.display_name, extra])
-		if rng.randf() < 0.25:   # (tune) chance d'embraser un arbre adjacent à la cible
-			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
-				if ignite(target.pos() + d):
-					break
-	if not target.is_alive():
-		return
-	if player.has_proc("givre") and rng.randf() < player.proc_value("givre"):
-		apply_slow(target, 2, 0.35)
-		add_message("[color=#9fdfff]%s est ralenti par le givre.[/color]" % target.display_name)
-		freeze_water_near(target.pos())   # élément givre : l'eau au contact gèle
-	if player.has_proc("venimeux") and rng.randf() < player.proc_value("venimeux"):
-		apply_poison(target, 3, 3.0)
-		add_message("[color=#9fdf6a]%s est empoisonné par le venin.[/color]" % target.display_name)
-	if player.has_proc("foudroyant") and rng.randf() < player.proc_value("foudroyant"):
-		apply_stun(target, 1)
-		add_message("[color=#cdb8ff]%s est étourdi par la foudre ![/color]" % target.display_name)
+	combat._trigger_weapon_prefixes(target)
 
-## Dégâts de feu instantanés bonus (préfixe "ardent") : respecte l'immunité et
-## la faiblesse au feu des ennemis (mêmes règles que apply_burn).
 func _fire_prefix_damage(target: Entity, avg: float) -> int:
-	if avg <= 0.0 or (not target.ai.is_empty() and target.ai.get("immune_fire", false)):
-		return 0
-	var v: float = avg + rng.randf_range(-1.0, 1.0)
-	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
-	if wf > 0.0:
-		v *= 1.0 + wf
-	return maxi(1, int(round(v)))
+	return combat._fire_prefix_damage(target, avg)
 
-## Attaque d'un ENNEMI vers le joueur : gère esquive, défense (réduite par weaken),
-## coups multiples (ai.atk_count), vol de vie (ai.lifesteal), statut au contact
-## (ai.on_hit), épines et résurrection.
 func _enemy_attack_player(attacker: Entity) -> void:
-	var hits: int = maxi(1, int(attacker.ai.get("atk_count", 1)))
-	var connected: bool = false
-	for i in hits:
-		if not attacker.is_alive() or not player.is_alive():
-			return
-		if _enemy_hit_player(attacker):
-			connected = true
-	# Le statut au contact ne s'applique qu'une fois par séquence d'attaque,
-	# et seulement si au moins un coup a réellement porté (pas d'esquive totale).
-	if connected:
-		_apply_enemy_on_hit(attacker)
+	combat._enemy_attack_player(attacker)
 
-## Un coup unique d'ennemi vers le joueur. Renvoie true si le coup a porté.
 func _enemy_hit_player(attacker: Entity) -> bool:
-	if rng.randf() < player.dodge_chance:
-		add_message("[color=#b3a8e0]Tu esquives %s ![/color]" % attacker.display_name)
-		return false
-	if map_view != null:
-		map_view.fx_attack(attacker, player.pos())
-		map_view.fx_hit(player)
-	last_damage_source = attacker.display_name
-	var dealt: int = player.take_damage(max(1, _enemy_atk(attacker) - _player_def()))
-	if map_view != null:
-		map_view.fx_damage(player.pos(), dealt, "player_hit")
-	add_message("[color=#ff8a8a]%s te frappe (-%d).[/color]" % [attacker.display_name, dealt])
-	var ls: float = float(attacker.ai.get("lifesteal", 0.0))
-	if ls > 0.0 and dealt > 0:
-		var drained: int = maxi(1, int(round(dealt * ls)))
-		attacker.heal(drained)
-		add_message("[color=#ff7a8a]%s te draine (+%d PV).[/color]" % [attacker.display_name, drained])
-	# Élite « Voleur » (Phase 6.2) : dérobe des Éclats à chaque coup (rendus à sa mort).
-	var steal: int = int(attacker.ai.get("steal", 0))
-	if steal > 0 and dealt > 0:
-		var taken: int = mini(steal, run_shards)
-		if taken > 0:
-			run_shards -= taken
-			attacker.ai["stolen"] = int(attacker.ai.get("stolen", 0)) + taken
-			add_message("[color=#ffd24a]%s te dérobe %d Éclats ![/color]" % [attacker.display_name, taken])
-	if player.thorns_flat > 0:
-		var d2: int = attacker.take_damage(player.thorns_flat)
-		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
-		if not attacker.is_alive():
-			on_enemy_killed(attacker)
-	_trigger_armor_retaliation(attacker, dealt)
-	_check_revive()
-	return true
+	return combat._enemy_hit_player(attacker)
 
 ## Préfixe d'armure "renvoi" : chance d'affaiblir l'attaquant au contact.
 func _trigger_armor_retaliation(attacker: Entity, dealt: int) -> void:
@@ -1847,10 +1555,7 @@ func _trigger_armor_retaliation(attacker: Entity, dealt: int) -> void:
 		add_message("[color=#ffb98a]Représailles : %s est affaibli.[/color]" % attacker.display_name)
 
 func _check_revive() -> void:
-	if player.hp <= 0 and player.revive_available():
-		player.revives_used += 1
-		player.hp = max(1, int(player.max_hp * 0.5))
-		add_message("[color=#ffd24a]✦ Une résurrection te ramène à la vie (50% PV) ![/color]")
+	combat._check_revive()
 
 func on_enemy_killed(e: Entity) -> void:
 	if not enemies.has(e):
