@@ -741,23 +741,28 @@ static func generate_consumable(floor: int, rng: RandomNumberGenerator) -> Dicti
 	return CONSUMABLES[0].duplicate(true)
 
 # --- TALENTS (choix de montée de niveau pendant un run) -----------------------
+# Deux familles : talents de STAT plate (champ "mods", appliqués par
+# Entity.recompute_stats) et talents MÉCANIQUES (Phase 6.1, champ "hook" lu à un
+# site de jeu explicite via Entity.has_talent_hook — ils changent une règle,
+# pas un chiffre). Chasseur nocturne porte les deux (mods vision + hook dégâts).
 const TALENTS := [
 	{ "id": "vigueur",   "name": "Vigueur",       "desc": "+12 PV max",                 "mods": { "max_hp": 12 } },
 	{ "id": "puissance", "name": "Puissance",     "desc": "+2 Attaque",                 "mods": { "atk": 2 } },
-	{ "id": "arcane",    "name": "Arcane",        "desc": "+3 Magie",                   "mods": { "magic": 3 } },
 	{ "id": "carapace",  "name": "Carapace",      "desc": "+2 Défense",                 "mods": { "defense": 2 } },
 	{ "id": "celerite",  "name": "Célérité",      "desc": "+15 Vitesse",                "mods": { "speed": 15 } },
-	{ "id": "regen",     "name": "Régénération",  "desc": "+2 Régén PV/tour",           "mods": { "hp_regen": 2 } },
 	{ "id": "precision", "name": "Précision",     "desc": "+10% Coup critique",         "mods": { "crit_chance": 0.10 } },
 	{ "id": "agilite",   "name": "Agilité",       "desc": "+10% Esquive",               "mods": { "dodge_chance": 0.10 } },
-	{ "id": "sangsue",   "name": "Sangsue",       "desc": "+12% Vol de vie",            "mods": { "lifesteal_pct": 0.12 } },
-	{ "id": "represaille","name": "Représailles", "desc": "+4 Épines",                  "mods": { "thorns_flat": 4 } },
-	{ "id": "affutage",  "name": "Affûtage",      "desc": "+3 puissance de capacité",   "mods": { "ability_power": 3 } },
-	{ "id": "focus",     "name": "Concentration", "desc": "-1 recharge de capacité",    "mods": { "ability_cd": -1 } },
 	{ "id": "phenix",    "name": "Second souffle","desc": "+1 résurrection (50% PV)",   "mods": { "max_revives": 1 } },
-	{ "id": "brutalite", "name": "Brutalité",     "desc": "+1 ATK et +6% critique",     "mods": { "atk": 1, "crit_chance": 0.06 } },
 	{ "id": "clairvoyance", "name": "Clairvoyance", "desc": "+1 rayon de vision",        "mods": { "vision": 1 } },
-	{ "id": "oeil_lynx",  "name": "Œil de Lynx",   "desc": "+2 rayon de vision",         "mods": { "vision": 2 } },
+	# --- Talents mécaniques (hooks) ---
+	{ "id": "pyromane",  "name": "Pyromane",      "desc": "Tes ignitions se propagent à 50% et tes brûlures montent d'un palier de plus.", "hook": "pyromane" },
+	{ "id": "balistique","name": "Balistique",    "desc": "+1 rebond et +2 de portée de transpercement.", "hook": "balistique" },
+	{ "id": "toxicologue","name": "Toxicologue",  "desc": "Tes poisons infligent 60% de dégâts en plus.", "hook": "toxicologue" },
+	{ "id": "echo_arcanique","name": "Écho arcanique","desc": "15% de chances de ne pas consommer la recharge de ta capacité.", "hook": "echo_arcanique" },
+	{ "id": "pied_leger","name": "Pied léger",    "desc": "Les pièges ne se déclenchent plus sous tes pas et sont repérés hors vision.", "hook": "pied_leger" },
+	{ "id": "berserker", "name": "Berserker",     "desc": "+25% de dégâts tant que tu subis un poison, une brûlure ou un saignement.", "hook": "berserker" },
+	{ "id": "chasseur_nuit","name": "Chasseur nocturne","desc": "+2 Vision et +10% de dégâts à distance ≥ 4.", "mods": { "vision": 2 }, "hook": "chasseur_nuit" },
+	{ "id": "demolisseur","name": "Démolisseur",  "desc": "Tes poussées gagnent +1 case et infligent +3 dégâts.", "hook": "demolisseur" },
 ]
 
 # --- ARTEFACTS (drops, scope = run) -------------------------------------------

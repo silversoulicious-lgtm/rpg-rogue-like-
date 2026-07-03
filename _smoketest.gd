@@ -1232,6 +1232,31 @@ func _ready() -> void:
 	main.floor_num = 1
 	print("OK Phase 5.2: XP quadratique découplée, pentes HP/ATK/DEF séparées, retrait des espèces faibles (max_floor)")
 
+	# --- Phase 6.1 : talents mécaniques (hooks) ---------------------------------
+	main.start_run("melee")
+	assert(not main.player.has_talent_hook("toxicologue"), "aucun hook de talent au départ")
+	# Toxicologue : ×1.6 sur les poisons infligés aux ennemis.
+	var tox_target: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(5, 5))
+	main.apply_poison(tox_target, 3, 5.0)
+	var base_poison: float = tox_target.status_value("poison")
+	assert(abs(base_poison - 5.0) < 0.01, "poison de base non modifié sans talent")
+	main.player.talents.append({ "id": "toxicologue", "name": "Toxicologue", "hook": "toxicologue" })
+	assert(main.player.has_talent_hook("toxicologue"), "has_talent_hook détecte le talent mécanique")
+	var tox2: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 1, Vector2i(6, 6))
+	main.apply_poison(tox2, 3, 5.0)
+	assert(abs(tox2.status_value("poison") - 8.0) < 0.01, "Toxicologue : poison ×1.6 (5 → 8) sur un ennemi")
+	# Un poison SUBI par la joueuse n'est jamais amplifié par Toxicologue.
+	main.apply_poison(main.player, 3, 5.0)
+	assert(abs(main.player.status_value("poison") - 5.0) < 0.01, "Toxicologue n'amplifie pas un poison subi (gate faction ennemie)")
+	# Démolisseur : la poussée de la joueuse gagne +1 case.
+	main.player.talents.append({ "id": "demolisseur", "name": "Démolisseur", "hook": "demolisseur" })
+	assert(Data.TALENTS.size() >= 16, "TALENTS contient les 8 talents mécaniques + les stats plates")
+	var n_hooks: int = 0
+	for t in Data.TALENTS:
+		if t.has("hook"): n_hooks += 1
+	assert(n_hooks >= 8, "au moins 8 talents mécaniques (hooks) dans le pool")
+	print("OK Phase 6.1: talents mécaniques (has_talent_hook, Toxicologue ×1.6 gate ennemi, ≥8 hooks)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

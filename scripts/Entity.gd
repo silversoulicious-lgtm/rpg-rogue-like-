@@ -171,6 +171,14 @@ func effective_speed() -> int:
 	var slow: float = status_value("slow") if has_status("slow") else 0.0
 	return maxi(10, int(round(float(speed) * (1.0 - clampf(slow, 0.0, 0.9)))))
 
+## Phase 6.1 : un talent « mécanique » actif ? (repéré par son champ "hook", lu
+## aux sites de jeu explicites plutôt que via des +stats plats.)
+func has_talent_hook(hook: String) -> bool:
+	for t in talents:
+		if String(t.get("hook", "")) == hook:
+			return true
+	return false
+
 func has_artifact(id: String) -> bool:
 	for a in artifacts:
 		if a.get("id", "") == id:

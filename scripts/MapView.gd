@@ -380,11 +380,17 @@ func _draw() -> void:
 				elif dist <= 3:
 					draw_rect(ecell, Color(0.9, 0.55, 0.15, 0.08), true)
 
-	# Pièges au sol : visibles uniquement dans le champ de vision actuel.
+	# Pièges au sol : visibles dans le champ de vision. Talent Pied léger
+	# (Phase 6.1) : la joueuse les repère aussi hors vision (affichés assombris)
+	# sur les cases déjà explorées.
+	var foresight: bool = player_entity != null and player_entity.has_talent_hook("pied_leger")
 	for hz in hazards:
 		var hp: Vector2i = hz["pos"]
+		var col: Color = hz.get("color", Color(0.95, 0.55, 0.45))
 		if dungeon.is_visible(hp.x, hp.y):
-			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), hz.get("color", Color(0.95, 0.55, 0.45)))
+			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), col)
+		elif foresight and dungeon.is_explored(hp.x, hp.y):
+			_draw_glyph(hp.x, hp.y, str(hz.get("glyph", "^")), _alpha(col, 0.5))
 
 	# Butin & entités : uniquement dans le champ de vision actuel.
 	for item in loot:

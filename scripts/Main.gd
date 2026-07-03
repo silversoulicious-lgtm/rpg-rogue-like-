@@ -966,7 +966,11 @@ func use_ability() -> void:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
 		return
-	player.ability_cd = player.ability_cd_max
+	# Talent Écho Arcanique (Phase 6.1) : 15% de ne pas consommer la recharge.
+	if player.has_talent_hook("echo_arcanique") and rng.randf() < 0.15:
+		add_message("[color=#c8b0ff]✦ Écho arcanique : capacité toujours prête ![/color]")
+	else:
+		player.ability_cd = player.ability_cd_max
 	_player_acted()
 
 ## Dégâts de base d'une compétence selon le type d'arme, × multiplicateur "power".
@@ -1042,18 +1046,22 @@ func _cast_skill(skill: Dictionary) -> bool:
 		"pierce":
 			var tp: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tp == null: return false
-			return pierce_attack(player.pos(), _cardinal_to(tp.pos()), dmg, "%s transperce" % name, rng_tiles) > 0
+			# Talent Balistique (Phase 6.1) : +2 de portée de transpercement.
+			var pierce_rng: int = rng_tiles + (2 if player.has_talent_hook("balistique") else 0)
+			return pierce_attack(player.pos(), _cardinal_to(tp.pos()), dmg, "%s transperce" % name, pierce_rng) > 0
 		"bounce", "chain":
 			var tb: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tb == null: return false
-			return bounce_attack(tb, dmg, int(skill.get("bounces", 3)), "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
+			# Talent Balistique (Phase 6.1) : +1 rebond.
+			var bounces: int = int(skill.get("bounces", 3)) + (1 if player.has_talent_hook("balistique") else 0)
+			return bounce_attack(tb, dmg, bounces, "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
 		"push_strike":
 			var tk: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tk == null: return false
 			var pdir: Vector2i = _cardinal_to(tk.pos())
 			_player_attack(tk, dmg, "%s percute" % name)
 			if tk.is_alive():
-				push_entity(tk, pdir, int(skill.get("push", 2)))
+				push_entity(tk, pdir, int(skill.get("push", 2)), true)
 			return true
 		"status_shot":
 			var tst: Entity = _nearest_enemy_in_range(rng_tiles)
@@ -1171,10 +1179,14 @@ func dash(dir: Vector2i, distance: int) -> int:
 ## cible est repoussée sur sa case d'origine ; eau → 3 dégâts + ralenti, stop
 ## au bord ; glace → glisse (1 case bonus) ; piège → se déclenche contre la
 ## cible poussée ; mur/arbre/rocher → stop net.
-func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
+func push_entity(target: Entity, dir: Vector2i, tiles: int, by_player: bool = false) -> void:
 	if dir == Vector2i.ZERO or target == null or not target.is_alive() or dungeon == null:
 		return
-	var remaining: int = tiles
+	# Talent Démolisseur (Phase 6.1) : les poussées de la joueuse gagnent +1 case
+	# et +3 dégâts environnementaux/de collision contre l'entité poussée.
+	var demo: bool = by_player and player != null and player.has_talent_hook("demolisseur")
+	var push_bonus: int = 3 if demo else 0
+	var remaining: int = tiles + (1 if demo else 0)
 	var slid: bool = false
 	while remaining > 0:
 		remaining -= 1
@@ -1187,7 +1199,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 			if target == player:
 				last_damage_source = "une collision avec %s" % occupant.display_name
 			target.take_damage(2)
-			occupant.take_damage(2)
+			occupant.take_damage(2 + push_bonus)
 			add_message("[color=#ffb86a]Collision : %s et %s encaissent (-2 chacun).[/color]" %
 				["toi" if target == player else target.display_name,
 				 "toi" if occupant == player else occupant.display_name])
@@ -1199,7 +1211,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 				# Lave : morsure ardente, la cible rebondit sur sa case d'origine.
 				if target == player:
 					last_damage_source = "la lave"
-				target.take_damage(8 + floor_num)
+				target.take_damage(8 + floor_num + push_bonus)
 				apply_burn(target, 3, 3.0)
 				add_message("[color=#ff8a4a]La lave mord %s ![/color]" %
 					("ta chair" if target == player else target.display_name))
@@ -1207,7 +1219,7 @@ func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
 				# Eau : reste sur la dernière case valide, trempé et ralenti.
 				if target == player:
 					last_damage_source = "l'eau glacée"
-				target.take_damage(3)
+				target.take_damage(3 + push_bonus)
 				apply_slow(target, 2, 0.4)
 				add_message("[color=#9fdfff]%s au bord de l'eau, trempé et ralenti.[/color]" %
 					("Tu vacilles" if target == player else "%s vacille" % target.display_name))
@@ -1249,12 +1261,26 @@ func _nearest_enemy_excluding(from: Vector2i, rng_tiles: int, exclude: Dictionar
 	return best
 
 # --- Statuts : application (utilisés par compétences/pouvoirs) -----------------
+## La joueuse subit-elle un dégât-sur-la-durée ? (talent Berserker, Phase 6.1)
+func _player_has_dot() -> bool:
+	return player != null and (player.has_status("poison") or player.has_status("burn")
+		or player.has_status("bleed") or player.has_status("disease"))
+
 func apply_poison(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 10) -> void:
-	target.add_status("poison", turns, dmg_per_turn, max_stacks)
+	var v: float = dmg_per_turn
+	# Talent Toxicologue (Phase 6.1) : ×1.6 sur les poisons que la joueuse inflige
+	# aux ennemis (les statuts ne tracent pas leur applicant — v1 honnête : on
+	# gate sur « cible ennemie » pour ne jamais amplifier un poison subi).
+	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("toxicologue"):
+		v *= 1.6
+	target.add_status("poison", turns, v, max_stacks)
 
 func apply_burn(target: Entity, turns: int, dmg_per_turn: float, max_stacks: int = 5) -> void:
 	if not target.ai.is_empty() and target.ai.get("immune_fire", false):
 		return                                   # Élémentaire de feu : insensible au feu
+	# Talent Pyromane (Phase 6.1) : +1 palier de brûlure max sur les cibles ennemies.
+	if target.faction == Entity.Faction.ENEMY and player != null and player.has_talent_hook("pyromane"):
+		max_stacks += 1
 	var v: float = dmg_per_turn
 	var wf: float = float(target.ai.get("weak_fire", 0.0)) if not target.ai.is_empty() else 0.0
 	if wf > 0.0:
@@ -1489,10 +1515,14 @@ func _tick_terrain() -> void:
 					if ent != null and ent.is_alive():
 						apply_burn(ent, 2, 2.0 + floor_num * 0.2, 3)
 			# Propagation : chaque arbre 4-adjacent non touché a une chance de s'embraser.
+			# Talent Pyromane (Phase 6.1) : propagation à 50% au lieu de FIRE_SPREAD_CHANCE.
+			var spread_chance: float = Data.FIRE_SPREAD_CHANCE
+			if player != null and player.has_talent_hook("pyromane"):
+				spread_chance = maxf(spread_chance, 0.50)
 			for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 				var np2: Vector2i = p + d
 				if dungeon.tiles[np2.y][np2.x] == Dungeon.TREE and dungeon.effects[np2.y][np2.x] == Dungeon.EFF_NONE:
-					if rng.randf() < Data.FIRE_SPREAD_CHANCE:
+					if rng.randf() < spread_chance:
 						ignite(np2)
 			if dungeon.effect_timer[p.y][p.x] <= 0:
 				dungeon.effects[p.y][p.x] = Dungeon.EFF_BURNT
@@ -1578,6 +1608,13 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 		raw *= clampf(1.0 - float(target.ai["guardians"].get("resist", 0.85)), 0.02, 1.0)
 		if rng.randf() < 0.34:
 			add_message("[color=#9fb8ff]%s est protégé — détruis ses gardiens ![/color]" % target.display_name)
+	# Talents mécaniques (Phase 6.1) :
+	# Berserker — +25% de dégâts tant que la joueuse subit un DoT.
+	if player.has_talent_hook("berserker") and _player_has_dot():
+		raw *= 1.25
+	# Chasseur nocturne — +10% de dégâts à distance ≥ 4 (saveur « tir à distance »).
+	if player.has_talent_hook("chasseur_nuit") and _chebyshev(player.pos(), target.pos()) >= 4:
+		raw *= 1.10
 	var is_execute := false
 	if player.has_proc("frenesie") and player.hp <= player.max_hp * 0.4:
 		raw *= 1.0 + player.proc_value("frenesie")
@@ -2547,6 +2584,10 @@ func _drop_trap(p: Vector2i) -> void:
 func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
 	if victim == null:
 		victim = player
+	# Talent Pied léger (Phase 6.1) : les pièges ne se déclenchent plus sous les
+	# pas de la joueuse (ils restent actifs contre les ennemis poussés dessus).
+	if victim == player and player != null and player.has_talent_hook("pied_leger"):
+		return
 	for h in hazards.duplicate():
 		if h["pos"] == p:
 			hazards.erase(h)
