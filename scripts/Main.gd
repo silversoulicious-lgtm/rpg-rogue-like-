@@ -93,12 +93,14 @@ var hud                          # instance de Hud (scripts/Hud.gd)
 # partagé (player, enemies, rng, dungeon, floor_num...) via `game.`.
 var enemy_ai                     # instance de EnemyAI (scripts/EnemyAI.gd)
 var combat                       # instance de CombatSystem (scripts/CombatSystem.gd)
+var loot_system                  # instance de LootSystem (scripts/LootSystem.gd)
 
 func _ready() -> void:
 	rng.randomize()
 	_setup_input_actions()
 	enemy_ai = load("res://scripts/EnemyAI.gd").new(self)
 	combat = load("res://scripts/CombatSystem.gd").new(self)
+	loot_system = load("res://scripts/LootSystem.gd").new(self)
 	map_view = Node2D.new()
 	map_view.set_script(load("res://scripts/MapView.gd"))
 	add_child(map_view)
@@ -766,34 +768,14 @@ func _make_enemy(def: Dictionary, floor: int, p: Vector2i, is_boss: bool = false
 		e.enraged = false
 	return e
 
+## Butin (loot) : délègue à LootSystem (Phase 7.3). Wrappers minces conservés
+## sur Main car appelés par le reste de Main (généreation d'étage, événements,
+## pouvoirs) et par _smoketest.gd.
 func _spawn_loot(p: Vector2i, force_good: bool = false) -> void:
-	var roll: float = rng.randf()
-	var adef: Dictionary = {}
-	if roll < 0.18 and not force_good:
-		adef = _pick_artifact_def()
-	if not adef.is_empty():
-		loot.append({ "pos": p, "kind": "artifact", "glyph": Data.ARTIFACT_GLYPH,
-			"sprite": "artifact", "color": adef["color"], "data": adef })
-	elif roll < 0.42 and not force_good:
-		var c: Dictionary = Data.generate_consumable(floor_num, rng)
-		loot.append({ "pos": p, "kind": "consumable", "glyph": "!",
-			"sprite": "potion", "color": c["color"], "data": c })
-	else:
-		# l'élite force un meilleur objet (étage virtuel plus élevé -> raretés boostées)
-		var lvl: int = floor_num + (4 if force_good else 0)
-		var slot: String = Data.SLOTS[rng.randi_range(0, Data.SLOTS.size() - 1)]
-		var item: Dictionary = Data.generate_item(slot, lvl, rng)
-		loot.append({ "pos": p, "kind": "equip", "glyph": Data.SLOT_GLYPH[slot],
-			"sprite": slot, "color": item["rarity_color"], "data": item })
+	loot_system._spawn_loot(p, force_good)
 
 func _pick_artifact_def() -> Dictionary:
-	var pool: Array = []
-	for def in Data.ARTIFACTS:
-		if def["min_floor"] <= floor_num and not player.has_relic(def["id"]):
-			pool.append(def)
-	if pool.is_empty():
-		return {}
-	return pool[rng.randi_range(0, pool.size() - 1)]
+	return loot_system._pick_artifact_def()
 
 ## Structure de point d'intérêt rare (une par biome) : dressing décoratif posé
 ## sur un carré 2x2 praticable et libre, avec un coffre au butin garanti et
@@ -1638,76 +1620,23 @@ func on_enemy_killed(e: Entity) -> void:
 			_drop_skill(death_pos, false)
 
 # --- Butin & inventaire -------------------------------------------------------
+## Délèguent à LootSystem (Phase 7.3). Wrappers minces conservés sur Main car
+## appelés par le reste de Main (compétences, terrain, pouvoirs) et par
+## _smoketest.gd.
 func _pickup_loot_at(p: Vector2i) -> void:
-	for item in loot.duplicate():
-		if item["pos"] == p:
-			loot.erase(item)
-			Sfx.play("pickup")
-			match item["kind"]:
-				"artifact":
-					_acquire_artifact(item["data"])
-				"power":
-					_acquire_power(item["data"])
-				"skill":
-					_acquire_skill(String(item["data"]["id"]))
-				_:
-					_bag_add(item["data"])
+	loot_system._pickup_loot_at(p)
 
 # --- Compétences (Phase 2) ----------------------------------------------------
 ## Tire une compétence droppable (hors bases, non encore connue), pondérée par
 ## rareté, et la dépose au sol à `pos`. `guaranteed` réservé aux boss.
 func _drop_skill(pos: Vector2i, _guaranteed: bool) -> void:
-	var id: String = _pick_droppable_skill()
-	if id == "":
-		return
-	loot.append({ "pos": pos, "kind": "skill", "glyph": "✦", "sprite": "artifact",
-		"color": Data.skill_rarity_color(id), "data": { "id": id } })
-	add_message("[color=#b8a0ff]✦ Une compétence scintille au sol…[/color]")
+	loot_system._drop_skill(pos, _guaranteed)
 
 func _pick_droppable_skill() -> String:
-	var pool: Array = []
-	var weights: Array = []
-	var total: float = 0.0
-	for id in Data.SKILLS:
-		var s: Dictionary = Data.SKILLS[id]
-		if String(s["rarity"]) == "base" or known_skills.has(id):
-			continue
-		var w: float = float(Data.SKILL_RARITIES[s["rarity"]]["weight"])
-		pool.append(id); weights.append(w); total += w
-	if pool.is_empty():
-		return ""
-	var pick: String = _weighted_skill_pick(pool, weights, total)
-	# Affinité Arcane : tire deux fois et garde la compétence la plus rare.
-	if GameState.better_drop_pool():
-		var alt: String = _weighted_skill_pick(pool, weights, total)
-		if _skill_weight(alt) < _skill_weight(pick):
-			pick = alt
-	return pick
-
-func _weighted_skill_pick(pool: Array, weights: Array, total: float) -> String:
-	var roll: float = rng.randf() * total
-	for i in pool.size():
-		roll -= weights[i]
-		if roll <= 0.0:
-			return pool[i]
-	return pool[pool.size() - 1]
-
-## Poids de rareté d'une compétence (plus petit = plus rare).
-func _skill_weight(id: String) -> float:
-	var s: Dictionary = Data.SKILLS.get(id, {})
-	return float(Data.SKILL_RARITIES.get(s.get("rarity", "commune"), {"weight": 999.0})["weight"])
+	return loot_system._pick_droppable_skill()
 
 func _acquire_skill(id: String) -> void:
-	if not Data.SKILLS.has(id):
-		return
-	if known_skills.has(id) or String(Data.SKILLS[id]["rarity"]) == "base":
-		run_shards += 8
-		add_message("Compétence déjà connue : %s (+8 Éclats)." % Data.SKILLS[id]["name"])
-		return
-	known_skills.append(id)
-	add_message("[color=#c8b0ff]✦ Compétence apprise : %s — %s[/color]" % [Data.SKILLS[id]["name"], Data.SKILLS[id]["desc"]])
-	_discover("skill", id, String(Data.SKILLS[id]["name"]))
-	refresh()
+	loot_system._acquire_skill(id)
 
 ## Liste des compétences sélectionnables avec l'arme équipée (base du type + apprises compatibles).
 func selectable_skills() -> Array:
@@ -1729,130 +1658,22 @@ func select_skill(id: String) -> void:
 	add_message("Compétence active : [color=#c8b0ff]%s[/color]." % Data.SKILLS[id]["name"])
 	refresh()
 
+## Délèguent à LootSystem (Phase 7.3). Wrappers minces : appelés par le
+## reste de Main (récompenses, événements, terrain) et par Hud.gd / _smoketest.gd.
 func _bag_add(item: Dictionary) -> void:
-	_note_item(item)
-	if item.get("unique", false):
-		_discover("unique", String(item.get("name", "")), String(item.get("name", "")))
-	if inventory.size() >= INV_CAP:
-		var s: int = int(item.get("salvage", 3))
-		run_shards += s
-		add_message("Sac plein : %s recyclé (+%d Éclats)." % [item.get("name", "?"), s])
-		return
-	inventory.append(item)
-	var rc: Color = item.get("rarity_color", Color(0.85, 0.85, 0.9))
-	add_message("Ramassé : [color=#%s]%s[/color].  [I] pour gérer." % [rc.to_html(false), item.get("name", "?")])
-
-## Mémorise l'objet d'équipement le plus rare obtenu du run (journal de fin).
-func _note_item(item: Dictionary) -> void:
-	if item.get("kind", "") != "equip":
-		return
-	if run_best_item.is_empty() or _rarity_rank(item) > _rarity_rank(run_best_item):
-		run_best_item = item
-
-func _rarity_rank(item: Dictionary) -> int:
-	match item.get("rarity", ""):
-		"legendaire": return 4
-		"epique": return 3
-		"rare": return 2
-		"commun": return 1
-	return 0
+	loot_system._bag_add(item)
 
 func equip_item(item: Dictionary) -> void:
-	if item.get("kind", "") != "equip":
-		return
-	inventory.erase(item)
-	var slot: String = item["slot"]
-	if player.equipment.has(slot):
-		var old: Dictionary = player.equipment[slot]
-		if inventory.size() < INV_CAP:
-			inventory.append(old)
-		else:
-			run_shards += int(old.get("salvage", 3))
-	player.equipment[slot] = item
-	player.recompute_stats()
-	add_message("[color=#9fe0ff]Équipé : %s[/color]" % item["name"])
-	refresh()
+	loot_system.equip_item(item)
 
 func unequip_item(slot: String) -> void:
-	if not player.equipment.has(slot):
-		return
-	var it: Dictionary = player.equipment[slot]
-	player.equipment.erase(slot)
-	if inventory.size() < INV_CAP:
-		inventory.append(it)
-	else:
-		run_shards += int(it.get("salvage", 3))
-	player.recompute_stats()
-	add_message("Déséquipé : %s" % it["name"])
-	refresh()
+	loot_system.unequip_item(slot)
 
 func salvage_item(item: Dictionary) -> void:
-	inventory.erase(item)
-	var s: int = int(item.get("salvage", 3))
-	run_shards += s
-	add_message("Recyclé : %s (+%d Éclats)." % [item.get("name", "?"), s])
-	refresh()
+	loot_system.salvage_item(item)
 
 func use_consumable(item: Dictionary) -> void:
-	match item.get("effect", ""):
-		"heal_pct":
-			var amt: int = int(ceil(player.max_hp * float(item["value"])))
-			player.heal(amt)
-			Sfx.play("heal")
-			if map_view != null:
-				map_view.fx_damage(player.pos(), amt, "heal")
-			add_message("[color=#7aff8a]%s : +%d PV.[/color]" % [item["name"], amt])
-		"heal_full":
-			var full_amt: int = player.max_hp - player.hp
-			player.heal(player.max_hp)
-			Sfx.play("heal")
-			if map_view != null:
-				map_view.fx_damage(player.pos(), full_amt, "heal")
-			add_message("[color=#7aff8a]%s : PV au maximum ![/color]" % item["name"])
-		"shards":
-			var s: int = int(item["value"])
-			run_shards += s
-			add_message("[color=#ffd24a]%s : +%d Éclats.[/color]" % [item["name"], s])
-		"bomb":
-			# Phase 6.3 : explose en zone sur l'ennemi visible le plus proche
-			# (à défaut, sur la joueuse — auto-dégât possible, c'est une bombe).
-			var bt: Entity = _nearest_enemy_in_range(8)
-			var center: Vector2i = bt.pos() if bt != null else player.pos()
-			var radius: int = int(item.get("radius", 2))
-			var boom: int = maxi(4, player.atk + player.ability_power + floor_num)
-			Sfx.play("danger")
-			aoe_attack(center, radius, boom, "%s explose sur" % item["name"])
-			ignite_area(center, radius)
-			add_message("[color=#ff8a4a]%s détone (rayon %d) ![/color]" % [item["name"], radius])
-		"cure":
-			var removed: Array = []
-			for st in player.statuses.duplicate():
-				var sid: String = String(st["id"])
-				if sid == "poison" or sid == "burn" or sid == "bleed" or sid == "disease":
-					player.statuses.erase(st)
-					removed.append(sid)
-			Sfx.play("heal")
-			if removed.is_empty():
-				add_message("[color=#9fdf9f]%s : rien à purger.[/color]" % item["name"])
-			else:
-				add_message("[color=#9fdf9f]%s purge tes maux (%d).[/color]" % [item["name"], removed.size()])
-		"recall":
-			var dest: Vector2i = _random_walkable_near(dungeon.stairs, 2) if dungeon != null else NO_TILE
-			if dest == NO_TILE:
-				add_message("[color=#9fb8ff]%s grésille sans effet.[/color]" % item["name"])
-			else:
-				player.x = dest.x
-				player.y = dest.y
-				dungeon.reveal(player.pos(), player.vision)
-				if map_view != null:
-					map_view.snap_entity(player)
-				_pickup_loot_at(player.pos())
-				add_message("[color=#9fb8ff]%s : te voilà près de l'escalier.[/color]" % item["name"])
-		"oil_fire":
-			oil_fire_turns = int(item.get("value", 20))
-			add_message("[color=#ff9a5a]%s : tes coups brûlent pour %d tours.[/color]" % [item["name"], oil_fire_turns])
-	inventory.erase(item)
-	refresh()
+	loot_system.use_consumable(item)
 
 ## Phase 6.4 : copie une définition d'artefact/pouvoir en la taguant de son tier,
 ## prête à être rangée dans player.relics (jamais la const partagée directement).
@@ -1861,63 +1682,20 @@ func _tag_relic(def: Dictionary, tier: String) -> Dictionary:
 	r["tier"] = tier
 	return r
 
+## Délèguent à LootSystem (Phase 7.3). Wrappers minces : appelés par le reste
+## de Main (récompenses, événements) et par _smoketest.gd.
 func _acquire_artifact(def: Dictionary) -> void:
-	if player.has_relic(def["id"]):
-		run_shards += 5
-		add_message("Artefact %s déjà actif (+5 Éclats)." % def["name"])
-		return
-	player.relics.append(_tag_relic(def, "artifact"))
-	player.recompute_stats()
-	add_message("[color=#f0b8ff]✦ Artefact : %s — %s[/color]" % [def["name"], def["desc"]])
-	_discover("relic", String(def["id"]), String(def["name"]))
-	refresh()
+	loot_system._acquire_artifact(def)
 
 # --- Pouvoirs passifs (Phase 3) ------------------------------------------------
 func _drop_power(pos: Vector2i) -> void:
-	var def: Dictionary = _pick_power_def()
-	if def.is_empty():
-		return
-	loot.append({ "pos": pos, "kind": "power", "glyph": Data.POWER_GLYPH,
-		"sprite": "artifact", "color": def["color"], "data": def })
-	add_message("[color=#ffb84a]Ω Un pouvoir puissant scintille au sol…[/color]")
+	loot_system._drop_power(pos)
 
 func _pick_power_def() -> Dictionary:
-	var pool: Array = []
-	for def in Data.POWERS:
-		if not player.has_relic(def["id"]):
-			pool.append(def)
-	if pool.is_empty():
-		return {}
-	return pool[rng.randi_range(0, pool.size() - 1)]
-
-## Renvoie le pouvoir déjà actif qui s'exclut mutuellement avec `def` (vide si aucun).
-## N'inspecte que les reliques de tier "power" (les artefacts n'ont pas d'excludes).
-func _power_conflict(def: Dictionary) -> Dictionary:
-	for ex_id in def.get("excludes", []):
-		for p in player.relics:
-			if p.get("id", "") == ex_id:
-				return p
-	for p in player.relics:
-		if p.get("excludes", []).has(def["id"]):
-			return p
-	return {}
+	return loot_system._pick_power_def()
 
 func _acquire_power(def: Dictionary) -> void:
-	if player.has_relic(def["id"]):
-		run_shards += 10
-		add_message("Pouvoir %s déjà actif (+10 Éclats)." % def["name"])
-		return
-	var conflict: Dictionary = _power_conflict(def)
-	if not conflict.is_empty():
-		run_shards += 10
-		add_message("[color=#ff8a8a]%s est incompatible avec %s, déjà actif (+10 Éclats).[/color]" % [def["name"], conflict["name"]])
-		return
-	player.relics.append(_tag_relic(def, "power"))
-	player.recompute_stats()
-	add_message("[color=#ffb84a]Ω Pouvoir : %s — %s[/color]" % [def["name"], def["desc"]])
-	_push_timeline("Ω Pouvoir obtenu : %s" % def["name"])
-	_discover("relic", String(def["id"]), String(def["name"]))
-	refresh()
+	loot_system._acquire_power(def)
 
 ## Déclenche les pouvoirs à activation automatique (drone/tourelle), après l'action du joueur.
 func _trigger_powers() -> void:
