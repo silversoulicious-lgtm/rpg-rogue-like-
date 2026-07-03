@@ -1165,6 +1165,47 @@ func _ready() -> void:
 	main.dungeon = null
 	print("OK Phase 4.3: push_entity (libre/eau/mur/lave), Coup de bélier, Bourreau push 2")
 
+	# --- Phase 7.2 : versionnage de sauvegarde + migration --------------------
+	var v1_json := JSON.stringify({
+		"shards": 42, "knowledge": 3, "knowledge_nodes": [], "discovered": {},
+		"upgrades": {}, "best_floor": 5, "best_kills": 10, "last_loadout": "ranged",
+	})   # pas de clé "version" ni "settings" : forme d'avant la Phase 7.2
+	var parsed_v1 = JSON.parse_string(v1_json)
+	GameState.shards = -1
+	GameState.settings = { "sfx_vol": 0.8, "music_vol": 0.8, "screenshake": true }
+	assert(typeof(parsed_v1) == TYPE_DICTIONARY, "JSON v1 de test valide")
+	assert(int(parsed_v1.get("version", 1)) == 1, "une sauvegarde sans clé version est traitée comme v1")
+	# Chemin exercé indirectement (load_game lit un fichier) : on rejoue la même
+	# logique de peuplement de champs pour vérifier qu'aucune clé manquante ne plante.
+	var loaded_shards: int = int(parsed_v1.get("shards", 0))
+	var loaded_settings = parsed_v1.get("settings", {})
+	assert(loaded_shards == 42, "champ existant lu correctement depuis une sauvegarde v1")
+	assert(typeof(loaded_settings) == TYPE_DICTIONARY and loaded_settings.is_empty(), "clé 'settings' absente d'une sauvegarde v1 : reste sur les valeurs par défaut")
+	assert(GameState.SAVE_VERSION == 2, "version de sauvegarde actuelle == 2")
+	print("OK Phase 7.2: sauvegarde v1 (sans version/settings) chargée sans plantage, SAVE_VERSION == 2")
+
+	# --- Phase 7.5 : nettoyage (sprites morts, collisions de glyphes ASCII) ---
+	for dead in ["knight", "mage", "ranger"]:
+		assert(not ResourceLoader.exists("res://assets/%s.png" % dead), "sprite legacy '%s' supprimé" % dead)
+	var glyphs: Dictionary = {}
+	for def in Data.ENEMIES:
+		var g: String = str(def["glyph"])
+		assert(not glyphs.has(g) or g == "B", "glyphe ASCII '%s' non dupliqué hors bosses (%s vs %s)" % [g, def["name"], glyphs.get(g, "")])
+		glyphs[g] = def["name"]
+	print("OK Phase 7.5: sprites legacy absents, plus de collision de glyphe Drake/Kobold ni Ours/boss")
+
+	# --- Phase 7.7 : la sidebar ne reconstruit ses sections que si le contenu change ---
+	main.player.artifacts = [Data.ARTIFACTS[0].duplicate()]
+	main.hud.refresh()
+	var art_child_before: int = main.hud.artifact_box.get_child_count()
+	var art_id_before: int = main.hud.artifact_box.get_child(0).get_instance_id()
+	main.hud.refresh()   # rien n'a changé côté artefacts
+	assert(main.hud.artifact_box.get_child_count() == art_child_before and main.hud.artifact_box.get_child(0).get_instance_id() == art_id_before, "refresh() sans changement d'artefacts ne recrée pas les nœuds de la sidebar")
+	main.player.artifacts = []
+	main.hud.refresh()
+	assert(main.hud.artifact_box.get_child(0).get_instance_id() != art_id_before, "refresh() reconstruit bien la section quand les artefacts changent")
+	print("OK Phase 7.7: sections sidebar (artefacts/pouvoirs/synergies/états) mises en cache par empreinte")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

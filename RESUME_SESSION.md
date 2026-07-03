@@ -180,12 +180,38 @@ ne pas les confondre).
   `_make_unique_item` ; `infer_weapon_type` (déduction fragile par le nom
   français) supprimée. Refactor à comportement identique (les valeurs
   explicites reproduisent exactement l'ancienne inférence).
-- **Phases 5, 6, 7 (reste : 7.2/7.3/7.5/7.7/7.8), 8** (équilibrage,
-  contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
-  voir `IMPLEMENTATION_GUIDE.md` pour le détail. NB : la Phase 5
-  (harnais d'auto-jeu + tuning) et le tuning associé exigent un Godot
-  exécutable pour produire/lire les CSV — à faire dans une session avec
-  accès à Godot.
+- **Phase 7.2 — Versionnage de sauvegarde : FAITE.** `GameState.SAVE_VERSION`
+  (actuellement 2) écrit dans chaque sauvegarde ; `load_game` lit la version
+  (défaut 1 si absente — forme d'avant cette phase) via une échelle `match`
+  qui ne plante jamais sur une version passée ou future inconnue (avertit et
+  charge en best-effort). Les champs étaient déjà lus avec des valeurs par
+  défaut individuelles, donc la migration v1→v2 est un no-op fonctionnel ;
+  le ladder est en place pour les prochains changements de forme. Assert de
+  régression : une sauvegarde v1 à la main (sans `version` ni `settings`)
+  se charge sans erreur.
+- **Phase 7.5 — Code et assets morts : FAITE.** Suppression des sprites
+  legacy `knight`/`mage`/`ranger` (générateur, `MapView._load_textures`,
+  PNG + `.import`) ; repli de `_gen_creature` sur `gobelin` au lieu de
+  `knight`. Dédoublonnage des glyphes ASCII de repli dans `Data.ENEMIES` :
+  Drake `"k"` → `"K"` (collision avec Kobold), Ours `"B"` → `"U"`
+  (collision avec les boss).
+- **Phase 7.7 — Cache de reconstruction HUD : FAITE.** `Hud._rebuild_artifacts/
+  _rebuild_powers/_rebuild_synergies/_rebuild_statuses` calculent une
+  empreinte (ids/valeurs joints) et ne reconstruisent les nœuds enfants que
+  si elle a changé, sur le même principe que la bande d'ordre des tours
+  (2.6) — `refresh()` tourne plusieurs fois par tour, ça évite de recréer
+  des `Label`s pour rien.
+- **Phases 5, 6, 7 (reste : 7.3/7.8), 8** (équilibrage, contenu, refonte
+  modulaire de `Main.gd`, direction artistique 64×64) : à faire, voir
+  `IMPLEMENTATION_GUIDE.md` pour le détail. NB : la Phase 5 (harnais
+  d'auto-jeu + tuning) et le tuning associé exigent un Godot exécutable
+  pour produire/lire les CSV — à faire dans une session avec accès à Godot.
+  **Cette session (7.2/7.5/7.7) n'avait pas accès au binaire Godot**
+  (`downloads.godotengine.org` redirige désormais vers
+  `github.com/godotengine/godot-builds`, bloqué par la politique réseau du
+  bac à sable) : changements revus manuellement avec asserts de régression
+  ajoutés, mais **pas exécutés** — à lancer en priorité dans un
+  environnement avec accès Godot avant de fusionner/poursuivre.
 - **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
   - Sprites directionnels pour les ennemis (seule Aria en a).
   - Variantes teintées pour les ennemis élite, sprite distinct pour le

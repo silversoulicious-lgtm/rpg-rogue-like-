@@ -3,6 +3,10 @@
 extends Node
 
 const SAVE_PATH := "user://save.json"
+# Version du schéma de sauvegarde. Incrémenter à chaque changement de forme
+# des données persistées et ajouter une branche à la migration dans
+# `load_game()` (ne JAMAIS planter sur une sauvegarde d'une version passée).
+const SAVE_VERSION := 2
 
 # Banque d'Éclats récoltés (monnaie méta dépensée pour les améliorations)
 var shards: int = 0
@@ -134,6 +138,7 @@ func record_run(stats: Dictionary) -> void:
 # --- Sauvegarde ---------------------------------------------------------------
 func save_game() -> void:
 	var data := {
+		"version": SAVE_VERSION,
 		"shards": shards,
 		"knowledge": knowledge,
 		"knowledge_nodes": knowledge_nodes,
@@ -159,6 +164,15 @@ func load_game() -> void:
 	f.close()
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return
+	var version := int(parsed.get("version", 1))
+	match version:
+		1:
+			pass   # v1 : ni "version" ni "settings" — les valeurs par défaut ci-dessous suffisent.
+		SAVE_VERSION:
+			pass
+		_:
+			if version > SAVE_VERSION:
+				push_warning("Sauvegarde d'une version future (%d > %d) : chargement en best-effort." % [version, SAVE_VERSION])
 	shards = int(parsed.get("shards", 0))
 	knowledge = int(parsed.get("knowledge", 0))
 	knowledge_nodes = []
