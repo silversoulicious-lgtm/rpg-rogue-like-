@@ -273,7 +273,7 @@ const ENEMIES := [
 	  "ai": { "behavior": "melee", "lifesteal": 0.6 } },
 	{ "name": "Serpent des marais", "glyph": "n", "sprite": "serpent", "color": Color(0.4, 0.7, 0.4), "max_hp": 12, "atk": 3, "defense": 0, "speed": 140, "shards": 5, "min_floor": 4,
 	  "ai": { "behavior": "melee", "atk_count": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 3.0 }, "death_cloud": 0.3 } },
-	{ "name": "Ours corrompu", "glyph": "B", "sprite": "ours", "color": Color(0.45, 0.35, 0.3), "max_hp": 34, "atk": 7, "defense": 2, "speed": 90, "shards": 8, "min_floor": 6,
+	{ "name": "Ours corrompu", "glyph": "U", "sprite": "ours", "color": Color(0.45, 0.35, 0.3), "max_hp": 34, "atk": 7, "defense": 2, "speed": 90, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "melee", "berserk": true, "berserk_at": 0.4, "berserk_mult": 1.6 } },
 
 	# Morts-vivants & spectral
@@ -307,7 +307,7 @@ const ENEMIES := [
 	  "ai": { "behavior": "melee", "resist_phys": 0.6, "resist_magic": -0.6 } },
 	{ "name": "Fée corrompue", "glyph": "y", "sprite": "fee", "color": Color(0.8, 0.6, 1.0), "max_hp": 12, "atk": 5, "defense": 0, "speed": 140, "shards": 8, "min_floor": 6,
 	  "ai": { "behavior": "teleporter", "teleport_chance": 0.7, "teleport_range": 4, "on_hit": { "id": "confusion", "turns": 3, "value": 0.0 } } },
-	{ "name": "Drake", "glyph": "k", "sprite": "drake", "color": Color(0.8, 0.5, 0.4), "max_hp": 30, "atk": 9, "defense": 2, "speed": 110, "shards": 12, "min_floor": 10,
+	{ "name": "Drake", "glyph": "K", "sprite": "drake", "color": Color(0.8, 0.5, 0.4), "max_hp": 30, "atk": 9, "defense": 2, "speed": 110, "shards": 12, "min_floor": 10,
 	  "ai": { "behavior": "ranged", "ranged_range": 5, "cooldown": 2, "elemental": true } },
 	{ "name": "Mimic", "glyph": "m", "sprite": "mimic", "color": Color(0.8, 0.6, 0.3), "max_hp": 24, "atk": 8, "defense": 2, "speed": 100, "shards": 12, "min_floor": 5,
 	  "ai": { "behavior": "ambush" } },

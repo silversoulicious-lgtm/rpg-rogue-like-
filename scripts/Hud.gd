@@ -46,6 +46,12 @@ var log_label: RichTextLabel
 var hub_layer: CanvasLayer
 var turn_strip: HBoxContainer
 var _turn_strip_ids: Array = []      # cache : ne reconstruit que si l'ordre a changé
+# Empreintes des sections sidebar reconstruites à chaque refresh() (plusieurs
+# fois par tour) — ne reconstruire les nœuds que si le contenu a changé.
+var _artifact_fp: String = ""
+var _power_fp: String = ""
+var _synergy_fp: String = ""
+var _status_fp: String = ""
 # Sidebar
 var sb_floor: Label
 var sb_hero: Label
@@ -1161,29 +1167,43 @@ func _rebuild_equip() -> void:
 	equip_panel.refresh(game.player.equipment)
 
 func _rebuild_artifacts() -> void:
+	var items: Array = game.player.artifacts
+	var fp: String = ",".join(items.map(func(a): return str(a.get("name", "?"))))
+	if fp == _artifact_fp:
+		return
+	_artifact_fp = fp
 	for c in artifact_box.get_children():
 		c.queue_free()
-	if game.player.artifacts.is_empty():
+	if items.is_empty():
 		artifact_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for a in game.player.artifacts:
+	for a in items:
 		artifact_box.add_child(Ui.label("✦ " + str(a.get("name", "?")), 14, Color(0.95, 0.75, 1.0)))
 		artifact_box.add_child(Ui.label(str(a.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_powers() -> void:
+	var items: Array = game.player.powers
+	var fp: String = ",".join(items.map(func(p): return str(p.get("name", "?"))))
+	if fp == _power_fp:
+		return
+	_power_fp = fp
 	for c in power_box.get_children():
 		c.queue_free()
-	if game.player.powers.is_empty():
+	if items.is_empty():
 		power_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return
-	for p in game.player.powers:
+	for p in items:
 		power_box.add_child(Ui.label("Ω " + str(p.get("name", "?")), 14, Color(1.0, 0.78, 0.45)))
 		power_box.add_child(Ui.label(str(p.get("desc", "")), 12, Color(0.65, 0.65, 0.72), false, true, SIDEBAR_W - 60))
 
 func _rebuild_synergies() -> void:
+	var syns: Array = game.player.active_synergies
+	var fp: String = ",".join(syns.map(func(s): return str(s.get("name", "?"))))
+	if fp == _synergy_fp:
+		return
+	_synergy_fp = fp
 	for c in synergy_box.get_children():
 		c.queue_free()
-	var syns: Array = game.player.active_synergies
 	if syns.is_empty():
 		synergy_box.add_child(Ui.label("— aucune —", 14, Color(0.5, 0.5, 0.58)))
 		return
@@ -1203,9 +1223,13 @@ const STATUS_LABEL := {
 }
 
 func _rebuild_statuses() -> void:
+	var st: Array = game.player.statuses
+	var fp: String = ",".join(st.map(func(s): return "%s:%d:%d" % [str(s["id"]), int(s.get("stacks", 1)), int(s["turns"])]))
+	if fp == _status_fp:
+		return
+	_status_fp = fp
 	for c in status_box.get_children():
 		c.queue_free()
-	var st: Array = game.player.statuses
 	if st.is_empty():
 		status_box.add_child(Ui.label("— aucun —", 14, Color(0.5, 0.5, 0.58)))
 		return

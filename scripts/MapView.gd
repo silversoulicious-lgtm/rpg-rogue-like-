@@ -107,7 +107,7 @@ func _alpha(c: Color, a: float) -> Color:
 	return Color(c.r, c.g, c.b, a)
 
 func _load_textures() -> void:
-	var names := ["stairs", "aria", "aria_back", "aria_side", "knight", "mage", "ranger",
+	var names := ["stairs", "aria", "aria_back", "aria_side",
 		"gobelin", "loup", "squelette", "orc", "spectre", "boss",
 		"arme", "armure", "relique", "artifact", "potion", "road",
 		# Nouveaux monstres (Pass 1)
