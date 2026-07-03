@@ -512,7 +512,7 @@ func generate_floor(node_type: String = "combat") -> void:
 	_forest_fire_warned = false
 	player.clear_statuses()
 	var msize: Vector2i = Data.random_map_size(rng)
-	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_floor(floor_num))
+	dungeon = Dungeon.new(msize.x, msize.y, rng, Data.biome_for_act(map_act))
 	var biome_id: String = str(dungeon.biome.get("id", ""))
 	if biome_id != _last_timeline_biome:
 		_last_timeline_biome = biome_id
@@ -2758,7 +2758,9 @@ func open_event() -> void:
 	# Phase 6.3 : les événements thématiques (champ "biome") ne sortent que dans
 	# le biome de l'étage À VENIR ; les génériques (sans "biome") sont toujours
 	# éligibles. Les événements se déclenchent entre deux étages.
-	var upcoming: String = String(Data.biome_for_floor(floor_num + 1).get("id", ""))
+	# L'étage à venir reste dans la strate courante (seul un Gardien change de
+	# strate, jamais un événement) — on gate donc sur le biome de la strate.
+	var upcoming: String = String(Data.biome_for_act(map_act).get("id", ""))
 	var pool: Array = []
 	for ev in Data.EVENTS:
 		var b: String = String(ev.get("biome", ""))

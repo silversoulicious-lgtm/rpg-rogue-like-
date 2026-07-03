@@ -1331,6 +1331,16 @@ func _ready() -> void:
 	main.player.powers = []
 	print("OK Phase 6.4: registre Reliques unifié (tier, relic_mods) + section sidebar unique")
 
+	# --- Phase 6.6 : alignement biome ↔ strate ----------------------------------
+	# Le biome dérive de map_act : change toutes les 2 strates, frontières alignées
+	# sur les Gardiens.
+	assert(Data.biome_for_act(0)["id"] == Data.biome_for_act(1)["id"], "strates 0 et 1 : même biome")
+	assert(Data.biome_for_act(2)["id"] != Data.biome_for_act(0)["id"], "le biome change à la strate 2")
+	assert(Data.biome_for_act(0)["id"] == Data.biome_for_act(2 * Data.BIOMES.size())["id"], "le cycle des biomes reboucle après toutes les strates")
+	for bdef in Data.BOSSES:
+		assert(bdef.has("home_biome"), "chaque boss porte une note de biome d'origine (%s)" % bdef["name"])
+	print("OK Phase 6.6: biome dérivé de la strate (biome_for_act), notes de biome par boss")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

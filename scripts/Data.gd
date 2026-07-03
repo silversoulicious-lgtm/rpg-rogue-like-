@@ -222,9 +222,17 @@ const BIOMES := [
 ]
 
 ## Renvoie le biome correspondant à un étage (change tous les BIOME_SPAN étages).
+## Conservé pour l'outillage/les tests ; le jeu dérive désormais le biome de la
+## strate (cf. biome_for_act) pour aligner les frontières sur les Gardiens.
 static func biome_for_floor(floor: int) -> Dictionary:
 	var idx: int = int((max(1, floor) - 1) / BIOME_SPAN) % BIOMES.size()
 	return BIOMES[idx]
+
+## Phase 6.6 : biome dérivé de la STRATE (map_act = Gardiens vaincus). Le biome
+## change toutes les 2 strates — les frontières tombent donc pile après un
+## Gardien, plus jamais en plein milieu d'un acte.
+static func biome_for_act(map_act: int) -> Dictionary:
+	return BIOMES[int(max(0, map_act) / 2) % BIOMES.size()]
 
 static func biome_sprite(biome_id: String, role: String) -> String:
 	return "%s_%s" % [biome_id, role]
@@ -344,35 +352,35 @@ const BOSS := {
 # qui protègent le boss tant qu'ils vivent), spawn_on_hit/soh_max (pond à chaque
 # coup reçu), phases (change de comportement selon les PV).
 const BOSSES := [
-	{ "name": "Le Roi Liche Éternel", "glyph": "B", "sprite": "roi_liche", "color": Color(0.7, 0.55, 1.0),
+	{ "name": "Le Roi Liche Éternel", "glyph": "B", "sprite": "roi_liche", "home_biome": "toundra", "color": Color(0.7, 0.55, 1.0),
 	  "max_hp": 64, "atk": 10, "defense": 3, "speed": 100, "shards": 45, "min_floor": 1, "hp_regen": 5,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "squelette", "summon_max": 6, "cast_range": 9, "cooldown": 2, "kite_at": 3 } },
-	{ "name": "Le Seigneur Fantôme", "glyph": "B", "sprite": "seigneur_fantome", "color": Color(0.6, 0.85, 1.0),
+	{ "name": "Le Seigneur Fantôme", "glyph": "B", "sprite": "seigneur_fantome", "home_biome": "marais", "color": Color(0.6, 0.85, 1.0),
 	  "max_hp": 60, "atk": 11, "defense": 2, "speed": 110, "shards": 48, "min_floor": 1,
 	  "ai": { "behavior": "melee", "guardians": { "count": 3, "sprite": "ame", "resist": 0.9 } } },
-	{ "name": "Le Drake Ancien", "glyph": "B", "sprite": "wyrm", "color": Color(0.7, 0.5, 0.4),
+	{ "name": "Le Drake Ancien", "glyph": "B", "sprite": "wyrm", "home_biome": "volcan", "color": Color(0.7, 0.5, 0.4),
 	  "max_hp": 78, "atk": 11, "defense": 4, "speed": 100, "shards": 50, "min_floor": 1,
 	  "ai": { "behavior": "ranged", "ranged_range": 6, "cooldown": 1, "resist_phys": 0.2, "on_hit": { "id": "weaken", "turns": 3, "value": 4.0 } } },
-	{ "name": "L'Araignée Mère", "glyph": "B", "sprite": "araignee_mere", "color": Color(0.55, 0.8, 0.45),
+	{ "name": "L'Araignée Mère", "glyph": "B", "sprite": "araignee_mere", "home_biome": "foret", "color": Color(0.55, 0.8, 0.45),
 	  "max_hp": 70, "atk": 9, "defense": 2, "speed": 100, "shards": 50, "min_floor": 1,
 	  "ai": { "behavior": "melee", "spawn_on_hit": "araignee", "soh_max": 8, "on_hit": { "id": "poison", "turns": 3, "value": 4.0 } } },
-	{ "name": "Le Troll Ancestral", "glyph": "B", "sprite": "troll_ancestral", "color": Color(0.45, 0.62, 0.45),
+	{ "name": "Le Troll Ancestral", "glyph": "B", "sprite": "troll_ancestral", "home_biome": "toundra", "color": Color(0.45, 0.62, 0.45),
 	  "max_hp": 90, "atk": 11, "defense": 4, "speed": 90, "shards": 52, "min_floor": 1, "hp_regen": 8,
 	  "ai": { "behavior": "melee", "weak_fire": 1.2 } },
-	{ "name": "Le Paladin Déchu", "glyph": "B", "sprite": "paladin_dechu", "color": Color(0.85, 0.8, 0.6),
+	{ "name": "Le Paladin Déchu", "glyph": "B", "sprite": "paladin_dechu", "home_biome": "plaine", "color": Color(0.85, 0.8, 0.6),
 	  "max_hp": 72, "atk": 10, "defense": 5, "speed": 105, "shards": 52, "min_floor": 1,
 	  "ai": { "behavior": "melee", "copy_player": true, "copy_ratio": 1.0, "resist_phys": 0.2 } },
-	{ "name": "La Sorcière des Marais", "glyph": "B", "sprite": "sorciere", "color": Color(0.6, 0.75, 0.45),
+	{ "name": "La Sorcière des Marais", "glyph": "B", "sprite": "sorciere", "home_biome": "marais", "color": Color(0.6, 0.75, 0.45),
 	  "max_hp": 66, "atk": 10, "defense": 2, "speed": 100, "shards": 52, "min_floor": 1,
 	  "ai": { "behavior": "caster", "cast": "summon", "summon": "serpent", "summon_max": 4, "cast_range": 7, "cooldown": 3, "kite_at": 3,
 	          "guardians": { "count": 3, "sprite": "chaudron", "resist": 0.5 } } },
-	{ "name": "Le Bourreau du Roi", "glyph": "B", "sprite": "bourreau", "color": Color(0.8, 0.3, 0.3),
+	{ "name": "Le Bourreau du Roi", "glyph": "B", "sprite": "bourreau", "home_biome": "volcan", "color": Color(0.8, 0.3, 0.3),
 	  "max_hp": 96, "atk": 16, "defense": 4, "speed": 70, "shards": 55, "min_floor": 1,
 	  "ai": { "behavior": "charger", "push": 2, "on_hit": { "id": "bleed", "turns": 3, "value": 5.0 } } },
-	{ "name": "L'Œil du Néant", "glyph": "B", "sprite": "oeil_neant", "color": Color(0.7, 0.5, 0.95),
+	{ "name": "L'Œil du Néant", "glyph": "B", "sprite": "oeil_neant", "home_biome": "desert", "color": Color(0.7, 0.5, 0.95),
 	  "max_hp": 74, "atk": 12, "defense": 3, "speed": 100, "shards": 55, "min_floor": 1,
 	  "ai": { "behavior": "ranged", "ranged_range": 7, "cooldown": 1, "resist_phys": 0.3, "on_hit": { "id": "slow", "turns": 2, "value": 0.5 } } },
-	{ "name": "Le Dieu-Bête Corrompu", "glyph": "B", "sprite": "dieu_bete", "color": Color(0.9, 0.4, 0.5),
+	{ "name": "Le Dieu-Bête Corrompu", "glyph": "B", "sprite": "dieu_bete", "home_biome": "foret", "color": Color(0.9, 0.4, 0.5),
 	  "max_hp": 120, "atk": 13, "defense": 4, "speed": 105, "shards": 80, "min_floor": 1, "hp_regen": 4,
 	  "ai": { "behavior": "ranged", "phases": true, "ranged_range": 6, "cooldown": 1, "summon": "loup", "summon_max": 4, "cast": "summon",
 	          "on_hit": { "id": "burn", "turns": 3, "value": 4.0 } } },
