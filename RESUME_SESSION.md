@@ -236,13 +236,16 @@ ne pas les confondre).
   - 6.7 : barks (`scripts/Barks.gd`, `Main.bark`, `MapView.fx_bark`) —
     cadence 1/10 tours, jamais répétée ; entrée de biome, PV bas, intro/mort
     de boss (`GameState.boss_faced` persiste les rematchs).
-  - **6.8 (Échos) — différée** : signature optionnelle, avec le piège de
-    sérialisation JSON des `Color` ; à faire dans une session Godot.
+  - 6.8 : **FAITE.** « l'Écho d'Aria » — instantané JSON-safe du dernier run
+    (`GameState.echo`, couleurs sérialisées en html pour survivre au round-trip
+    JSON) enregistré à la mort, rejoué comme ennemi arcane sur l'étage où tu es
+    tombé ; à sa mort, overlay pour réclamer UN objet de son équipement, puis
+    écho consommé. Un seul stocké (le plus récent remplace).
   Asserts de régression ajoutés au smoke test pour chaque sous-phase.
 - **Reste : Phase 7 (7.3 refonte modulaire de `Main.gd` / 7.8), Phase 8
-  (art 64×64), Phase 6.8 (Échos), et le réglage chiffré de la Phase 5** —
-  voir `IMPLEMENTATION_GUIDE.md`. Tout ce qui exige d'itérer visuellement ou
-  de produire des CSV attend une session avec un binaire Godot exécutable.
+  (art 64×64), et le réglage chiffré de la Phase 5** — voir
+  `IMPLEMENTATION_GUIDE.md`. Tout ce qui exige d'itérer visuellement ou de
+  produire des CSV attend une session avec un binaire Godot exécutable.
   **Cette session (7.2/7.5/7.7) n'avait pas accès au binaire Godot**
   (`downloads.godotengine.org` redirige désormais vers
   `github.com/godotengine/godot-builds`, bloqué par la politique réseau du

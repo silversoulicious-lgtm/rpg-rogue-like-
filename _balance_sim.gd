@@ -143,6 +143,8 @@ func _act_choice(main) -> int:
 			main.resolve_event(0)
 		"rest":
 			main.rest_choice("heal")
+		"echo":
+			main.claim_echo_item(0)   # Écho vaincu : réclame le 1er objet
 		_:
 			# Sécurité : type de choix inconnu → tente de sortir par une récompense 0.
 			if not main.pending_rewards.is_empty():

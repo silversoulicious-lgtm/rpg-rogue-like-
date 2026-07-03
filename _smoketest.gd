@@ -1386,6 +1386,36 @@ func _ready() -> void:
 	assert(Barks.boss_intro("_default", 0, main.rng) != "", "intro de boss (1re rencontre) fournit une ligne")
 	print("OK Phase 6.7: barks (journal + flottant, cadence 1/10 tours, jamais répétée, pools par déclencheur)")
 
+	# --- Phase 6.8 : Écho d'Aria ------------------------------------------------
+	main.start_run("melee")
+	# Sérialisation JSON-safe des Color (piège du guide) : round-trip préservé.
+	var fake_item := { "name": "Lame test", "slot": "arme", "bonus": { "atk": 5 },
+		"rarity_color": Color(0.3, 0.6, 0.9), "weapon_type": "melee" }
+	var ser := main._echo_serialize_item(fake_item)
+	assert(typeof(ser["rarity_color"]) == TYPE_STRING, "rarity_color sérialisée en html (JSON-safe)")
+	var deser := main._echo_deserialize_item(ser)
+	assert(deser["rarity_color"] is Color, "rarity_color reconstituée en Color au chargement")
+	# Enregistrement de l'écho à la « mort ».
+	main.player.equipment["arme"] = fake_item
+	main.floor_num = 7
+	main._record_echo()
+	assert(int(GameState.echo.get("floor", -1)) == 7 and GameState.echo.get("equipment", {}).has("arme"), "l'écho enregistre l'étage et l'équipement du run")
+	# Apparition de l'Écho + mort → overlay de butin différé, écho consommé.
+	main.enemies.clear()
+	main._echo_spawned = false
+	main._spawn_echo([])
+	var echo_ent = null
+	for en in main.enemies:
+		if not en.ai.is_empty() and en.ai.get("is_echo", false):
+			echo_ent = en
+	assert(echo_ent != null and echo_ent.awake and echo_ent.sprite == "aria", "l'Écho d'Aria apparaît (sprite aria, éveillé)")
+	main.on_enemy_killed(echo_ent)
+	assert(GameState.echo.is_empty(), "l'écho est consommé à sa mort")
+	assert(not main._echo_claim_pending.is_empty(), "un overlay de butin est mis en attente à la mort de l'Écho")
+	main.claim_echo_item(0)
+	assert(main._echo_claim_pending.is_empty(), "réclamer un objet vide la file d'attente de l'Écho")
+	print("OK Phase 6.8: Écho d'Aria (sérialisation Color, enregistrement, apparition, butin réclamable)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 

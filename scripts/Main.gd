@@ -47,6 +47,8 @@ var first_strike_used: bool = false   # pour le proc d'objet unique "premier_cou
 var oil_fire_turns: int = 0            # Huile ardente (Phase 6.3) : tours de brûlure-au-contact restants
 var _bark_cooldown: int = 0            # Barks (Phase 6.7) : tours avant la prochaine réplique autorisée
 var _last_bark: String = ""            # dernière réplique dite (jamais répétée d'affilée)
+var _echo_spawned: bool = false        # Écho (Phase 6.8) : déjà apparu ce run ?
+var _echo_claim_pending: Array = []    # objets réclamables à la mort de l'Écho (overlay différé)
 
 # Compétences (Phase 2)
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
@@ -287,6 +289,8 @@ func start_run(loadout_id: String = "melee", forced_seed: int = -1) -> void:
 	oil_fire_turns = 0
 	_bark_cooldown = 0
 	_last_bark = ""
+	_echo_spawned = false
+	_echo_claim_pending = []
 	pending_levelups = 0
 	last_damage_source = ""
 	run_timeline.clear()
@@ -574,6 +578,11 @@ func generate_floor(node_type: String = "combat") -> void:
 			add_message("[color=#ff6464]⚠ Le GARDIEN de la strate t'attend ![/color]")
 	elif is_elite:
 		add_message("[color=#ff9a64]☠ Salle d'élite : ennemis renforcés, meilleur butin.[/color]")
+
+	# Écho d'Aria (Phase 6.8) : surgit sur l'étage où tu es mort au run précédent.
+	if not is_boss and not _echo_spawned and not GameState.echo.is_empty() \
+			and int(GameState.echo.get("floor", -1)) == floor_num:
+		_spawn_echo(occupied)
 
 	var loot_count: int = mini(rng.randi_range(1, 3) + int(area / 9000) + (1 if is_elite else 0), 14)
 	for p in dungeon.random_floor_tiles(loot_count, rng, occupied):
@@ -1840,6 +1849,10 @@ func _check_revive() -> void:
 func on_enemy_killed(e: Entity) -> void:
 	if not enemies.has(e):
 		return
+	# Écho d'Aria (Phase 6.8) : mort spéciale (pas de butin/XP normal, overlay de butin).
+	if not e.ai.is_empty() and e.ai.get("is_echo", false):
+		_on_echo_killed(e)
+		return
 	Sfx.play("danger" if e.is_boss else "kill")
 	run_kills += 1
 	run_shards += e.shard_value
@@ -2230,6 +2243,10 @@ func _player_acted() -> void:
 		return
 	advance_world()
 	if state != State.PLAYING:
+		return
+	# Écho vaincu ce tour : ouvre l'overlay de butin à un point sûr (hors action).
+	if not _echo_claim_pending.is_empty():
+		_open_echo_claim()
 		return
 	refresh()
 	_check_level_up()
@@ -2960,6 +2977,7 @@ func game_over(abandoned := false) -> void:
 		GameState.add_knowledge(knowledge_gained)
 	stats["knowledge"] = knowledge_gained
 	GameState.record_run(stats)
+	_record_echo()   # Écho (Phase 6.8) : instantané du run pour le prochain
 	state = State.GAMEOVER
 	var summary: String
 	if abandoned:
@@ -3056,6 +3074,106 @@ func bark(speaker_pos: Vector2i, text: String, color: Color = Barks.COLOR) -> vo
 	add_message("[i][color=#%s]Aria : %s[/color][/i]" % [color.to_html(false), text])
 	if map_view != null:
 		map_view.fx_bark(speaker_pos, text, color)
+
+# --- Écho d'Aria (Phase 6.8) --------------------------------------------------
+## Rend un objet d'équipement JSON-safe : les `Color` (rarity_color) deviennent
+## des chaînes html — le round-trip JSON de la sauvegarde ne les détruit plus.
+func _echo_serialize_item(item: Dictionary) -> Dictionary:
+	var it: Dictionary = item.duplicate(true)
+	if it.has("rarity_color") and it["rarity_color"] is Color:
+		it["rarity_color"] = it["rarity_color"].to_html()
+	return it
+
+## Reconstitue un objet d'équipement chargé depuis l'écho (html → Color).
+func _echo_deserialize_item(item: Dictionary) -> Dictionary:
+	var it: Dictionary = item.duplicate(true)
+	if typeof(it.get("rarity_color", null)) == TYPE_STRING:
+		it["rarity_color"] = Color(it["rarity_color"])
+	return it
+
+## Enregistre l'instantané du run courant comme futur Écho (le plus récent
+## remplace l'ancien). Appelé à la mort.
+func _record_echo() -> void:
+	var equip: Dictionary = {}
+	for slot in player.equipment:
+		equip[slot] = _echo_serialize_item(player.equipment[slot])
+	var arme: Dictionary = player.equipment.get("arme", {})
+	GameState.store_echo({
+		"floor": floor_num,
+		"level": player.level,
+		"loadout": GameState.last_loadout,
+		"max_hp": player.max_hp,
+		"atk": player.atk,
+		"equipment": equip,
+		"proc": String(arme.get("proc", "")),
+		"proc_val": float(arme.get("proc_val", 0.0)),
+	})
+
+## Fait apparaître « l'Écho d'Aria » sur l'étage où la joueuse est morte au run
+## précédent. Une seule fois par run, hors étage de Gardien.
+func _spawn_echo(occupied: Array) -> void:
+	var spots: Array = dungeon.random_floor_tiles(1, rng, occupied)
+	if spots.is_empty():
+		return
+	var p: Vector2i = spots[0]
+	var echo: Dictionary = GameState.echo
+	var e := Entity.new()
+	e.display_name = "l'Écho d'Aria"
+	e.sprite = "aria"
+	e.glyph = "@"
+	e.color = Color(0.72, 0.62, 1.0)
+	e.tint = Color(0.72, 0.62, 1.0)   # teinte arcane (Phase 6.2 pipeline)
+	e.faction = Entity.Faction.ENEMY
+	e.max_hp = maxi(10, int(echo.get("max_hp", 30)))
+	e.hp = e.max_hp
+	e.atk = maxi(1, int(round(float(echo.get("atk", 5)) * 0.9)))
+	e.defense = 0
+	e.speed = 100
+	e.x = p.x
+	e.y = p.y
+	e.energy = 0
+	e.awake = true
+	e.ai = { "behavior": "melee", "is_echo": true, "smart_path": true }
+	# Porte le proc d'arme de l'écho (ex. frappe double) s'il en avait un.
+	var proc: String = String(echo.get("proc", ""))
+	if proc != "":
+		e.ai["on_hit"] = { "id": "bleed", "turns": 2, "value": 3.0 }
+	enemies.append(e)
+	occupied.append(p)
+	_echo_spawned = true
+	add_message("[color=#c8b0ff]✶ L'Écho d'Aria surgit — le fantôme de ton dernier run.[/color]")
+	bark(p, Barks.pick(Barks.ECHO_SEEN, rng))
+
+## Mort de l'Écho : pas de butin normal ; on diffère un overlay pour réclamer UN
+## objet de son équipement, puis on consomme l'écho.
+func _on_echo_killed(e: Entity) -> void:
+	if map_view != null:
+		map_view.fx_death(e)
+	enemies.erase(e)
+	Sfx.play("danger")
+	add_message("[color=#c8b0ff]L'Écho se dissipe. Réclame une relique de ton passé.[/color]")
+	var items: Array = []
+	for slot in GameState.echo.get("equipment", {}):
+		items.append(_echo_deserialize_item(GameState.echo["equipment"][slot]))
+	GameState.clear_echo()   # consommé à la mort, quoi qu'on réclame
+	if items.is_empty():
+		return
+	_echo_claim_pending = items   # ouvert à un point sûr (fin de _player_acted)
+
+func _open_echo_claim() -> void:
+	state = State.CHOICE
+	current_choice = "echo"
+	hud.show_echo_claim(_echo_claim_pending)
+
+## Réclame l'objet `idx` de l'Écho (ou aucun si idx < 0), puis reprend la partie.
+func claim_echo_item(idx: int) -> void:
+	if idx >= 0 and idx < _echo_claim_pending.size():
+		_bag_add(_echo_claim_pending[idx])
+		add_message("[color=#c8b0ff]Tu récupères %s de ton écho.[/color]" % String(_echo_claim_pending[idx].get("name", "?")))
+	_echo_claim_pending = []
+	state = State.PLAYING
+	hud.hide_overlay()
+	refresh()
 
 ## Jalon du run (récap de fin de run) : entrée de biome, Gardien vaincu, pouvoir
 ## ramassé... Plafonné, seuls les RUN_TIMELINE_CAP derniers jalons sont gardés.

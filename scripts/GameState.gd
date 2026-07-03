@@ -21,6 +21,10 @@ var kill_counts: Dictionary = {}
 # Barks (Phase 6.7) : nombre de fois qu'un boss (sprite) a été affronté (persiste
 # les rematchs pour varier les répliques d'intro).
 var boss_faced: Dictionary = {}
+# Écho (Phase 6.8) : instantané du dernier run (JSON-safe : couleurs déjà en
+# html) rejoué comme « l'Écho d'Aria » au prochain run. Un seul stocké, le plus
+# récent remplace l'ancien ; consommé à sa mort.
+var echo: Dictionary = {}
 # Niveaux d'amélioration achetés : { "vitalite": int, "force": int, "maitrise": int }
 var upgrades: Dictionary = {}
 # Meilleur étage atteint (record du joueur)
@@ -149,6 +153,16 @@ func record_kill(sprite: String) -> void:
 func kills_of(sprite: String) -> int:
 	return int(kill_counts.get(sprite, 0))
 
+# --- Écho (Phase 6.8) ---------------------------------------------------------
+## Range l'instantané du run (déjà JSON-safe) ; remplace tout écho antérieur.
+func store_echo(data: Dictionary) -> void:
+	echo = data
+	save_game()
+
+func clear_echo() -> void:
+	echo = {}
+	save_game()
+
 # Enregistre le bilan d'un run terminé (met à jour les records, persiste).
 func record_run(stats: Dictionary) -> void:
 	last_run = stats
@@ -171,6 +185,7 @@ func save_game() -> void:
 		"settings": settings,
 		"kill_counts": kill_counts,
 		"boss_faced": boss_faced,
+		"echo": echo,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -215,6 +230,8 @@ func load_game() -> void:
 	kill_counts = kc if typeof(kc) == TYPE_DICTIONARY else {}
 	var bf = parsed.get("boss_faced", {})   # Barks (Phase 6.7)
 	boss_faced = bf if typeof(bf) == TYPE_DICTIONARY else {}
+	var ec = parsed.get("echo", {})         # Écho (Phase 6.8)
+	echo = ec if typeof(ec) == TYPE_DICTIONARY else {}
 	best_floor = int(parsed.get("best_floor", 1))
 	best_kills = int(parsed.get("best_kills", 0))
 	last_loadout = str(parsed.get("last_loadout", "melee"))

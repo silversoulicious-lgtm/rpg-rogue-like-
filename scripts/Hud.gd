@@ -410,6 +410,24 @@ func show_floor_reward(rewards: Array, is_elite: bool) -> void:
 			overlay_content.add_child(Ui.label("   " + String(r["desc"]), 12, Color(0.7, 0.7, 0.78), false, true, 700))
 	_focus_first_button()
 
+## Écho d'Aria vaincu (Phase 6.8) : réclamer UN objet de son équipement.
+func show_echo_claim(items: Array) -> void:
+	overlay_layer.visible = true
+	_overlay_clear()
+	_overlay_title("✶ ÉCHO VAINCU — réclame une relique", Color(0.78, 0.68, 1.0))
+	_overlay_label("Le fantôme de ton dernier run cède l'un de ses objets. Un seul.", Color(0.75, 0.75, 0.82))
+	overlay_content.add_child(HSeparator.new())
+	for i in items.size():
+		var it: Dictionary = items[i]
+		var btn := Ui.button("%s  (%s)" % [String(it.get("name", "?")), Data.bonus_summary(it.get("bonus", {}))], 46, 16)
+		btn.add_theme_color_override("font_color", it.get("rarity_color", Color.WHITE))
+		btn.pressed.connect(game.claim_echo_item.bind(i))
+		overlay_content.add_child(btn)
+	var skip := Ui.button("Ne rien prendre", 42, 15)
+	skip.pressed.connect(game.claim_echo_item.bind(-1))
+	overlay_content.add_child(skip)
+	_focus_first_button()
+
 func show_event(event: Dictionary) -> void:
 	overlay_layer.visible = true
 	_overlay_clear()
