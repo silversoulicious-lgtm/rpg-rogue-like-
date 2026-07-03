@@ -503,6 +503,8 @@ func _draw_terrain(bid: String, x: int, y: int) -> void:
 		Dungeon.WATER:
 			if not _blit(Data.biome_sprite(bid, "water"), x, y):
 				draw_rect(_cell_rect(x, y), dungeon.biome.get("water", Color(0.2, 0.4, 0.8)), true)
+			if eff == Dungeon.EFF_FROZEN:
+				draw_rect(_cell_rect(x, y), Color(0.78, 0.90, 1.0, 0.55), true)   # glace praticable
 		Dungeon.ROAD:
 			if not _blit("road", x, y):
 				if not _blit(Data.biome_sprite(bid, "ground"), x, y):
@@ -527,6 +529,8 @@ func _draw_terrain(bid: String, x: int, y: int) -> void:
 			var dn: String = dungeon.decor[y][x]
 			if dn != "":
 				_blit(dn, x, y)
+			if eff == Dungeon.EFF_CLOUD:
+				draw_circle(_cell_rect(x, y).get_center(), CELL * 0.45, Color(0.45, 0.85, 0.30, 0.35))   # nuage toxique
 
 func _draw_ground(bid: String, x: int, y: int) -> void:
 	if not _blit(Data.biome_sprite(bid, "ground"), x, y):

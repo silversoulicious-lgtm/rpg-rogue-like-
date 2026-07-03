@@ -38,7 +38,7 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
   souffle, copie du joueur...).
 - **Identité visuelle** "Les Strates" façon Moonring : palette néon
   restreinte, glow/bloom, dithering Bayer, sprites 32×32 générés par code
-  (`_assets_gen.gd`, mirroré par `gen.py` en repli Python). Aria a des vues
+  (`_assets_gen.gd`, seule source de vérité). Aria a des vues
   directionnelles (face/dos/profil). Ambiance en jeu : pool de torche +
   vignette (`MapView.gd`).
 - **Écran-titre refondu** : composition en couches (logo/menu/profil),
@@ -87,11 +87,9 @@ embranchements). Séparation stricte logique/affichage/données : `Main.gd`
   `root.get_texture().get_image().save_png(...)`. Plus lent qu'un pur
   `--headless` mais seule façon fiable de vérifier visuellement de l'UI/du
   `_draw()`.
-- **`gen.py`** (repli Python, mêmes primitives que `_assets_gen.gd`) tenu à
-  jour en parallèle. Écart connu et non bloquant : le `round()` de Python
-  (arrondi au pair) diffère de celui de Godot (arrondi à l'écart de zéro)
-  sur les cas .5 exacts — préexistant dans tout le fichier, impact
-  observé : 1 pixel de bord sur de rares sprites, imperceptible.
+- **`gen.py`** (ancien repli Python) **supprimé** (Phase 7.4 du guide) :
+  `_assets_gen.gd` est désormais l'unique source de vérité de l'art généré,
+  plus de miroir à tenir à jour.
 
 ## Ce qui reste à faire
 
@@ -154,9 +152,40 @@ ne pas les confondre).
   main sans jamais pouvoir la voir rendue est trop risqué (texte illisible
   possible sur TOUTE l'UI) — à faire dans une session avec accès à Godot
   pour itérer visuellement.
-- **Phases 4 à 8** (terrain élémentaire, équilibrage, contenu, hygiène
-  d'ingénierie, direction artistique 64×64) : à faire, voir
-  `IMPLEMENTATION_GUIDE.md` pour le détail.
+- **Phase 4 — Terrain élémentaire : FAITE (4.0 à 4.3).** Substrat d'effets
+  (`Dungeon.effects/effect_timer/active_effects`, tick au rythme de la
+  joueuse) ; feu qui se propage dans les arbres et calcine (4.1) ; tags
+  d'élément sur les sorts (`Data.SKILLS[*].elem`) ; l'eau conduit la foudre
+  (flood-fill du plan d'eau plafonné à 500 cases, 50 % des dégâts aux autres
+  ennemis du rivage, une décharge max par lancer) ; le givre gèle l'eau en
+  pont de glace praticable (10 actions, fonte = relogement + 3 dégâts +
+  ralenti, le feu fait fondre instantanément) ; nuages toxiques à la mort
+  des serpents/zombies (30 %, poison par tour, 3 tours) ; la « lave » du
+  volcan brûle ce qu'on y pousse (8 + étage dégâts + brûlure, rebond) ;
+  knockback (`push_entity` : collisions, eau, lave, glissade sur glace,
+  pièges déclenchés contre l'ennemi poussé) via la nouvelle compétence
+  commune « Coup de bélier », les chargeurs (1 case) et le Bourreau
+  (2 cases). Asserts scriptés dans `_smoketest.gd` pour chaque règle.
+  Coupé (v1) : vent déplaçant les nuages, lave qui coule, entités
+  enflammées qui embrasent le terrain. NB : la session 4.2/4.3 n'avait pas
+  accès au binaire Godot (politique réseau) — validation via la CI (7.1).
+- **Phase 7.1 — CI : FAITE.** `.github/workflows/smoke.yml` (Godot 4.3
+  headless en cache, passe d'import, test de fumée, grep « SMOKETEST
+  PASSED ») ; RNG globale du smoke test fixée (`seed(4242)`).
+- **Phase 7.4 — Gel de `gen.py` : FAITE.** L'ancien miroir Python est
+  supprimé ; `_assets_gen.gd` est l'unique source de vérité (prérequis
+  Phase 8).
+- **Phase 7.6 — `wtype` explicite sur les armes uniques : FAITE.** Les 17
+  entrées arme de `UNIQUE_BASES` portent désormais un champ `wtype` lu par
+  `_make_unique_item` ; `infer_weapon_type` (déduction fragile par le nom
+  français) supprimée. Refactor à comportement identique (les valeurs
+  explicites reproduisent exactement l'ancienne inférence).
+- **Phases 5, 6, 7 (reste : 7.2/7.3/7.5/7.7/7.8), 8** (équilibrage,
+  contenu, hygiène d'ingénierie, direction artistique 64×64) : à faire,
+  voir `IMPLEMENTATION_GUIDE.md` pour le détail. NB : la Phase 5
+  (harnais d'auto-jeu + tuning) et le tuning associé exigent un Godot
+  exécutable pour produire/lire les CSV — à faire dans une session avec
+  accès à Godot.
 - **Suivis mineurs (non bloquants, hérités de l'ancienne liste)** :
   - Sprites directionnels pour les ennemis (seule Aria en a).
   - Variantes teintées pour les ennemis élite, sprite distinct pour le

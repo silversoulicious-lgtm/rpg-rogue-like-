@@ -45,6 +45,8 @@ var first_strike_used: bool = false   # pour le proc d'objet unique "premier_cou
 var known_skills: Array = []          # ids de compétences droppées et apprises (hors bases)
 var last_dir: Vector2i = Vector2i(1, 0)   # dernière direction de déplacement (visée auto)
 var _attack_dmg_type: String = "phys"  # contexte de type de dégâts (phys/magic) pour les résistances
+var _attack_elem: String = ""          # élément de la compétence en cours (fire/frost/lightning) — réactions de terrain
+var _conducted_cells: Dictionary = {}  # cases d'eau déjà conduites pendant CE lancer (une décharge max par plan d'eau)
 const SKILL_DROP_CHANCE := 0.06       # chance qu'un monstre lâche une compétence
 const LEGENDARY_CHANCE := 0.025       # chance qu'un monstre soit légendaire (lâche un pouvoir)
 const POI_CHANCE := 0.14              # chance qu'une structure de POI (coffre rare) apparaisse sur l'étage
@@ -938,8 +940,11 @@ func use_ability() -> void:
 		return
 	var skill: Dictionary = Data.SKILLS[player.ability_id]
 	_attack_dmg_type = "magic" if String(skill.get("wtype", "melee")) == "magic" else "phys"
+	_attack_elem = String(skill.get("elem", ""))
+	_conducted_cells.clear()
 	var cast_ok: bool = _cast_skill(skill)
 	_attack_dmg_type = "phys"
+	_attack_elem = ""
 	if not cast_ok:
 		add_message("[color=#888888]Aucune cible à portée.[/color]")
 		refresh()
@@ -1025,6 +1030,14 @@ func _cast_skill(skill: Dictionary) -> bool:
 			var tb: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tb == null: return false
 			return bounce_attack(tb, dmg, int(skill.get("bounces", 3)), "%s rebondit" % name, 0.85, maxi(rng_tiles, 6)) > 0
+		"push_strike":
+			var tk: Entity = _nearest_enemy_in_range(rng_tiles)
+			if tk == null: return false
+			var pdir: Vector2i = _cardinal_to(tk.pos())
+			_player_attack(tk, dmg, "%s percute" % name)
+			if tk.is_alive():
+				push_entity(tk, pdir, int(skill.get("push", 2)))
+			return true
 		"status_shot":
 			var tst: Entity = _nearest_enemy_in_range(rng_tiles)
 			if tst == null: return false
@@ -1135,6 +1148,70 @@ func dash(dir: Vector2i, distance: int) -> int:
 		_pickup_loot_at(player.pos())
 	return moved
 
+## Projection (Phase 4.3) : pousse `target` (joueuse ou ennemi) de `tiles`
+## cases dans `dir`. Chaque case rencontrée applique sa règle : entité →
+## collision (2 dégâts chacun, stop) ; lave (volcan) → brûlure sévère, la
+## cible est repoussée sur sa case d'origine ; eau → 3 dégâts + ralenti, stop
+## au bord ; glace → glisse (1 case bonus) ; piège → se déclenche contre la
+## cible poussée ; mur/arbre/rocher → stop net.
+func push_entity(target: Entity, dir: Vector2i, tiles: int) -> void:
+	if dir == Vector2i.ZERO or target == null or not target.is_alive() or dungeon == null:
+		return
+	var remaining: int = tiles
+	var slid: bool = false
+	while remaining > 0:
+		remaining -= 1
+		var next: Vector2i = target.pos() + dir
+		if next.x <= 0 or next.x >= dungeon.width - 1 or next.y <= 0 or next.y >= dungeon.height - 1:
+			break
+		var occupant: Entity = _entity_at(next)
+		if occupant != null and occupant != target:
+			# Collision : les deux encaissent.
+			if target == player:
+				last_damage_source = "une collision avec %s" % occupant.display_name
+			target.take_damage(2)
+			occupant.take_damage(2)
+			add_message("[color=#ffb86a]Collision : %s et %s encaissent (-2 chacun).[/color]" %
+				["toi" if target == player else target.display_name,
+				 "toi" if occupant == player else occupant.display_name])
+			if occupant != player and not occupant.is_alive():
+				on_enemy_killed(occupant)
+			break
+		if dungeon.tiles[next.y][next.x] == Dungeon.WATER and dungeon.effects[next.y][next.x] != Dungeon.EFF_FROZEN:
+			if dungeon.is_lava():
+				# Lave : morsure ardente, la cible rebondit sur sa case d'origine.
+				if target == player:
+					last_damage_source = "la lave"
+				target.take_damage(8 + floor_num)
+				apply_burn(target, 3, 3.0)
+				add_message("[color=#ff8a4a]La lave mord %s ![/color]" %
+					("ta chair" if target == player else target.display_name))
+			else:
+				# Eau : reste sur la dernière case valide, trempé et ralenti.
+				if target == player:
+					last_damage_source = "l'eau glacée"
+				target.take_damage(3)
+				apply_slow(target, 2, 0.4)
+				add_message("[color=#9fdfff]%s au bord de l'eau, trempé et ralenti.[/color]" %
+					("Tu vacilles" if target == player else "%s vacille" % target.display_name))
+			break
+		if not dungeon.is_walkable(next.x, next.y):
+			break                              # mur / arbre / rocher : stop net
+		target.x = next.x
+		target.y = next.y
+		if dungeon.effects[next.y][next.x] == Dungeon.EFF_FROZEN and not slid:
+			slid = true
+			remaining += 1                     # glace : glisse une case de plus
+		_trigger_hazard_at(target.pos(), target)   # les pièges coupent enfin dans les deux sens
+		if not target.is_alive():
+			break
+	if target == player:
+		_check_revive()
+		if player.is_alive():
+			_pickup_loot_at(player.pos())
+	elif not target.is_alive():
+		on_enemy_killed(target)
+
 ## Cible du prochain saut de rebond/chaîne : mêmes filtres de visibilité que
 ## _nearest_enemy_in_range, SAUF la ligne de vue (magie arquée entre les sauts
 ## : on ignore volontairement has_los) — la cible du saut doit rester visible.
@@ -1193,6 +1270,10 @@ func ignite(p: Vector2i) -> bool:
 		return false
 	if p.x <= 0 or p.x >= dungeon.width - 1 or p.y <= 0 or p.y >= dungeon.height - 1:
 		return false
+	# Le feu (quel qu'il soit) fait fondre instantanément une case gelée.
+	if dungeon.effects[p.y][p.x] == Dungeon.EFF_FROZEN:
+		_melt_at(p)
+		return false
 	if dungeon.tiles[p.y][p.x] != Dungeon.TREE:
 		return false
 	if dungeon.effects[p.y][p.x] != Dungeon.EFF_NONE:
@@ -1214,6 +1295,157 @@ func ignite_area(center: Vector2i, radius: int) -> void:
 		for dx in range(-radius, radius + 1):
 			if maxi(absi(dx), absi(dy)) <= radius:
 				ignite(center + Vector2i(dx, dy))
+
+## Réactions élémentaires de terrain (Phase 4.2) : déclenchées quand une
+## compétence taguée "elem" touche une cible. La foudre conduit dans l'eau,
+## le givre gèle l'eau ; le feu passe déjà par ignite()/ignite_area().
+func _elemental_reaction(center: Vector2i, dealt: int) -> void:
+	if dungeon == null:
+		return
+	match _attack_elem:
+		"lightning": conduct_lightning(center, dealt)
+		"frost": freeze_water_near(center)
+
+## Foudre conduite : si `center` (case de la cible touchée) est 4-adjacente à
+## un plan d'eau (pas de la lave, pas de la glace), tout ENNEMI vivant autre
+## que la cible et 4-adjacent au même plan d'eau prend 50% des dégâts du coup.
+## Un plan d'eau donné ne conduit qu'UNE fois par lancer (_conducted_cells) —
+## une chaîne d'éclairs ne re-déclenche pas la même décharge à chaque saut.
+func conduct_lightning(center: Vector2i, dealt: int) -> void:
+	if dungeon.is_lava() or dealt <= 0:
+		return
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var wp: Vector2i = center + d
+		if wp.x < 0 or wp.x >= dungeon.width or wp.y < 0 or wp.y >= dungeon.height:
+			continue
+		if dungeon.tiles[wp.y][wp.x] != Dungeon.WATER:
+			continue
+		if dungeon.effects[wp.y][wp.x] == Dungeon.EFF_FROZEN:
+			continue                       # la glace n'est plus conductrice
+		if _conducted_cells.has(wp):
+			continue                       # plan d'eau déjà déchargé ce lancer
+		var body: Array = dungeon.water_body(wp, 500)
+		var body_set: Dictionary = {}
+		for c in body:
+			body_set[c] = true
+			_conducted_cells[c] = true
+		var arc: int = maxi(1, int(round(dealt * Data.LIGHTNING_CONDUCT_PCT)))
+		var zapped: int = 0
+		for e in enemies.duplicate():
+			if not e.is_alive() or e.pos() == center:
+				continue
+			var near_water: bool = false
+			for dd in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+				if body_set.has(e.pos() + dd):
+					near_water = true
+					break
+			if not near_water:
+				continue
+			var dz: int = e.take_damage(arc)
+			zapped += 1
+			if map_view != null:
+				map_view.fx_hit(e)
+				map_view.fx_damage(e.pos(), dz, "hit")
+			if not e.is_alive():
+				on_enemy_killed(e)
+		if zapped > 0:
+			add_message("[color=#9fdfff]⚡ La foudre crépite le long du rivage (%d touché(s), -%d).[/color]" % [zapped, arc])
+		return                             # une seule conduction par coup
+
+## Gel : fige en glace praticable les cases du plan d'eau adjacent à `center`,
+## dans un rayon Chebyshev FROST_FREEZE_RADIUS de l'impact, pour FROZEN_TURNS
+## actions de la joueuse. Sans effet sur la lave (volcan).
+func freeze_water_near(center: Vector2i) -> void:
+	if dungeon == null or dungeon.is_lava():
+		return
+	var frozen: int = 0
+	for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var wp: Vector2i = center + d
+		if wp.x < 0 or wp.x >= dungeon.width or wp.y < 0 or wp.y >= dungeon.height:
+			continue
+		if dungeon.tiles[wp.y][wp.x] != Dungeon.WATER:
+			continue
+		for c in dungeon.water_body(wp, 500):
+			if _chebyshev(c, center) > Data.FROST_FREEZE_RADIUS:
+				continue
+			if dungeon.effects[c.y][c.x] != Dungeon.EFF_NONE:
+				continue
+			dungeon.effects[c.y][c.x] = Dungeon.EFF_FROZEN
+			dungeon.effect_timer[c.y][c.x] = Data.FROZEN_TURNS
+			dungeon.active_effects.append(c)
+			frozen += 1
+	if frozen > 0:
+		add_message("[color=#9fdfff]❄ L'eau se fige en un pont de glace (%d case(s)).[/color]" % frozen)
+		dungeon.rebuild_reachability()
+
+## Fonte d'une case gelée : l'eau redevient infranchissable ; une entité qui
+## se tenait sur la glace est relogée sur la case praticable la plus proche
+## (3 dégâts + ralentissement — « la glace cède ! »).
+func _melt_at(p: Vector2i, rebuild: bool = true) -> void:
+	if dungeon.effects[p.y][p.x] != Dungeon.EFF_FROZEN:
+		return
+	dungeon.effects[p.y][p.x] = Dungeon.EFF_NONE
+	dungeon.effect_timer[p.y][p.x] = 0
+	var ent: Entity = _entity_at(p)
+	if ent != null and ent.is_alive():
+		# Reloge sur de la terre ferme (jamais WATER, même gelée : la glace
+		# voisine peut fondre dans la même passe et relogerait en chaîne).
+		var spot: Vector2i = NO_TILE
+		for radius in range(1, 5):
+			for dy in range(-radius, radius + 1):
+				for dx in range(-radius, radius + 1):
+					var np: Vector2i = p + Vector2i(dx, dy)
+					if np.x < 0 or np.x >= dungeon.width or np.y < 0 or np.y >= dungeon.height:
+						continue
+					if dungeon.tiles[np.y][np.x] == Dungeon.WATER:
+						continue
+					if dungeon.is_walkable(np.x, np.y) and _entity_at(np) == null:
+						spot = np
+						break
+				if spot != NO_TILE:
+					break
+			if spot != NO_TILE:
+				break
+		if spot == NO_TILE:
+			spot = dungeon.start
+		ent.x = spot.x
+		ent.y = spot.y
+		if ent == player:
+			last_damage_source = "la glace qui cède"
+		ent.take_damage(3)
+		apply_slow(ent, 2, 0.4)
+		add_message("[color=#9fdfff]La glace cède sous %s ![/color]" % ("tes pas" if ent == player else ent.display_name))
+		if ent == player:
+			_check_revive()
+		elif not ent.is_alive():
+			on_enemy_killed(ent)
+	if rebuild:
+		dungeon.rebuild_reachability()
+
+## Nuage toxique (marais) : laissé à la mort de certaines créatures (ai.death_cloud).
+## Empoisonne les entités qui s'y attardent, se dissipe après CLOUD_TURNS.
+func spawn_poison_cloud(center: Vector2i, radius: int = 1, turns: int = -1) -> void:
+	if dungeon == null:
+		return
+	if turns < 0:
+		turns = Data.CLOUD_TURNS
+	var placed: int = 0
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			var p: Vector2i = center + Vector2i(dx, dy)
+			if p.x <= 0 or p.x >= dungeon.width - 1 or p.y <= 0 or p.y >= dungeon.height - 1:
+				continue
+			var t: int = dungeon.tiles[p.y][p.x]
+			if t != Dungeon.FLOOR and t != Dungeon.ROAD:
+				continue
+			if dungeon.effects[p.y][p.x] != Dungeon.EFF_NONE:
+				continue
+			dungeon.effects[p.y][p.x] = Dungeon.EFF_CLOUD
+			dungeon.effect_timer[p.y][p.x] = turns
+			dungeon.active_effects.append(p)
+			placed += 1
+	if placed > 0:
+		add_message("[color=#9fdf6a]Un nuage toxique s'échappe de la dépouille.[/color]")
 
 ## Fait avancer la couche d'effets de terrain d'un cran — appelé une fois par
 ## action du joueur (le terrain vit au rythme du joueur, avant que les
@@ -1252,6 +1484,20 @@ func _tick_terrain() -> void:
 				reach_dirty = true
 				# EFF_BURNT reste marqué en permanence (pas de retour à EFF_NONE) :
 				# c'est une trace de sol calciné, pas une case active à re-traiter.
+		elif eff == Dungeon.EFF_FROZEN:
+			dungeon.effect_timer[p.y][p.x] -= 1
+			if dungeon.effect_timer[p.y][p.x] <= 0:
+				_melt_at(p, false)
+				reach_dirty = true
+		elif eff == Dungeon.EFF_CLOUD:
+			dungeon.effect_timer[p.y][p.x] -= 1
+			var cent: Entity = _entity_at(p)
+			if cent != null and cent.is_alive():
+				apply_poison(cent, 2, Data.CLOUD_POISON_VAL)
+				if cent == player:
+					add_message("[color=#9fdf6a]Les vapeurs toxiques te rongent.[/color]")
+			if dungeon.effect_timer[p.y][p.x] <= 0:
+				dungeon.effects[p.y][p.x] = Dungeon.EFF_NONE
 	# Purge les cases qui ne sont plus BURNING/FROZEN/CLOUD (ex: calcinées ce
 	# tour) tout en conservant celles fraîchement embrasées par ignite()
 	# ci-dessus — on relit dungeon.active_effects (pas la copie) pour ça.
@@ -1368,6 +1614,7 @@ func _player_attack(target: Entity, base_raw: int, verb: String, ignore_def: boo
 				map_view.fx_damage(player.pos(), healed, "heal")
 			add_message("[color=#ff7a8a]Vol de vie : +%d PV.[/color]" % healed)
 	_trigger_weapon_prefixes(target)
+	_elemental_reaction(target.pos(), dealt)
 	if not target.is_alive():
 		on_enemy_killed(target)
 		return
@@ -1407,6 +1654,7 @@ func _trigger_weapon_prefixes(target: Entity) -> void:
 	if player.has_proc("givre") and rng.randf() < player.proc_value("givre"):
 		apply_slow(target, 2, 0.35)
 		add_message("[color=#9fdfff]%s est ralenti par le givre.[/color]" % target.display_name)
+		freeze_water_near(target.pos())   # élément givre : l'eau au contact gèle
 	if player.has_proc("venimeux") and rng.randf() < player.proc_value("venimeux"):
 		apply_poison(target, 3, 3.0)
 		add_message("[color=#9fdf6a]%s est empoisonné par le venin.[/color]" % target.display_name)
@@ -1513,6 +1761,10 @@ func on_enemy_killed(e: Entity) -> void:
 			add_message("[color=#ff8a8a]Le souffle ardent te frappe (-%d).[/color]" % ed)
 			apply_burn(player, 3, maxf(1.0, e.atk * 0.3))
 			_check_revive()
+	# Nuage toxique à la mort (Serpent des marais, Zombie pestilentiel...).
+	var cloud_chance: float = float(e.ai.get("death_cloud", 0.0)) if not e.ai.is_empty() else 0.0
+	if cloud_chance > 0.0 and rng.randf() < cloud_chance:
+		spawn_poison_cloud(death_pos, 1)
 	if player.has_power("detonation") and _chebyshev(death_pos, player.pos()) <= 3:
 		var boom: int = maxi(2, player.atk / 2 + player.ability_power)
 		var hits: int = aoe_attack(death_pos, 1, boom, "Détonation frappe")
@@ -2109,6 +2361,9 @@ func _enemy_act_charger(e: Entity) -> void:
 				add_message("[color=#ff9a64]%s charge en trombe ![/color]" % e.display_name)
 				_enemy_attack_player(e)
 				e.atk = saved
+				# L'impact projette la joueuse (1 case ; 2 pour le Bourreau).
+				if player.is_alive():
+					push_entity(player, dir, int(e.ai.get("push", 1)))
 				return
 			if not dungeon.is_walkable(np.x, np.y) or enemy_at(np.x, np.y) != null:
 				break
@@ -2269,22 +2524,34 @@ func _drop_trap(p: Vector2i) -> void:
 	})
 	add_message("[color=#caa07a]%s dissimule un piège.[/color]" % "Un ennemi")
 
-func _trigger_hazard_at(p: Vector2i) -> void:
+## Déclenche le piège éventuel sur `p` contre `victim` (la joueuse par défaut ;
+## un ennemi poussé dessus le déclenche aussi — les pièges coupent dans les
+## deux sens depuis la Phase 4.3).
+func _trigger_hazard_at(p: Vector2i, victim: Entity = null) -> void:
+	if victim == null:
+		victim = player
 	for h in hazards.duplicate():
 		if h["pos"] == p:
 			hazards.erase(h)
-			add_message("[color=#ff9a6a]Tu déclenches un piège ![/color]")
+			if victim == player:
+				add_message("[color=#ff9a6a]Tu déclenches un piège ![/color]")
+			else:
+				add_message("[color=#ff9a6a]%s déclenche un piège ![/color]" % victim.display_name)
 			var dmg: int = int(h.get("dmg", 0))
 			if dmg > 0:
-				last_damage_source = "un piège"
-				player.take_damage(maxi(1, dmg - _player_def()))
+				if victim == player:
+					last_damage_source = "un piège"
+					victim.take_damage(maxi(1, dmg - _player_def()))
+				else:
+					victim.take_damage(maxi(1, dmg - victim.defense))
 			var st: Dictionary = h.get("status", {})
 			match String(st.get("id", "")):
-				"slow": apply_slow(player, int(st.get("turns", 3)), float(st.get("value", 0.4)))
-				"bleed": apply_bleed(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
-				"poison": apply_poison(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
-				"weaken": apply_weaken(player, int(st.get("turns", 3)), float(st.get("value", 3.0)))
-			_check_revive()
+				"slow": apply_slow(victim, int(st.get("turns", 3)), float(st.get("value", 0.4)))
+				"bleed": apply_bleed(victim, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+				"poison": apply_poison(victim, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+				"weaken": apply_weaken(victim, int(st.get("turns", 3)), float(st.get("value", 3.0)))
+			if victim == player:
+				_check_revive()
 			return
 
 # --- Boutique -----------------------------------------------------------------

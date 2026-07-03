@@ -3,6 +3,9 @@ extends Node
 # (les autoloads sont donc chargés -> GameState disponible).
 
 func _ready() -> void:
+	# Phase 7.1 : la section marche aléatoire utilise la RNG globale — on la
+	# fixe pour que le test soit déterministe en CI.
+	seed(4242)
 	var main = load("res://scenes/Main.tscn").instantiate()
 	add_child(main)
 
@@ -1043,6 +1046,124 @@ func _ready() -> void:
 	Data.FIRE_SPREAD_CHANCE = prev_spread_chance
 	main.dungeon = null
 	print("OK Phase 4.0/4.1: substrat d'effets de terrain (Dungeon.effects/active_effects) + tranche verticale — le feu se propage en chaîne dans la Forêt, calcine, redevient praticable")
+
+	# --- Phase 4.2 : extensions élémentaires (foudre/eau, gel, nuages, lave) -------
+	main.start_run("melee")
+	var elem_rng := RandomNumberGenerator.new(); elem_rng.seed = 55
+	var elem_map := Dungeon.new(24, 12, elem_rng, Data.biome_for_floor(1))
+	for y in range(1, elem_map.height - 1):
+		for x in range(1, elem_map.width - 1):
+			elem_map.tiles[y][x] = Dungeon.FLOOR
+			elem_map.effects[y][x] = Dungeon.EFF_NONE
+			elem_map.effect_timer[y][x] = 0
+	# Plan d'eau horizontal de 4 cases en y=5, x=6..9.
+	for x in range(6, 10):
+		elem_map.tiles[5][x] = Dungeon.WATER
+	elem_map.active_effects = []
+	elem_map.rebuild_reachability()
+	main.dungeon = elem_map
+	main.player.x = 2; main.player.y = 2
+	main.enemies.clear()
+	main.hazards.clear()
+	# Foudre conduite : cible collée au rivage, complice sur l'autre rive, témoin au loin.
+	var zap_target: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(6, 4))
+	var zap_victim: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(9, 6))
+	var zap_far: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(20, 10))
+	for z in [zap_target, zap_victim, zap_far]:
+		z.awake = true
+		main.enemies.append(z)
+	var hp_victim: int = zap_victim.hp
+	var hp_far: int = zap_far.hp
+	main._conducted_cells.clear()
+	main.conduct_lightning(zap_target.pos(), 10)
+	assert(zap_victim.hp == hp_victim - int(round(10 * Data.LIGHTNING_CONDUCT_PCT)), "la foudre conduite inflige 50% du coup à l'ennemi au bord du même plan d'eau")
+	assert(zap_far.hp == hp_far, "un ennemi loin de l'eau n'est pas touché par la conduction")
+	main.conduct_lightning(zap_target.pos(), 10)
+	assert(zap_victim.hp == hp_victim - int(round(10 * Data.LIGHTNING_CONDUCT_PCT)), "un même plan d'eau ne conduit qu'une fois par lancer (_conducted_cells)")
+	# Gel : l'eau adjacente à l'impact gèle, devient praticable, puis fond.
+	main.freeze_water_near(Vector2i(6, 4))
+	assert(elem_map.effects[5][6] == Dungeon.EFF_FROZEN, "le gel fige le plan d'eau adjacent à l'impact")
+	assert(elem_map.is_walkable(6, 5), "une case gelée est praticable (pont de glace)")
+	# La glace n'est plus conductrice.
+	main._conducted_cells.clear()
+	var hp_victim2: int = zap_victim.hp
+	main.conduct_lightning(zap_target.pos(), 10)
+	assert(zap_victim.hp == hp_victim2, "un plan d'eau entièrement gelé ne conduit plus la foudre")
+	# Une entité parquée sur la glace subit la fonte : relogée + 3 dégâts + ralentie.
+	var skater: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(7, 5))
+	skater.awake = true
+	main.enemies.append(skater)
+	var hp_skater: int = skater.hp
+	for i in Data.FROZEN_TURNS + 1:
+		main._tick_terrain()
+	assert(elem_map.effects[5][7] == Dungeon.EFF_NONE, "la glace a fondu après FROZEN_TURNS actions")
+	assert(not elem_map.is_walkable(7, 5), "l'eau dégelée redevient infranchissable")
+	assert(skater.pos() != Vector2i(7, 5) and elem_map.is_walkable(skater.x, skater.y), "l'entité sur la glace est relogée sur une case praticable à la fonte")
+	assert(skater.hp == hp_skater - 3 and skater.has_status("slow"), "la glace cède : 3 dégâts + ralentissement")
+	# Nuage toxique : empoisonne l'entité qui s'y attarde, se dissipe.
+	var cloud_pos := Vector2i(15, 8)
+	main.spawn_poison_cloud(cloud_pos, 0)
+	assert(elem_map.effects[cloud_pos.y][cloud_pos.x] == Dungeon.EFF_CLOUD, "le nuage toxique est posé")
+	var choker: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, cloud_pos)
+	choker.awake = true
+	main.enemies.append(choker)
+	main._tick_terrain()
+	assert(choker.has_status("poison"), "une entité dans le nuage est empoisonnée à chaque tour")
+	for i in Data.CLOUD_TURNS:
+		main._tick_terrain()
+	assert(elem_map.effects[cloud_pos.y][cloud_pos.x] == Dungeon.EFF_NONE, "le nuage se dissipe après CLOUD_TURNS")
+	print("OK Phase 4.2: foudre conduite par l'eau (une décharge par lancer), gel praticable + fonte (relogement), nuages toxiques")
+
+	# --- Phase 4.3 : projection (push_entity, Coup de bélier, lave) ----------------
+	main.enemies.clear()
+	# Poussée en terrain libre : 2 cases pleines.
+	var pushee: Entity = main._make_enemy(main._enemy_def_by_sprite("gnoll"), 1, Vector2i(14, 2))
+	pushee.awake = true
+	main.enemies.append(pushee)
+	main.push_entity(pushee, Vector2i(1, 0), 2)
+	assert(pushee.pos() == Vector2i(16, 2), "push_entity déplace de 2 cases en terrain libre")
+	# Poussée vers l'eau : stoppe au bord, 3 dégâts + ralenti.
+	pushee.x = 7; pushee.y = 3
+	var hp_push: int = pushee.hp
+	main.push_entity(pushee, Vector2i(0, 1), 2)
+	assert(pushee.pos() == Vector2i(7, 4), "poussé vers l'eau : reste sur la dernière case valide")
+	assert(pushee.hp == hp_push - 3 and pushee.has_status("slow"), "poussé vers l'eau : 3 dégâts + ralentissement")
+	# Poussée contre un mur : stop net, aucun dégât.
+	pushee.x = 2; pushee.y = 2
+	var hp_wall: int = pushee.hp
+	main.push_entity(pushee, Vector2i(-1, 0), 3)
+	assert(pushee.pos() == Vector2i(1, 2) or pushee.pos() == Vector2i(2, 2), "poussé contre le bord : stoppé par le mur")
+	assert(pushee.hp == hp_wall, "un mur n'inflige pas de dégâts de poussée")
+	# Lave (volcan) : la cible rebondit sur sa case d'origine, brûlée.
+	elem_map.biome = Data.BIOMES[5]   # volcan : l'eau du biome est de la lave
+	assert(elem_map.is_lava(), "le biome volcan traite WATER comme de la lave")
+	pushee.x = 7; pushee.y = 3
+	pushee.hp = pushee.max_hp
+	var hp_lava: int = pushee.hp
+	main.push_entity(pushee, Vector2i(0, 1), 2)
+	assert(pushee.pos() == Vector2i(7, 4), "poussé vers la lave : rebondit avant la coulée")
+	assert(pushee.hp == hp_lava - (8 + main.floor_num), "la lave inflige 8 + étage dégâts")
+	assert(pushee.has_status("burn"), "la lave enflamme la cible poussée")
+	elem_map.biome = Data.biome_for_floor(1)
+	# Coup de bélier : frappe et repousse de 2 cases.
+	assert(Data.SKILLS.has("shield_bash"), "la compétence Coup de bélier existe")
+	main.enemies.clear()
+	main.player.x = 12; main.player.y = 8
+	var rammed: Entity = main._make_enemy(main._enemy_def_by_sprite("ours"), 1, Vector2i(13, 8))
+	rammed.hp = 999; rammed.max_hp = 999
+	rammed.awake = true
+	main.enemies.append(rammed)
+	elem_map.reveal(main.player.pos(), 6)   # l'auto-visée exige une cible visible (brouillard)
+	main._cast_skill(Data.SKILLS["shield_bash"])
+	assert(rammed.pos() == Vector2i(15, 8), "Coup de bélier : la cible est repoussée de 2 cases")
+	# Le Bourreau (charger) projette de 2 cases, les chargeurs standard de 1.
+	var bourreau_def: Dictionary = {}
+	for bdef in Data.BOSSES:
+		if String(bdef.get("sprite", "")) == "bourreau":
+			bourreau_def = bdef
+	assert(int(bourreau_def["ai"].get("push", 1)) == 2, "le Bourreau projette de 2 cases")
+	main.dungeon = null
+	print("OK Phase 4.3: push_entity (libre/eau/mur/lave), Coup de bélier, Bourreau push 2")
 
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()

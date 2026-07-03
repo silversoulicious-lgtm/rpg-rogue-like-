@@ -220,6 +220,30 @@ func is_walkable(x: int, y: int) -> bool:
 		return true          # glace : praticable tant qu'elle n'a pas fondu
 	return false
 
+## Dans les Terres de feu, l'« eau » (tuiles WATER) est de la LAVE : elle ne
+## conduit pas la foudre, ne gèle pas, et brûle ce qu'on y pousse (Phase 4.2).
+func is_lava() -> bool:
+	return String(biome.get("id", "")) == "volcan"
+
+## Plan d'eau connexe (4-connexe) contenant `start_cell` (qui doit être WATER),
+## plafonné à `cap` cases. Renvoie un Array[Vector2i] — utilisé par la
+## conduction de foudre et le gel (Phase 4.2).
+func water_body(start_cell: Vector2i, cap: int = 500) -> Array:
+	if not _in_bounds(start_cell.x, start_cell.y) or tiles[start_cell.y][start_cell.x] != WATER:
+		return []
+	var seen: Dictionary = { start_cell: true }
+	var queue: Array = [start_cell]
+	var body: Array = []
+	while not queue.is_empty() and body.size() < cap:
+		var p: Vector2i = queue.pop_front()
+		body.append(p)
+		for d in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var n: Vector2i = p + d
+			if not seen.has(n) and _in_bounds(n.x, n.y) and tiles[n.y][n.x] == WATER:
+				seen[n] = true
+				queue.append(n)
+	return body
+
 ## Recalcule le cache de connexité (reachable_tiles) après une mutation de
 ## terrain (arbre calciné, eau gelée/dégelée...). Le cache existant devient
 ## silencieusement obsolète sinon — à appeler une seule fois par lot de
