@@ -1831,6 +1831,7 @@ func on_enemy_killed(e: Entity) -> void:
 	run_kills += 1
 	run_shards += e.shard_value
 	player.xp += e.xp_value
+	GameState.record_kill(String(e.sprite))   # Bestiaire (Phase 6.5)
 	if player.has_proc("moisson"):
 		var bonus_shards: int = int(round(player.proc_value("moisson")))
 		run_shards += bonus_shards

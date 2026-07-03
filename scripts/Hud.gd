@@ -766,6 +766,7 @@ func show_codex() -> void:
 		if not uniq_names.has(u["name"]):
 			uniq_names.append(u["name"])
 	_codex_section(col, "✦ Objets uniques", "unique", uniq_names, func(n): return String(n))
+	_codex_bestiary(col)
 
 	col.add_child(HSeparator.new())
 	var back := Ui.menu_button("↩   Retour à l'Arbre", 360.0, 16)
@@ -777,6 +778,48 @@ func _power_name(id: String) -> String:
 		if p["id"] == id:
 			return String(p["name"])
 	return id
+
+## Bestiaire (Phase 6.5) : liste ENEMIES + BOSSES. Nom révélé au 1er kill,
+## ligne de traits à partir de KILL_TRAITS_THRESHOLD kills, compteur de mises à mort.
+func _codex_bestiary(col: VBoxContainer) -> void:
+	var all: Array = []
+	for e in Data.ENEMIES:
+		all.append(e)
+	for b in Data.BOSSES:
+		all.append(b)
+	var seen: Dictionary = GameState.discovered.get("monster", {})
+	col.add_child(Ui.label("☠ Bestiaire   (%d / %d)" % [seen.size(), all.size()], 18, Color(0.8, 0.85, 0.95), true))
+	for def in all:
+		var sprite: String = String(def.get("sprite", ""))
+		if seen.has(sprite):
+			var kills: int = GameState.kills_of(sprite)
+			col.add_child(Ui.label("  ✓ %s   ×%d" % [str(def.get("name", "?")), kills], 14, Color(0.85, 0.9, 0.8)))
+			if kills >= GameState.KILL_TRAITS_THRESHOLD:
+				col.add_child(Ui.label("      " + enemy_traits_line(def), 12, Color(0.6, 0.65, 0.72), false, true, 740))
+		else:
+			col.add_child(Ui.label("  ??? — non découvert", 14, Color(0.45, 0.45, 0.52)))
+	col.add_child(_spacer(8))
+
+## Résumé FR des traits d'un ennemi (partagé avec l'inspection, Phase 2.7) :
+## comportement + effet au contact + résistances/faiblesses/meute notables.
+func enemy_traits_line(def: Dictionary) -> String:
+	var ai: Dictionary = def.get("ai", {})
+	var parts: Array = [BEHAVIOR_LABEL.get(String(ai.get("behavior", "melee")), "Corps à corps")]
+	var oh: Dictionary = ai.get("on_hit", {})
+	if not oh.is_empty():
+		var sid: String = String(oh.get("id", ""))
+		parts.append("au contact : " + str(STATUS_LABEL.get(sid, [sid, Color.WHITE])[0]))
+	if float(ai.get("resist_phys", 0.0)) > 0.0:
+		parts.append("résiste au physique")
+	if float(ai.get("resist_magic", 0.0)) > 0.0:
+		parts.append("résiste à la magie")
+	if float(ai.get("weak_fire", 0.0)) > 0.0:
+		parts.append("craint le feu")
+	if bool(ai.get("pack", false)):
+		parts.append("meute")
+	if bool(ai.get("immune_fire", false)):
+		parts.append("insensible au feu")
+	return ", ".join(parts)
 
 ## Affiche une section du Codex : titre + compteur + liste (découverts en clair,
 ## inconnus masqués en « ??? »).

@@ -1341,6 +1341,27 @@ func _ready() -> void:
 		assert(bdef.has("home_biome"), "chaque boss porte une note de biome d'origine (%s)" % bdef["name"])
 	print("OK Phase 6.6: biome dérivé de la strate (biome_for_act), notes de biome par boss")
 
+	# --- Phase 6.5 : bestiaire dans le Codex ------------------------------------
+	GameState.knowledge_nodes = ["codex"]        # Codex débloqué : les découvertes se notent
+	GameState.kill_counts = {}
+	GameState.discovered["monster"] = {}
+	GameState.record_kill("gobelin")
+	assert(GameState.kills_of("gobelin") == 1, "record_kill incrémente le compteur de mises à mort")
+	assert(GameState.discovered.get("monster", {}).has("gobelin"), "1re mise à mort : monstre découvert dans le Codex")
+	GameState.record_kill("gobelin")
+	assert(GameState.kills_of("gobelin") == 2, "les mises à mort suivantes s'accumulent")
+	# Ligne de traits partagée (behavior + on_hit).
+	var spider_def: Dictionary = main._enemy_def_by_sprite("araignee")
+	var traits: String = main.hud.enemy_traits_line(spider_def)
+	assert(traits.contains("Corps à corps") and traits.to_lower().contains("contact"), "la ligne de traits résume comportement + effet au contact")
+	# Persistance : kill_counts survit à un save/load.
+	GameState.save_game()
+	GameState.kill_counts = {}
+	GameState.load_game()
+	assert(GameState.kills_of("gobelin") == 2, "kill_counts persiste (save/load)")
+	GameState.knowledge_nodes = []
+	print("OK Phase 6.5: bestiaire (record_kill, découverte, traits ≥ seuil, persistance)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 
