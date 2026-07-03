@@ -378,6 +378,17 @@ const BOSSES := [
 	          "on_hit": { "id": "burn", "turns": 3, "value": 4.0 } } },
 ]
 
+# --- AFFIXES D'ÉLITE (Phase 6.2) ----------------------------------------------
+# Un affixe tiré par salle d'élite (remplace l'éponge ×1.25 plate) : donne un
+# comportement, pas juste des stats. "tint" = teinte de rendu (modulate MapView).
+const ELITE_AFFIXES := [
+	{ "id": "rapide",     "name": "Rapide",     "tint": Color(0.40, 0.90, 1.00) },
+	{ "id": "explosif",   "name": "Explosif",   "tint": Color(1.00, 0.55, 0.25) },
+	{ "id": "regenerant", "name": "Régénérant", "tint": Color(0.45, 0.90, 0.50) },
+	{ "id": "voleur",     "name": "Voleur",     "tint": Color(1.00, 0.82, 0.35) },
+	{ "id": "chef",       "name": "Chef",       "tint": Color(1.00, 0.40, 0.40) },
+]
+
 # --- ÉQUIPEMENT (drops, scope = run) ------------------------------------------
 # Slots : "arme", "armure", "relique". Améliore les stats principales.
 # glyph affiché sur la carte ; "salvage" = Éclats récupérés si on remplace/ignore.

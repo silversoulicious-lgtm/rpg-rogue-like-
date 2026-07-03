@@ -538,10 +538,7 @@ func generate_floor(node_type: String = "combat") -> void:
 	for p in dungeon.random_floor_tiles(count, rng, occupied):
 		var e: Entity = _make_enemy(_pick_enemy_def(), floor_num, p)
 		if is_elite:
-			e.max_hp = int(e.max_hp * 1.25)
-			e.hp = e.max_hp
-			e.atk = int(e.atk * 1.2)
-			e.ai["smart_path"] = true
+			_apply_elite_affix(e)
 		elif not is_boss and rng.randf() < _legendary_chance():
 			e.is_legendary = true
 			e.display_name = "Légendaire : " + e.display_name
@@ -581,6 +578,38 @@ func generate_floor(node_type: String = "combat") -> void:
 			dungeon.mark_explored(item["pos"])
 
 	refresh()        # règle map_view.dungeon, le brouillard et la caméra
+
+## Phase 6.2 : applique un affixe d'élite (comportement, pas éponge plate). Bump
+## de PV réduit à +15%, un affixe tiré donne le vrai caractère de l'élite.
+func _apply_elite_affix(e: Entity) -> void:
+	e.max_hp = int(round(e.max_hp * 1.15))
+	e.hp = e.max_hp
+	e.ai["smart_path"] = true
+	var af: Dictionary = Data.ELITE_AFFIXES[rng.randi_range(0, Data.ELITE_AFFIXES.size() - 1)]
+	e.ai["elite_affix"] = af["id"]
+	e.tint = af["tint"]
+	e.display_name = "Élite %s : %s" % [af["name"], e.display_name]
+	match String(af["id"]):
+		"rapide":
+			e.speed += 40
+		"explosif":
+			if not e.ai.has("explode"):
+				e.ai["explode"] = { "radius": 1, "mult": 1.3 }
+		"regenerant":
+			e.hp_regen = maxi(e.hp_regen, 4)
+		"voleur":
+			e.ai["steal"] = 4     # Éclats volés par coup (rendus à sa mort)
+			e.ai["stolen"] = 0
+		"chef":
+			e.ai["chef_aura"] = 3   # rayon d'aura +2 ATK aux alliés
+
+## Un ennemi « Chef » vivant est-il à portée d'aura de `e` ? (+2 ATK aux alliés)
+func _has_chef_aura(e: Entity) -> bool:
+	for o in enemies:
+		if o != e and o.is_alive() and o.ai.has("chef_aura"):
+			if _chebyshev(e.pos(), o.pos()) <= int(o.ai.get("chef_aura", 3)):
+				return true
+	return false
 
 ## Probabilité qu'un monstre soit légendaire (porteur de pouvoir), ×4 avec Chasseur.
 func _legendary_chance() -> float:
@@ -1761,6 +1790,14 @@ func _enemy_hit_player(attacker: Entity) -> bool:
 		var drained: int = maxi(1, int(round(dealt * ls)))
 		attacker.heal(drained)
 		add_message("[color=#ff7a8a]%s te draine (+%d PV).[/color]" % [attacker.display_name, drained])
+	# Élite « Voleur » (Phase 6.2) : dérobe des Éclats à chaque coup (rendus à sa mort).
+	var steal: int = int(attacker.ai.get("steal", 0))
+	if steal > 0 and dealt > 0:
+		var taken: int = mini(steal, run_shards)
+		if taken > 0:
+			run_shards -= taken
+			attacker.ai["stolen"] = int(attacker.ai.get("stolen", 0)) + taken
+			add_message("[color=#ffd24a]%s te dérobe %d Éclats ![/color]" % [attacker.display_name, taken])
 	if player.thorns_flat > 0:
 		var d2: int = attacker.take_damage(player.thorns_flat)
 		add_message("[color=#cdd66a]Épines : %s subit %d.[/color]" % [attacker.display_name, d2])
@@ -1846,6 +1883,11 @@ func on_enemy_killed(e: Entity) -> void:
 			_drop_power(death_pos)
 	else:
 		add_message("%s meurt. [color=#ffd24a]+%d Éclats[/color]." % [e.display_name, e.shard_value])
+		# Élite « Voleur » (Phase 6.2) : restitue tous les Éclats dérobés à sa mort.
+		var stolen: int = int(e.ai.get("stolen", 0)) if not e.ai.is_empty() else 0
+		if stolen > 0:
+			run_shards += stolen
+			add_message("[color=#ffd24a]Tu récupères %d Éclats dérobés.[/color]" % stolen)
 		if was_legendary:
 			_drop_power(death_pos)
 		elif rng.randf() < SKILL_DROP_CHANCE:
@@ -2368,6 +2410,9 @@ func _enemy_atk(e: Entity) -> int:
 	if e.ai.get("pack", false):
 		var allies: int = _count_allies_near(e, 2)
 		a += int(round(float(e.ai.get("pack_bonus", 2)) * float(mini(allies, 3))))
+	# Aura d'un « Chef » d'élite proche (Phase 6.2) : +2 ATK aux alliés.
+	if _has_chef_aura(e):
+		a += 2
 	if e.has_status("weaken"):
 		a -= int(round(e.status_value("weaken")))
 	return maxi(1, a)

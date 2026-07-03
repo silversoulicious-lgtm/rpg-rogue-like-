@@ -419,8 +419,9 @@ func _draw() -> void:
 			var dv: Dictionary = _directional_sprite(e)
 			var off: Vector2 = _entity_offset(e)
 			var base_px: Vector2 = _vis_pos.get(e.get_instance_id(), Vector2(e.x * CELL, e.y * CELL))
-			if not _blit_ex_px(dv["name"], base_px + off, dv["flip"]):
-				_draw_glyph(e.x, e.y, e.glyph, e.color)
+			# Teinte de rendu (élite affixé — Phase 6.2 ; blanc = neutre).
+			if not _blit_ex_px(dv["name"], base_px + off, dv["flip"], e.tint):
+				_draw_glyph(e.x, e.y, e.glyph, e.color if e.tint == Color.WHITE else e.tint)
 			var flash: float = _entity_flash(e)
 			if flash > 0.0:
 				draw_rect(Rect2(base_px, Vector2(CELL, CELL)), Color(1, 1, 1, 0.55 * flash), true)
@@ -564,13 +565,13 @@ func _blit_ex(name: String, gx: int, gy: int, flip: bool) -> bool:
 
 ## Variante de _blit_ex à position PIXEL absolue (mouvement animé glissé, cf.
 ## _vis_pos ; `px` inclut déjà le décalage bob d'idle / bond d'attaque).
-func _blit_ex_px(name: String, px: Vector2, flip: bool) -> bool:
+func _blit_ex_px(name: String, px: Vector2, flip: bool, modulate: Color = Color.WHITE) -> bool:
 	if name == "" or not tex.has(name):
 		return false
 	var r := Rect2(px, Vector2(CELL, CELL))
 	if flip:
 		r = Rect2(r.position.x + r.size.x, r.position.y, -r.size.x, r.size.y)
-	draw_texture_rect(tex[name], r, false)
+	draw_texture_rect(tex[name], r, false, modulate)
 	return true
 
 ## Choisit la vue d'une entité selon son orientation. Seule Aria possède des

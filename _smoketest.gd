@@ -1257,6 +1257,31 @@ func _ready() -> void:
 	assert(n_hooks >= 8, "au moins 8 talents mécaniques (hooks) dans le pool")
 	print("OK Phase 6.1: talents mécaniques (has_talent_hook, Toxicologue ×1.6 gate ennemi, ≥8 hooks)")
 
+	# --- Phase 6.2 : affixes d'élite --------------------------------------------
+	assert(Data.ELITE_AFFIXES.size() >= 5, "au moins 5 affixes d'élite définis")
+	var elite_e: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 3, Vector2i(7, 7))
+	var hp_before_affix: int = elite_e.max_hp
+	main._apply_elite_affix(elite_e)
+	assert(elite_e.ai.has("elite_affix"), "un affixe d'élite est posé")
+	assert(elite_e.tint != Color.WHITE, "l'élite reçoit une teinte de rendu")
+	assert(elite_e.display_name.begins_with("Élite "), "le nom de l'élite est préfixé « Élite … »")
+	assert(elite_e.max_hp == int(round(hp_before_affix * 1.15)), "bump de PV d'élite réduit à +15%")
+	assert(bool(elite_e.ai.get("smart_path", false)), "l'élite reçoit le pathfinding intelligent")
+	# Voleur : dérobe des Éclats au coup, les rend à sa mort.
+	var thief: Entity = main._make_enemy(main._enemy_def_by_sprite("gobelin"), 3, main._find_spot(main, main.player.pos()))
+	thief.ai["steal"] = 4
+	thief.ai["stolen"] = 0
+	thief.awake = true
+	main.enemies.append(thief)
+	main.run_shards = 100
+	main.player.x = thief.x - 1; main.player.y = thief.y
+	main._enemy_hit_player(thief)
+	assert(main.run_shards == 96 and int(thief.ai.get("stolen", 0)) == 4, "Voleur : 4 Éclats dérobés par coup")
+	var shards_pre_death: int = main.run_shards
+	main.on_enemy_killed(thief)
+	assert(main.run_shards == shards_pre_death + 4, "Voleur : Éclats dérobés restitués à sa mort")
+	print("OK Phase 6.2: affixes d'élite (teinte, +15% PV, préfixe de nom, Voleur vol/restitution)")
+
 	print("=== SMOKETEST PASSED ===")
 	get_tree().quit()
 
